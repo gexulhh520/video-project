@@ -4,11 +4,12 @@ import { v4 as uuidv4 } from "uuid";
 import { FfmpegService } from "./ffmpeg.service";
 import { TranscriptService } from "./transcript.service";
 import { LlmService } from "./llm.service";
-import type { ContentBlock, DraftSummary, PostDraft, TaskProgress } from "../types/app.types";
+import type { ContentBlock, DraftSummary, FramePreviewResult, PostDraft, TaskProgress } from "../types/app.types";
 
 export class PostService {
   private readonly appDataRoot = resolve(process.cwd(), "app-data");
   private readonly draftsDir = join(this.appDataRoot, "drafts");
+  private readonly videosDir = join(this.appDataRoot, "videos");
 
   constructor(
     private readonly ffmpegService: FfmpegService,
@@ -189,6 +190,51 @@ export class PostService {
     return this.saveDraft(draft);
   }
 
+  async previewDraftFrame(draftId: string, timeSeconds: number): Promise<FramePreviewResult> {
+    const draft = await this.getDraftById(draftId);
+    if (!draft.sourceVideoPath) {
+      throw new Error("当前草稿缺少原视频路径，无法从视频重新选帧。");
+    }
+
+    const frameDir = join(this.appDataRoot, "frames", draftId);
+    await mkdir(frameDir, { recursive: true });
+    const previewPath = join(frameDir, `__preview_${Math.round(timeSeconds * 1000)}.jpg`);
+    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, previewPath);
+    const imageBuffer = await readFile(previewPath);
+
+    return {
+      imageDataUrl: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
+      timeSeconds
+    };
+  }
+
+  async replaceDraftImageFromFrame(draftId: string, blockId: string, timeSeconds: number): Promise<PostDraft> {
+    const draft = await this.getDraftById(draftId);
+    if (!draft.sourceVideoPath) {
+      throw new Error("当前草稿缺少原视频路径，无法从视频重新选帧。");
+    }
+
+    const targetBlock = draft.contentBlocks.find(
+      (block): block is Extract<ContentBlock, { type: "image" }> => block.type === "image" && block.blockId === blockId
+    );
+
+    if (!targetBlock) {
+      throw new Error("未找到要替换的图片块。");
+    }
+
+    const frameDir = join(this.appDataRoot, "frames", draftId);
+    await mkdir(frameDir, { recursive: true });
+    const outputPath = join(frameDir, `${blockId}_frame_${timeSeconds.toFixed(3).replace(".", "_")}.jpg`);
+    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, outputPath);
+
+    targetBlock.imagePath = outputPath;
+    targetBlock.time = timeSeconds;
+    targetBlock.sourceType = "video-frame";
+    targetBlock.caption = `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
+
+    return this.saveDraft(draft);
+  }
+
   private normalizeDraft(draft: PostDraft, touchUpdatedAt = false): PostDraft {
     const sections = draft.sections.map((section) => ({
       ...section,
@@ -213,12 +259,29 @@ export class PostService {
     });
 
     const nowIso = new Date().toISOString();
+    const fallbackVideoPath = draft.sourceVideoPath ?? this.resolveStoredVideoPath(draft.draftId);
     return {
       ...draft,
       sections,
       contentBlocks,
       fullText: sections.map((section) => section.paragraph).join("\n\n"),
-      updatedAt: touchUpdatedAt ? nowIso : draft.updatedAt ?? draft.createdAt
+      updatedAt: touchUpdatedAt ? nowIso : draft.updatedAt ?? draft.createdAt,
+      sourceVideoPath: fallbackVideoPath
     };
+  }
+
+  private resolveStoredVideoPath(draftId: string): string | undefined {
+    const draftVideoDir = join(this.videosDir, draftId);
+
+    try {
+      const entries = require("node:fs").readdirSync(draftVideoDir, { withFileTypes: true }) as Array<{
+        isFile: () => boolean;
+        name: string;
+      }>;
+      const fileEntry = entries.find((entry) => entry.isFile());
+      return fileEntry ? join(draftVideoDir, fileEntry.name) : undefined;
+    } catch {
+      return undefined;
+    }
   }
 }

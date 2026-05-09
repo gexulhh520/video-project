@@ -62,6 +62,11 @@ export type DraftSummary = {
   coverImagePath?: string;
 };
 
+export type FramePreviewResult = {
+  imageDataUrl: string;
+  timeSeconds: number;
+};
+
 export type TaskStatus =
   | "idle"
   | "copying_video"
@@ -94,6 +99,8 @@ export type DesktopApi = {
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
+  previewDraftFrame: (draftId: string, timeSeconds: number) => Promise<FramePreviewResult>;
+  replaceDraftImageFromFrame: (draftId: string, blockId: string, timeSeconds: number) => Promise<PostDraft>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
 };

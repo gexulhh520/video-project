@@ -61,6 +61,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
   ipcMain.handle("draft:replace-image", async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );
+  ipcMain.handle("draft:preview-frame", async (_event, draftId: string, timeSeconds: number) =>
+    postService.previewDraftFrame(draftId, timeSeconds)
+  );
+  ipcMain.handle("draft:replace-image-from-frame", async (_event, draftId: string, blockId: string, timeSeconds: number) =>
+    postService.replaceDraftImageFromFrame(draftId, blockId, timeSeconds)
+  );
   ipcMain.handle("image:read-data-url", async (_event, imagePath: string) => {
     const buffer = await readFile(imagePath);
     const extension = extname(imagePath).toLowerCase();

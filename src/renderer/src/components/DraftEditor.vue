@@ -123,14 +123,14 @@ function updateSectionParagraph(sectionId: string, value: string): void {
             >
               {{ replacingImageBlockId === imageBlocksBySection[section.sectionId]?.blockId ? "替换中..." : "上传替换图片" }}
             </button>
-            <button class="ghost-btn" disabled @click="emit('openFramePicker', imageBlocksBySection[section.sectionId]?.blockId)">
+            <button class="ghost-btn" @click="emit('openFramePicker', imageBlocksBySection[section.sectionId]?.blockId)">
               视频选帧替换
             </button>
           </div>
 
           <p class="hint">
             当前图片来源：{{ imageBlocksBySection[section.sectionId]?.sourceType ?? "auto" }}。
-            “视频选帧替换”入口已预留，下一步会接成按时间范围回到原视频重新抽帧。
+            你可以从当前段落的时间范围附近重新挑一帧来替换图片。
           </p>
         </article>
       </div>

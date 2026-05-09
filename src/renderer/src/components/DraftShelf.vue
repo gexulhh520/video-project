@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { DraftSummary } from "../../../main/types/app.types";
+import { desktopApi } from "../api/desktop-api";
 
 const props = defineProps<{
   drafts: DraftSummary[];
@@ -14,14 +15,26 @@ const emit = defineEmits<{
 }>();
 
 const hasDrafts = computed(() => props.drafts.length > 0);
+const imageUrls = ref<Record<string, string>>({});
 
-function toFileUrl(path?: string): string {
-  if (!path) {
-    return "";
-  }
+watch(
+  () => props.drafts,
+  async (drafts) => {
+    const nextEntries = await Promise.all(
+      drafts.map(async (draft) => {
+        if (!draft.coverImagePath) {
+          return [draft.draftId, ""] as const;
+        }
 
-  return encodeURI(`file:///${path.replace(/\\/g, "/")}`);
-}
+        const dataUrl = await desktopApi.readImageAsDataUrl(draft.coverImagePath);
+        return [draft.draftId, dataUrl] as const;
+      })
+    );
+
+    imageUrls.value = Object.fromEntries(nextEntries);
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -49,7 +62,7 @@ function toFileUrl(path?: string): string {
         :class="{ active: draft.draftId === activeDraftId }"
         @click="emit('open', draft.draftId)"
       >
-        <img v-if="draft.coverImagePath" class="thumb" :src="toFileUrl(draft.coverImagePath)" :alt="draft.title" />
+        <img v-if="imageUrls[draft.draftId]" class="thumb" :src="imageUrls[draft.draftId]" :alt="draft.title" />
         <div v-else class="thumb thumb-placeholder">No Cover</div>
         <div class="draft-meta">
           <strong>{{ draft.title }}</strong>

@@ -1,4 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
 import type { PostDraft, TaskProgress } from "./types/app.types";
 import { PostService } from "./services/post.service";
 
@@ -40,4 +42,12 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
 
   ipcMain.handle("draft:list", async () => postService.listDrafts());
   ipcMain.handle("draft:get", async (_event, draftId: string) => postService.getDraftById(draftId));
+  ipcMain.handle("image:read-data-url", async (_event, imagePath: string) => {
+    const buffer = await readFile(imagePath);
+    const extension = extname(imagePath).toLowerCase();
+    const mimeType =
+      extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
+
+    return `data:${mimeType};base64,${buffer.toString("base64")}`;
+  });
 }

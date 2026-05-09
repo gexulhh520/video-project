@@ -86,5 +86,6 @@ export type DesktopApi = {
   generatePost: (videoPath: string) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
+  readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
 };

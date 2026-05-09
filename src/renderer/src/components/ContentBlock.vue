@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, watchEffect } from "vue";
 import type { ContentBlock } from "../../../main/types/app.types";
+import { desktopApi } from "../api/desktop-api";
 
 const props = defineProps<{
   block: ContentBlock;
 }>();
 
-const imageSrc = computed(() => {
+const imageSrc = ref("");
+
+watchEffect(async () => {
   if (props.block.type !== "image") {
-    return "";
+    imageSrc.value = "";
+    return;
   }
 
-  return encodeURI(`file:///${props.block.imagePath.replace(/\\/g, "/")}`);
+  imageSrc.value = await desktopApi.readImageAsDataUrl(props.block.imagePath);
 });
 </script>
 
@@ -21,7 +25,8 @@ const imageSrc = computed(() => {
   </article>
 
   <figure v-else class="image-block">
-    <img :src="imageSrc" :alt="block.caption ?? `段落配图 ${block.sectionId}`" />
+    <img v-if="imageSrc" :src="imageSrc" :alt="block.caption ?? `段落配图 ${block.sectionId}`" />
+    <div v-else class="image-loading">图片加载中...</div>
     <figcaption>
       {{ block.caption ?? `抽帧时间 ${block.time.toFixed(1)}s` }}
     </figcaption>
@@ -56,6 +61,14 @@ const imageSrc = computed(() => {
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
+}
+
+.image-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  color: #90a7cb;
 }
 
 .image-block figcaption {

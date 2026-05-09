@@ -6,6 +6,7 @@ const desktopApi: DesktopApi = {
   generatePost: async (videoPath: string): Promise<PostDraft> => ipcRenderer.invoke("post:generate", videoPath),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
+  readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {
       callback(progress);

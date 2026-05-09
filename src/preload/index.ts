@@ -3,9 +3,13 @@ import type { DesktopApi, DraftSummary, PostDraft, TaskProgress } from "../main/
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
+  selectImage: async () => ipcRenderer.invoke("image:select"),
   generatePost: async (videoPath: string): Promise<PostDraft> => ipcRenderer.invoke("post:generate", videoPath),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
+  saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
+  replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
+    ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {

@@ -91,7 +91,9 @@ export class PostService {
         sectionId: section.sectionId,
         imagePath,
         time: safeMidpoint,
-        caption: firstRange.reason
+        caption: firstRange.reason,
+        sourceType: "auto",
+        sourceTimeRange: firstRange
       });
     }
 
@@ -108,10 +110,12 @@ export class PostService {
       fullText: llmResult.sections.map((section) => section.paragraph).join("\n\n"),
       sections: llmResult.sections,
       contentBlocks,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      sourceVideoPath: copiedVideoPath
     };
 
-    await writeFile(join(this.draftsDir, `${draftId}.json`), JSON.stringify(postDraft, null, 2), "utf8");
+    await this.saveDraft(postDraft);
 
     onProgress?.({
       taskId: draftId,
@@ -131,7 +135,7 @@ export class PostService {
         .filter((file) => file.endsWith(".json"))
         .map(async (file) => {
           const content = await readFile(join(this.draftsDir, file), "utf8");
-          const draft = JSON.parse(content) as PostDraft;
+          const draft = this.normalizeDraft(JSON.parse(content) as PostDraft);
           const coverImagePath = draft.contentBlocks.find((block) => block.type === "image")?.imagePath;
 
           return {
@@ -151,6 +155,70 @@ export class PostService {
     await mkdir(this.draftsDir, { recursive: true });
     const draftPath = join(this.draftsDir, `${draftId}.json`);
     const content = await readFile(draftPath, "utf8");
-    return JSON.parse(content) as PostDraft;
+    return this.normalizeDraft(JSON.parse(content) as PostDraft);
+  }
+
+  async saveDraft(draft: PostDraft): Promise<PostDraft> {
+    await mkdir(this.draftsDir, { recursive: true });
+    const normalizedDraft = this.normalizeDraft(draft, true);
+    await writeFile(join(this.draftsDir, `${normalizedDraft.draftId}.json`), JSON.stringify(normalizedDraft, null, 2), "utf8");
+    return normalizedDraft;
+  }
+
+  async replaceDraftImage(draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> {
+    const draft = await this.getDraftById(draftId);
+    const targetBlock = draft.contentBlocks.find(
+      (block): block is Extract<ContentBlock, { type: "image" }> => block.type === "image" && block.blockId === blockId
+    );
+
+    if (!targetBlock) {
+      throw new Error("未找到要替换的图片块。");
+    }
+
+    const frameDir = join(this.appDataRoot, "frames", draftId);
+    await mkdir(frameDir, { recursive: true });
+
+    const extension = extname(sourceImagePath) || ".jpg";
+    const copiedImagePath = join(frameDir, `${blockId}_manual_${Date.now()}${extension}`);
+    await copyFile(sourceImagePath, copiedImagePath);
+
+    targetBlock.imagePath = copiedImagePath;
+    targetBlock.sourceType = "upload";
+    targetBlock.caption = "用户手动替换图片";
+
+    return this.saveDraft(draft);
+  }
+
+  private normalizeDraft(draft: PostDraft, touchUpdatedAt = false): PostDraft {
+    const sections = draft.sections.map((section) => ({
+      ...section,
+      paragraph: section.paragraph ?? "",
+      sourceSegmentIds: section.sourceSegmentIds ?? [],
+      sourceTimeRanges: section.sourceTimeRanges ?? []
+    }));
+
+    const contentBlocks = draft.contentBlocks.map((block) => {
+      if (block.type === "paragraph") {
+        const sourceSection = sections.find((section) => section.sectionId === block.sectionId);
+        return {
+          ...block,
+          text: sourceSection?.paragraph ?? block.text ?? ""
+        } satisfies ContentBlock;
+      }
+
+      return {
+        ...block,
+        sourceType: block.sourceType ?? "auto"
+      } satisfies ContentBlock;
+    });
+
+    const nowIso = new Date().toISOString();
+    return {
+      ...draft,
+      sections,
+      contentBlocks,
+      fullText: sections.map((section) => section.paragraph).join("\n\n"),
+      updatedAt: touchUpdatedAt ? nowIso : draft.updatedAt ?? draft.createdAt
+    };
   }
 }

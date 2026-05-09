@@ -22,6 +22,21 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
+  ipcMain.handle("image:select", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "选择替换图片",
+      properties: ["openFile"],
+      filters: [
+        {
+          name: "Image",
+          extensions: ["png", "jpg", "jpeg", "webp"]
+        }
+      ]
+    });
+
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
   ipcMain.handle("post:generate", async (_event, videoPath: string): Promise<PostDraft> => {
     const sendProgress = (progress: TaskProgress): void => {
       mainWindow.webContents.send(TASK_PROGRESS_CHANNEL, progress);
@@ -42,6 +57,10 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
 
   ipcMain.handle("draft:list", async () => postService.listDrafts());
   ipcMain.handle("draft:get", async (_event, draftId: string) => postService.getDraftById(draftId));
+  ipcMain.handle("draft:save", async (_event, draft: PostDraft) => postService.saveDraft(draft));
+  ipcMain.handle("draft:replace-image", async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
+    postService.replaceDraftImage(draftId, blockId, sourceImagePath)
+  );
   ipcMain.handle("image:read-data-url", async (_event, imagePath: string) => {
     const buffer = await readFile(imagePath);
     const extension = extname(imagePath).toLowerCase();

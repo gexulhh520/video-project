@@ -30,6 +30,7 @@ export type ContentBlock =
       blockId: string;
       sectionId: string;
       text: string;
+      edited?: boolean;
     }
   | {
       type: "image";
@@ -38,6 +39,8 @@ export type ContentBlock =
       imagePath: string;
       time: number;
       caption?: string;
+      sourceType?: "auto" | "upload" | "video-frame";
+      sourceTimeRange?: SourceTimeRange;
     };
 
 export type PostDraft = {
@@ -47,6 +50,8 @@ export type PostDraft = {
   sections: ArticleSection[];
   contentBlocks: ContentBlock[];
   createdAt: string;
+  updatedAt?: string;
+  sourceVideoPath?: string;
 };
 
 export type DraftSummary = {
@@ -83,9 +88,12 @@ export type LlmSectionsResult = {
 
 export type DesktopApi = {
   selectVideo: () => Promise<string | null>;
+  selectImage: () => Promise<string | null>;
   generatePost: (videoPath: string) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
+  saveDraft: (draft: PostDraft) => Promise<PostDraft>;
+  replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
 };

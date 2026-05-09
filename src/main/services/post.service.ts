@@ -1,10 +1,22 @@
-import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve } from "node:path";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile, access } from "node:fs/promises";
+import { constants } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
 import { v4 as uuidv4 } from "uuid";
 import { FfmpegService } from "./ffmpeg.service";
 import { TranscriptService } from "./transcript.service";
 import { LlmService } from "./llm.service";
-import type { ContentBlock, DraftSummary, FramePreviewResult, PostDraft, TaskProgress } from "../types/app.types";
+import type {
+  ContentBlock,
+  DraftSummary,
+  FramePreviewResult,
+  GeneratePostOptions,
+  PostDraft,
+  TaskProgress
+} from "../types/app.types";
+
+const DEFAULT_FRAME_OFFSET_SECONDS = 2;
 
 export class PostService {
   private readonly appDataRoot = resolve(process.cwd(), "app-data");
@@ -19,6 +31,7 @@ export class PostService {
 
   async generatePostFromVideo(
     sourceVideoPath: string,
+    options?: GeneratePostOptions,
     onProgress?: (progress: TaskProgress) => void
   ): Promise<PostDraft> {
     const draftId = uuidv4();
@@ -81,17 +94,21 @@ export class PostService {
       });
 
       const firstRange = section.sourceTimeRanges[0] ?? { start: 0, end: 0, reason: "自动兜底图片" };
-      const midpoint = (firstRange.start + firstRange.end) / 2;
-      const safeMidpoint = Number.isFinite(midpoint) ? Math.max(midpoint, 0) : 0;
-      const imagePath = join(frameDir, `${section.sectionId}_${safeMidpoint.toFixed(1)}.jpg`);
+      const requestedOffsetSeconds = Number.isFinite(options?.frameOffsetSeconds)
+        ? Math.max(options?.frameOffsetSeconds ?? DEFAULT_FRAME_OFFSET_SECONDS, 0)
+        : DEFAULT_FRAME_OFFSET_SECONDS;
+      const candidateFrameTime = firstRange.start + requestedOffsetSeconds;
+      const maxFrameTime = Number.isFinite(firstRange.end) ? Math.max(firstRange.end, firstRange.start) : firstRange.start;
+      const safeFrameTime = Math.max(firstRange.start, Math.min(candidateFrameTime, maxFrameTime));
+      const imagePath = join(frameDir, `${section.sectionId}_${safeFrameTime.toFixed(1)}.jpg`);
 
-      await this.ffmpegService.extractFrameAt(copiedVideoPath, safeMidpoint, imagePath);
+      await this.ffmpegService.extractFrameAt(copiedVideoPath, safeFrameTime, imagePath);
       contentBlocks.push({
         type: "image",
         blockId: `${section.sectionId}_i`,
         sectionId: section.sectionId,
         imagePath,
-        time: safeMidpoint,
+        time: safeFrameTime,
         caption: firstRange.reason,
         sourceType: "auto",
         sourceTimeRange: firstRange
@@ -166,6 +183,22 @@ export class PostService {
     return normalizedDraft;
   }
 
+  async exportDraftToWord(draft: PostDraft, outputPath: string): Promise<string> {
+    const normalizedDraft = this.normalizeDraft(draft, true);
+    const exportTempDir = join(this.appDataRoot, "exports", "tmp", normalizedDraft.draftId);
+    const tempDraftJsonPath = join(exportTempDir, `draft-${Date.now()}.json`);
+
+    await mkdir(exportTempDir, { recursive: true });
+    await writeFile(tempDraftJsonPath, JSON.stringify(normalizedDraft, null, 2), "utf8");
+
+    try {
+      await this.runWordExportScript(tempDraftJsonPath, outputPath);
+      return outputPath;
+    } finally {
+      await rm(exportTempDir, { recursive: true, force: true });
+    }
+  }
+
   async replaceDraftImage(draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> {
     const draft = await this.getDraftById(draftId);
     const targetBlock = draft.contentBlocks.find(
@@ -233,6 +266,55 @@ export class PostService {
     targetBlock.caption = `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
 
     return this.saveDraft(draft);
+  }
+
+  private async runWordExportScript(draftJsonPath: string, outputPath: string): Promise<void> {
+    const pythonPath = await this.resolvePythonExecutablePath();
+    const scriptPath = resolve(process.cwd(), "scripts", "export_draft_docx.py");
+    await mkdir(dirname(outputPath), { recursive: true });
+
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const child = spawn(pythonPath, [scriptPath, draftJsonPath, outputPath], {
+        stdio: ["ignore", "pipe", "pipe"]
+      });
+
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      child.on("error", (error) => {
+        rejectPromise(error);
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolvePromise();
+          return;
+        }
+
+        rejectPromise(new Error(`Word export failed with code ${code}: ${stderr}`));
+      });
+    });
+  }
+
+  private async resolvePythonExecutablePath(): Promise<string> {
+    const bundledPythonPath = join(
+      homedir(),
+      ".cache",
+      "codex-runtimes",
+      "codex-primary-runtime",
+      "dependencies",
+      "python",
+      "python.exe"
+    );
+
+    try {
+      await access(bundledPythonPath, constants.X_OK);
+      return bundledPythonPath;
+    } catch {
+      return "python";
+    }
   }
 
   private normalizeDraft(draft: PostDraft, touchUpdatedAt = false): PostDraft {

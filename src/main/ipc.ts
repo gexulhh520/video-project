@@ -1,7 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
-import type { PostDraft, TaskProgress } from "./types/app.types";
+import type { GeneratePostOptions, PostDraft, TaskProgress } from "./types/app.types";
 import { PostService } from "./services/post.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
@@ -37,13 +37,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
-  ipcMain.handle("post:generate", async (_event, videoPath: string): Promise<PostDraft> => {
+  ipcMain.handle("post:generate", async (_event, videoPath: string, options: GeneratePostOptions): Promise<PostDraft> => {
     const sendProgress = (progress: TaskProgress): void => {
       mainWindow.webContents.send(TASK_PROGRESS_CHANNEL, progress);
     };
 
     try {
-      return await postService.generatePostFromVideo(videoPath, sendProgress);
+      return await postService.generatePostFromVideo(videoPath, options, sendProgress);
     } catch (error) {
       sendProgress({
         taskId: "unknown",
@@ -58,6 +58,25 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
   ipcMain.handle("draft:list", async () => postService.listDrafts());
   ipcMain.handle("draft:get", async (_event, draftId: string) => postService.getDraftById(draftId));
   ipcMain.handle("draft:save", async (_event, draft: PostDraft) => postService.saveDraft(draft));
+  ipcMain.handle("draft:export-word", async (_event, draft: PostDraft) => {
+    const defaultFileName = `${sanitizeFileName(draft.title || "图文草稿")}.docx`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 Word 文档",
+      defaultPath: defaultFileName,
+      filters: [
+        {
+          name: "Word Document",
+          extensions: ["docx"]
+        }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return postService.exportDraftToWord(draft, result.filePath);
+  });
   ipcMain.handle("draft:replace-image", async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );
@@ -75,4 +94,8 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
 
     return `data:${mimeType};base64,${buffer.toString("base64")}`;
   });
+}
+
+function sanitizeFileName(value: string): string {
+  return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_").trim() || "图文草稿";
 }

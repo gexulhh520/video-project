@@ -1,13 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, DraftSummary, FramePreviewResult, PostDraft, TaskProgress } from "../main/types/app.types";
+import type { DesktopApi, DraftSummary, FramePreviewResult, GeneratePostOptions, PostDraft, TaskProgress } from "../main/types/app.types";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
   selectImage: async () => ipcRenderer.invoke("image:select"),
-  generatePost: async (videoPath: string): Promise<PostDraft> => ipcRenderer.invoke("post:generate", videoPath),
+  generatePost: async (videoPath: string, options: GeneratePostOptions): Promise<PostDraft> =>
+    ipcRenderer.invoke("post:generate", videoPath, options),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
   saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
+  exportDraftToWord: async (draft: PostDraft): Promise<string | null> => ipcRenderer.invoke("draft:export-word", draft),
   replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
   previewDraftFrame: async (draftId: string, timeSeconds: number): Promise<FramePreviewResult> =>

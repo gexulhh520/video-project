@@ -67,6 +67,10 @@ export type FramePreviewResult = {
   timeSeconds: number;
 };
 
+export type GeneratePostOptions = {
+  frameOffsetSeconds: number;
+};
+
 export type TaskStatus =
   | "idle"
   | "copying_video"
@@ -94,10 +98,11 @@ export type LlmSectionsResult = {
 export type DesktopApi = {
   selectVideo: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
-  generatePost: (videoPath: string) => Promise<PostDraft>;
+  generatePost: (videoPath: string, options: GeneratePostOptions) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
+  exportDraftToWord: (draft: PostDraft) => Promise<string | null>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   previewDraftFrame: (draftId: string, timeSeconds: number) => Promise<FramePreviewResult>;
   replaceDraftImageFromFrame: (draftId: string, blockId: string, timeSeconds: number) => Promise<PostDraft>;

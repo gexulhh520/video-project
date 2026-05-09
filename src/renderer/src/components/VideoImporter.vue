@@ -2,11 +2,13 @@
 const props = defineProps<{
   selectedVideoPath: string | null;
   busy: boolean;
+  frameOffsetSeconds: number;
 }>();
 
 const emit = defineEmits<{
   select: [];
   generate: [];
+  updateFrameOffset: [value: number];
 }>();
 </script>
 
@@ -22,6 +24,18 @@ const emit = defineEmits<{
       <span>已选视频</span>
       <strong>{{ props.selectedVideoPath ?? "还没有选择文件" }}</strong>
     </div>
+
+    <label class="offset-field">
+      <span>抽帧偏移秒数</span>
+      <input
+        :value="props.frameOffsetSeconds"
+        type="number"
+        min="0"
+        step="0.5"
+        @input="emit('updateFrameOffset', Number(($event.target as HTMLInputElement).value))"
+      />
+      <small>生成配图时，将从段落时间范围的 start 往后偏移这么多秒再抽帧。</small>
+    </label>
 
     <div class="actions">
       <button class="ghost-btn" @click="emit('select')">选择视频</button>
@@ -59,7 +73,8 @@ const emit = defineEmits<{
   color: #78c0ff;
 }
 
-.video-path {
+.video-path,
+.offset-field {
   margin-top: 22px;
   padding: 18px 18px 20px;
   border-radius: 18px;
@@ -67,7 +82,8 @@ const emit = defineEmits<{
   border: 1px solid rgba(124, 178, 255, 0.12);
 }
 
-.video-path span {
+.video-path span,
+.offset-field span {
   display: block;
   margin-bottom: 8px;
   font-size: 12px;
@@ -79,6 +95,23 @@ const emit = defineEmits<{
   font-size: 14px;
   line-height: 1.6;
   word-break: break-all;
+}
+
+.offset-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(149, 181, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: #edf5ff;
+}
+
+.offset-field small {
+  display: block;
+  margin-top: 10px;
+  color: #9db4d8;
+  line-height: 1.6;
 }
 
 .actions {

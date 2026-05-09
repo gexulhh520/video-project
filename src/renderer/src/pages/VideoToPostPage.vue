@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { DraftSummary, FramePreviewResult, PostDraft, TaskProgress } from "../../../main/types/app.types";
+import type { DraftSummary, FramePreviewResult, GeneratePostOptions, PostDraft, TaskProgress } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import DraftEditor from "../components/DraftEditor.vue";
-import DraftShelf from "../components/DraftShelf.vue";
+import DraftShelfModal from "../components/DraftShelfModal.vue";
 import FramePickerModal from "../components/FramePickerModal.vue";
 import PostPreview from "../components/PostPreview.vue";
 import TaskProgressBar from "../components/TaskProgress.vue";
@@ -16,11 +16,14 @@ const draft = ref<PostDraft | null>(null);
 const drafts = ref<DraftSummary[]>([]);
 const activeDraftId = ref<string | null>(null);
 const loadingDrafts = ref(false);
+const draftModalOpen = ref(false);
 const busy = ref(false);
 const savingDraft = ref(false);
+const exportingWord = ref(false);
 const replacingImageBlockId = ref<string | null>(null);
 const editorOpen = ref(false);
 const immersiveEditor = ref(false);
+const frameOffsetSeconds = ref(2);
 const framePickerOpen = ref(false);
 const framePickerBlockId = ref<string | null>(null);
 const framePickerSectionLabel = ref("");
@@ -61,10 +64,24 @@ async function handleSelectVideo(): Promise<void> {
   selectedVideoPath.value = await desktopApi.selectVideo();
 }
 
+function updateFrameOffset(value: number): void {
+  if (Number.isNaN(value)) {
+    frameOffsetSeconds.value = 0;
+    return;
+  }
+
+  frameOffsetSeconds.value = Math.max(value, 0);
+}
+
 async function handleGenerate(): Promise<void> {
   if (!selectedVideoPath.value || busy.value) {
     return;
   }
+
+  const safeFrameOffset = Number.isFinite(frameOffsetSeconds.value) ? Math.max(frameOffsetSeconds.value, 0) : 0;
+  const generateOptions: GeneratePostOptions = {
+    frameOffsetSeconds: safeFrameOffset
+  };
 
   busy.value = true;
   errorMessage.value = "";
@@ -73,11 +90,11 @@ async function handleGenerate(): Promise<void> {
     taskId: "queued",
     status: "copying_video",
     progress: 2,
-    message: "任务已开始，正在准备"
+    message: "任务已开始，正在准备文件"
   };
 
   try {
-    draft.value = await desktopApi.generatePost(selectedVideoPath.value);
+    draft.value = await desktopApi.generatePost(selectedVideoPath.value, generateOptions);
     activeDraftId.value = draft.value.draftId;
     editorOpen.value = false;
     immersiveEditor.value = false;
@@ -92,6 +109,31 @@ async function handleGenerate(): Promise<void> {
     };
   } finally {
     busy.value = false;
+  }
+}
+
+async function handleExportWord(): Promise<void> {
+  if (!draft.value || exportingWord.value) {
+    return;
+  }
+
+  exportingWord.value = true;
+  errorMessage.value = "";
+
+  try {
+    const exportedPath = await desktopApi.exportDraftToWord(draft.value);
+    if (exportedPath) {
+      progress.value = {
+        taskId: draft.value.draftId,
+        status: "completed",
+        progress: 100,
+        message: `Word 已导出到 ${exportedPath}`
+      };
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "导出 Word 失败";
+  } finally {
+    exportingWord.value = false;
   }
 }
 
@@ -120,8 +162,13 @@ async function openDraft(draftId: string): Promise<void> {
     taskId: draftId,
     status: "completed",
     progress: 100,
-    message: "已从草稿箱加载历史结果"
+    message: "已从草稿箱加载历史内容"
   };
+}
+
+async function openDraftModal(): Promise<void> {
+  draftModalOpen.value = true;
+  await refreshDrafts();
 }
 
 function handleDraftChange(nextDraft: PostDraft): void {
@@ -144,7 +191,7 @@ async function saveDraftEdits(): Promise<void> {
       taskId: draft.value.draftId,
       status: "completed",
       progress: 100,
-      message: "草稿编辑已保存"
+      message: "草稿修改已保存"
     };
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "保存草稿失败";
@@ -193,7 +240,7 @@ async function openFramePicker(blockId?: string): Promise<void> {
   );
 
   if (!imageBlock) {
-    errorMessage.value = "未找到对应图片块。";
+    errorMessage.value = "没有找到对应的图片块";
     return;
   }
 
@@ -215,7 +262,7 @@ async function openFramePicker(blockId?: string): Promise<void> {
     Math.max(framePickerMinSeconds.value, imageBlock.time ?? (baseStart + baseEnd) / 2)
   );
   framePickerBlockId.value = blockId;
-  framePickerSectionLabel.value = `${imageBlock.sectionId} · 建议在 ${framePickerMinSeconds.value.toFixed(1)}s - ${framePickerMaxSeconds.value.toFixed(1)}s 之间挑帧`;
+  framePickerSectionLabel.value = `${imageBlock.sectionId} 建议在 ${framePickerMinSeconds.value.toFixed(1)}s - ${framePickerMaxSeconds.value.toFixed(1)}s 之间选帧`;
   framePickerPreview.value = null;
   framePickerOpen.value = true;
   errorMessage.value = "";
@@ -299,21 +346,28 @@ function toggleImmersiveEditor(): void {
   <section class="video-page" :style="pageStyle">
     <aside class="sidebar">
       <button class="back-btn" @click="router.push('/')">返回工具箱</button>
-      <VideoImporter :selected-video-path="selectedVideoPath" :busy="busy" @select="handleSelectVideo" @generate="handleGenerate" />
-      <DraftShelf
-        :drafts="drafts"
-        :active-draft-id="activeDraftId"
-        :loading="loadingDrafts"
-        @open="openDraft"
-        @refresh="refreshDrafts"
+      <VideoImporter
+        :selected-video-path="selectedVideoPath"
+        :busy="busy"
+        :frame-offset-seconds="frameOffsetSeconds"
+        @select="handleSelectVideo"
+        @generate="handleGenerate"
+        @update-frame-offset="updateFrameOffset"
       />
 
+      <div class="quick-actions">
+        <button class="draft-trigger-btn" @click="openDraftModal">打开草稿箱</button>
+        <button class="export-btn" :disabled="!draft || exportingWord" @click="handleExportWord">
+          {{ exportingWord ? "正在导出 Word..." : "导出到 Word" }}
+        </button>
+      </div>
+
       <div class="mode-card">
-        <span class="mode-label">当前视图</span>
+        <span class="mode-label">当前模式</span>
         <strong>{{ editorOpen ? "编辑模式" : "预览模式" }}</strong>
         <div class="mode-actions">
           <button v-if="editorOpen" class="secondary-toggle-btn" :disabled="!draft" @click="toggleImmersiveEditor">
-            {{ immersiveEditor ? "退出沉浸" : "沉浸编辑" }}
+            {{ immersiveEditor ? "退出沉浸编辑" : "沉浸编辑" }}
           </button>
           <button class="editor-toggle-btn" :disabled="!draft" @click="toggleEditor">
             {{ editorOpen ? "返回预览" : "进入编辑" }}
@@ -336,7 +390,7 @@ function toggleImmersiveEditor(): void {
       <div class="editor-toolbar">
         <div>
           <span class="toolbar-label">编辑工作台</span>
-          <strong>修改标题、段落、图片</strong>
+          <strong>修改标题、段落和图片，然后直接导出 Word</strong>
         </div>
       </div>
       <DraftEditor
@@ -363,6 +417,16 @@ function toggleImmersiveEditor(): void {
       @change-time="refreshFramePreview"
       @confirm="confirmFrameReplacement"
     />
+
+    <DraftShelfModal
+      :open="draftModalOpen"
+      :drafts="drafts"
+      :active-draft-id="activeDraftId"
+      :loading="loadingDrafts"
+      @close="draftModalOpen = false"
+      @open-draft="openDraft"
+      @refresh="refreshDrafts"
+    />
   </section>
 </template>
 
@@ -383,15 +447,36 @@ function toggleImmersiveEditor(): void {
   overflow: auto;
 }
 
-.back-btn {
+.back-btn,
+.draft-trigger-btn,
+.export-btn {
   min-height: 46px;
   border-radius: 14px;
   border: 1px solid rgba(140, 173, 247, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #eaf3ff;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.back-btn,
+.draft-trigger-btn {
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf3ff;
+}
+
+.export-btn {
+  background: linear-gradient(135deg, #79f0d5, #47b9ff);
+  color: #08111f;
+}
+
+.export-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.quick-actions {
+  display: grid;
+  gap: 12px;
 }
 
 .mode-card,

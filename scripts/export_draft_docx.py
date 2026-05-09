@@ -1,11 +1,13 @@
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
+from PIL import Image
 
 
 def configure_document(document: Document) -> None:
@@ -48,17 +50,26 @@ def add_paragraph_block(document: Document, block: dict) -> None:
     paragraph.add_run(block.get("text") or "")
 
 
-def add_image_block(document: Document, block: dict) -> None:
+def normalize_image_for_docx(image_path: Path, temp_dir: Path) -> Path:
+    normalized_path = temp_dir / f"{image_path.stem}.png"
+    with Image.open(image_path) as image:
+        rgb_image = image.convert("RGB")
+        rgb_image.save(normalized_path, format="PNG")
+    return normalized_path
+
+
+def add_image_block(document: Document, block: dict, temp_dir: Path) -> None:
     image_path = Path(block.get("imagePath") or "")
     caption_text = block.get("caption") or ""
     picture_added = False
 
     if image_path.exists():
         try:
+            normalized_path = normalize_image_for_docx(image_path, temp_dir)
             picture_paragraph = document.add_paragraph()
             picture_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
             picture_paragraph.paragraph_format.space_after = Pt(4)
-            picture_paragraph.add_run().add_picture(str(image_path), width=Inches(5.8))
+            picture_paragraph.add_run().add_picture(str(normalized_path), width=Inches(5.8))
             picture_added = True
         except Exception:
             picture_added = False
@@ -89,12 +100,14 @@ def export_docx(draft_path: Path, output_path: Path) -> None:
     configure_document(document)
     add_title(document, draft)
 
-    for block in draft.get("contentBlocks", []):
-        block_type = block.get("type")
-        if block_type == "paragraph":
-            add_paragraph_block(document, block)
-        elif block_type == "image":
-            add_image_block(document, block)
+    with tempfile.TemporaryDirectory() as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        for block in draft.get("contentBlocks", []):
+            block_type = block.get("type")
+            if block_type == "paragraph":
+                add_paragraph_block(document, block)
+            elif block_type == "image":
+                add_image_block(document, block, temp_dir)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document.save(str(output_path))

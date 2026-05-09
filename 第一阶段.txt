@@ -1,0 +1,776 @@
+视频转图文桌面工具 MVP 开发方案
+1. 项目定位
+
+开发一个桌面端 AI 自媒体工具箱。
+
+第一版先实现一个工具：
+
+视频转图文：用户导入本地视频，系统自动识别语音，生成图文稿，并从视频对应时间点抽取配图，最终展示成图文混排内容。
+
+后续工具箱可以继续扩展：
+
+视频转图文
+图文改写
+爆款标题生成
+封面文案生成
+音频转文案
+批量生成小红书笔记
+
+第一版先只开发 视频转图文。
+
+2. 技术选型
+桌面壳：Electron
+前端：Vue3 + TypeScript
+构建：electron-vite
+后端逻辑：Electron Main Process / Node.js
+视频处理：FFmpeg
+ASR：豆包语音识别极速版
+LLM：OpenAI-compatible API，例如 DeepSeek / 豆包 / OpenAI
+本地存储：先用文件系统，不上 SQLite
+
+第一版不做数据库，所有产物保存到本地 app-data 目录。
+
+3. MVP 功能范围
+必须实现
+1. 启动后进入工具箱首页
+2. 首页展示多个工具卡片
+3. 点击“视频转图文”进入工具页面
+4. 用户选择本地视频
+5. FFmpeg 抽取 MP3 音频
+6. 判断 MP3 是否大于 20MB
+7. 小于等于 20MB：直接 Base64 调豆包 ASR
+8. 大于 20MB：切成 5 分钟一段，每段分别 ASR
+9. 合并 ASR 返回的带时间戳 segments
+10. 调用 LLM 生成标题、正文段落、sourceTimeRanges
+11. 每个段落取第一个 sourceTimeRange
+12. 计算 midpoint = (start + end) / 2
+13. FFmpeg 从视频 midpoint 抽一张图
+14. 生成 contentBlocks
+15. 前端展示图文混排结果
+16. 底部显示任务进度
+第一版不要做
+1. 波形图
+2. OCR
+3. 静音检测
+4. 智能切片
+5. 逐字时间戳
+6. 复杂富文本编辑器
+7. 图片视觉分析
+8. 自动发布平台
+9. SQLite
+10. 登录系统
+11. 支付授权
+4. 整体流程
+用户打开软件
+  ↓
+进入工具箱首页
+  ↓
+点击“视频转图文”
+  ↓
+选择本地视频
+  ↓
+复制视频到 app-data/videos
+  ↓
+FFmpeg 抽取 MP3
+  ↓
+判断 MP3 大小
+  ↓
+小音频直接 ASR，大音频切片后 ASR
+  ↓
+合并 transcript segments
+  ↓
+LLM 根据 segments 生成 sections
+  ↓
+每个 section 返回 paragraph + sourceTimeRanges
+  ↓
+每个 section 取第一个 sourceTimeRange
+  ↓
+计算 midpoint
+  ↓
+FFmpeg 抽 midpoint 画面
+  ↓
+生成 contentBlocks
+  ↓
+前端展示标题、段落、图片、段落、图片
+5. 项目目录结构
+video-to-post/
+├── package.json
+├── electron.vite.config.ts
+├── tsconfig.json
+├── .env
+├── resources/
+│   └── ffmpeg/
+│       └── win/
+│           └── ffmpeg.exe
+├── app-data/
+│   ├── videos/
+│   ├── audios/
+│   ├── chunks/
+│   ├── frames/
+│   └── drafts/
+└── src/
+    ├── main/
+    │   ├── index.ts
+    │   ├── ipc.ts
+    │   ├── services/
+    │   │   ├── ffmpeg.service.ts
+    │   │   ├── doubao-asr.service.ts
+    │   │   ├── transcript.service.ts
+    │   │   ├── llm.service.ts
+    │   │   └── post.service.ts
+    │   └── types/
+    │       └── app.types.ts
+    │
+    ├── preload/
+    │   └── index.ts
+    │
+    └── renderer/
+        ├── index.html
+        └── src/
+            ├── main.ts
+            ├── App.vue
+            ├── router/
+            │   └── index.ts
+            ├── pages/
+            │   ├── HomePage.vue
+            │   └── VideoToPostPage.vue
+            ├── components/
+            │   ├── AppTitleBar.vue
+            │   ├── ToolCard.vue
+            │   ├── VideoImporter.vue
+            │   ├── TaskProgress.vue
+            │   ├── PostPreview.vue
+            │   └── ContentBlock.vue
+            ├── api/
+            │   └── desktop-api.ts
+            └── styles/
+                └── global.css
+6. 核心数据结构
+
+src/main/types/app.types.ts
+
+export type TranscriptSegment = {
+  segmentId: string;
+  start: number;
+  end: number;
+  text: string;
+};
+
+export type TranscriptResult = {
+  provider: "doubao";
+  fullText: string;
+  segments: TranscriptSegment[];
+};
+
+export type SourceTimeRange = {
+  start: number;
+  end: number;
+  reason?: string;
+};
+
+export type ArticleSection = {
+  sectionId: string;
+  paragraph: string;
+  sourceSegmentIds?: string[];
+  sourceTimeRanges: SourceTimeRange[];
+};
+
+export type ContentBlock =
+  | {
+      type: "paragraph";
+      blockId: string;
+      sectionId: string;
+      text: string;
+    }
+  | {
+      type: "image";
+      blockId: string;
+      sectionId: string;
+      imagePath: string;
+      time: number;
+      caption?: string;
+    };
+
+export type PostDraft = {
+  draftId: string;
+  title: string;
+  fullText: string;
+  sections: ArticleSection[];
+  contentBlocks: ContentBlock[];
+  createdAt: string;
+};
+
+export type TaskProgress = {
+  taskId: string;
+  status:
+    | "idle"
+    | "copying_video"
+    | "extracting_audio"
+    | "splitting_audio"
+    | "transcribing"
+    | "generating_sections"
+    | "extracting_frames"
+    | "building_post"
+    | "completed"
+    | "failed";
+  progress: number;
+  message: string;
+};
+7. FFmpeg 处理规则
+7.1 视频抽 MP3
+ffmpeg -y -i input.mp4 -vn -ac 1 -ar 16000 -b:a 64k output.mp3
+
+含义：
+
+-vn          不要视频流
+-ac 1        单声道
+-ar 16000    16k 采样率
+-b:a 64k     MP3 码率 64kbps
+7.2 大音频切片
+
+当 MP3 大于 20MB：
+
+ffmpeg -y -i output.mp3 -f segment -segment_time 300 -reset_timestamps 1 chunks/chunk_%03d.mp3
+
+规则：
+
+每段 300 秒
+chunk_000 offset = 0 秒
+chunk_001 offset = 300 秒
+chunk_002 offset = 600 秒
+7.3 抽图片
+ffmpeg -y -ss 20.4 -i input.mp4 -frames:v 1 -q:v 2 frame.jpg
+8. ASR 规则
+
+使用豆包语音识别极速版。
+
+输入方式：
+
+{
+  "audio": {
+    "data": "base64音频内容"
+  }
+}
+
+第一版规则：
+
+MP3 <= 20MB：
+  直接读取 MP3 文件，转 Base64，调用豆包 ASR
+
+MP3 > 20MB：
+  先切成 5 分钟一段
+  每段转 Base64
+  每段分别调用豆包 ASR
+  最后合并结果
+
+豆包返回的 utterances 时间单位是毫秒。
+
+转换成项目内部结构时转成秒：
+
+start = start_time / 1000
+end = end_time / 1000
+
+如果是切片识别，还要加 offset：
+
+globalStart = chunkOffsetSeconds + start_time / 1000;
+globalEnd = chunkOffsetSeconds + end_time / 1000;
+
+最终统一输出：
+
+{
+  "provider": "doubao",
+  "fullText": "完整识别文本",
+  "segments": [
+    {
+      "segmentId": "seg_00001",
+      "start": 0.5,
+      "end": 3.2,
+      "text": "今天给大家分享一个方法。"
+    }
+  ]
+}
+9. LLM 输入输出规则
+9.1 输入给 LLM
+
+把 ASR 生成的 segments 给 LLM。
+
+要求 LLM 根据视频字幕生成图文段落。
+
+9.2 LLM 输出 JSON
+
+必须输出：
+
+{
+  "title": "标题",
+  "sections": [
+    {
+      "sectionId": "s1",
+      "paragraph": "正文段落",
+      "sourceSegmentIds": ["seg_00001", "seg_00002"],
+      "sourceTimeRanges": [
+        {
+          "start": 0.5,
+          "end": 8.2,
+          "reason": "这一段介绍视频主题"
+        }
+      ]
+    }
+  ]
+}
+9.3 sourceTimeRanges 规则
+1. 每个 section 必须有 sourceTimeRanges
+2. 一个 section 可以有多个 sourceTimeRanges
+3. 第一版每个 section 只使用第一个 sourceTimeRange 抽图
+4. 后面可以升级成每个 sourceTimeRange 都抽图
+10. contentBlocks 生成规则
+
+每个 section 转成两个 block：
+
+paragraph block
+image block
+
+例如：
+
+{
+  "contentBlocks": [
+    {
+      "type": "paragraph",
+      "sectionId": "s1",
+      "text": "最近我测试了一个AI女装带货项目。"
+    },
+    {
+      "type": "image",
+      "sectionId": "s1",
+      "imagePath": "app-data/frames/xxx/s1_12.5.jpg",
+      "time": 12.5,
+      "caption": "这一段介绍视频主题"
+    }
+  ]
+}
+11. 后端核心服务设计
+11.1 ffmpeg.service.ts
+
+负责：
+
+1. 抽 MP3
+2. 切 MP3
+3. 抽视频帧
+
+核心方法：
+
+extractMp3(videoPath, outputMp3Path)
+splitMp3(audioPath, outputDir, segmentSeconds)
+extractFrameAt(videoPath, timeSeconds, outputImagePath)
+11.2 doubao-asr.service.ts
+
+负责：
+
+1. 读取 MP3 文件
+2. 转 Base64
+3. 调豆包 ASR
+4. 返回 utterances
+
+核心方法：
+
+recognizeMp3ByDoubao(audioPath)
+11.3 transcript.service.ts
+
+负责：
+
+1. 判断音频大小
+2. 小音频直接识别
+3. 大音频切片识别
+4. 合并时间戳
+5. 输出 TranscriptResult
+
+核心方法：
+
+transcribeAudio(audioPath, chunkOutputDir)
+11.4 llm.service.ts
+
+负责：
+
+1. 构建 prompt
+2. 调 LLM
+3. 解析 JSON
+4. 输出 title + sections
+
+核心方法：
+
+generateSectionsByLlm(segments)
+11.5 post.service.ts
+
+负责总编排：
+
+1. 复制视频
+2. 抽 MP3
+3. ASR
+4. LLM 生成 sections
+5. 抽图
+6. 构建 contentBlocks
+7. 保存 draft JSON
+8. 返回 PostDraft
+
+核心方法：
+
+generatePostFromVideo(videoPath, onProgress)
+12. Electron IPC 设计
+
+Renderer 不能直接访问 Node.js。
+
+通过 preload 暴露 API：
+
+window.desktopApi.selectVideo()
+window.desktopApi.generatePost(videoPath)
+window.desktopApi.onTaskProgress(callback)
+IPC 通道
+video:select        打开文件选择器
+post:generate       生成图文稿
+task:progress       后端推送任务进度
+13. 前端页面设计
+13.1 首页：工具箱入口
+
+启动后先进入首页。
+
+首页展示工具卡片：
+
+AI 自媒体工具箱
+
+常用工具：
+- 视频转图文       可用
+- 图文改写         即将上线
+- 爆款标题生成     即将上线
+- 封面文案生成     即将上线
+
+点击 视频转图文 进入 /tools/video-to-post。
+
+13.2 视频转图文页面
+
+页面布局：
+
+左侧：
+  返回工具箱
+  当前工具信息
+  选择视频按钮
+  开始生成按钮
+
+中间：
+  图文预览区
+
+底部：
+  任务进度条
+
+图文展示：
+
+标题
+
+段落1
+图片1
+
+段落2
+图片2
+
+段落3
+图片3
+14. 前端路由
+
+安装：
+
+npm install vue-router
+
+路由：
+
+import { createRouter, createWebHashHistory } from "vue-router";
+import HomePage from "../pages/HomePage.vue";
+import VideoToPostPage from "../pages/VideoToPostPage.vue";
+
+export const router = createRouter({
+  history: createWebHashHistory(),
+  routes: [
+    {
+      path: "/",
+      name: "home",
+      component: HomePage
+    },
+    {
+      path: "/tools/video-to-post",
+      name: "video-to-post",
+      component: VideoToPostPage
+    }
+  ]
+});
+15. App.vue 结构
+<script setup lang="ts">
+import AppTitleBar from "./components/AppTitleBar.vue";
+</script>
+
+<template>
+  <div class="app-shell">
+    <AppTitleBar />
+    <main class="app-main">
+      <router-view />
+    </main>
+  </div>
+</template>
+
+<style scoped>
+.app-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #111318;
+  color: #e5e7eb;
+}
+
+.app-main {
+  flex: 1;
+  overflow: hidden;
+}
+</style>
+16. 环境变量
+
+.env
+
+DOUBAO_ASR_API_KEY=你的豆包ASR_KEY
+DOUBAO_ASR_RESOURCE_ID=volc.bigasr.auc_turbo
+DOUBAO_UID=video-to-post-user
+
+LLM_BASE_URL=https://api.deepseek.com
+LLM_API_KEY=你的LLM_KEY
+LLM_MODEL=deepseek-chat
+
+注意：
+
+1. 密钥只允许在 Electron Main Process 使用
+2. 不允许暴露给 Renderer
+3. Renderer 只能通过 IPC 调用后端能力
+17. package.json 依赖
+{
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "latest",
+    "@electron-toolkit/utils": "latest",
+    "axios": "latest",
+    "dotenv": "latest",
+    "electron": "latest",
+    "vue": "latest",
+    "vue-router": "latest"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "electron-vite": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vue-tsc": "latest"
+  }
+}
+18. 给 Codex 的完整开发指令
+
+你可以把下面这段直接复制给 Codex：
+
+请开发一个 Electron + Vue3 + TypeScript 的桌面工具 MVP，项目名 video-to-post。
+
+项目定位：
+这是一个 AI 自媒体工具箱。启动后先进入工具箱首页，首页展示多个工具卡片。第一版只实现“视频转图文”工具，其他工具显示“即将上线”。
+
+技术要求：
+1. 使用 electron-vite。
+2. 使用 Vue3 + TypeScript。
+3. Electron Main Process 负责所有后端逻辑。
+4. Renderer 不能直接访问 Node.js API。
+5. 通过 preload 暴露 desktopApi。
+6. 不要启动 Express。
+7. 不要使用 SQLite。
+8. 第一版只用本地文件系统保存产物。
+9. 使用 FFmpeg 处理视频和音频。
+10. 使用豆包 ASR 极速版识别音频。
+11. 使用 OpenAI-compatible LLM API 生成图文段落。
+
+前端要求：
+1. App 启动后进入工具箱首页。
+2. 首页有 4 个工具卡片：
+   - 视频转图文：可点击
+   - 图文改写：禁用，显示即将上线
+   - 爆款标题生成：禁用，显示即将上线
+   - 封面文案生成：禁用，显示即将上线
+3. 点击视频转图文进入 /tools/video-to-post。
+4. 视频转图文页面左侧有：
+   - 返回工具箱按钮
+   - 选择视频按钮
+   - 开始生成按钮
+5. 中间展示图文预览结果。
+6. 底部展示任务进度条。
+7. 整体 UI 使用深色桌面工具风格。
+
+后端流程：
+1. 用户选择本地视频文件。
+2. 将视频复制到 app-data/videos/{draftId}/。
+3. 使用 FFmpeg 抽取 MP3：
+   ffmpeg -y -i input.mp4 -vn -ac 1 -ar 16000 -b:a 64k output.mp3
+4. 判断 MP3 文件大小。
+5. 如果 MP3 <= 20MB：
+   - 读取文件 Buffer
+   - 转 Base64
+   - 调用豆包 ASR
+6. 如果 MP3 > 20MB：
+   - 使用 FFmpeg 切成 5 分钟一段：
+     ffmpeg -y -i output.mp3 -f segment -segment_time 300 -reset_timestamps 1 chunks/chunk_%03d.mp3
+   - 每段单独转 Base64
+   - 每段单独调用豆包 ASR
+   - 合并结果时给时间戳加 chunkOffset
+7. 豆包 ASR 返回 utterances 后，把 start_time/end_time 从毫秒转秒。
+8. 得到统一 TranscriptResult：
+   {
+     provider: "doubao",
+     fullText: "...",
+     segments: [
+       { segmentId, start, end, text }
+     ]
+   }
+9. 调用 LLM，根据 segments 生成 JSON：
+   {
+     title: "标题",
+     sections: [
+       {
+         sectionId: "s1",
+         paragraph: "正文段落",
+         sourceSegmentIds: ["seg_00001"],
+         sourceTimeRanges: [
+           { start: 0.5, end: 8.2, reason: "这一段介绍主题" }
+         ]
+       }
+     ]
+   }
+10. 每个 section 第一版只取第一个 sourceTimeRange。
+11. 计算 midpoint = (start + end) / 2。
+12. 使用 FFmpeg 从原视频抽图：
+    ffmpeg -y -ss {midpoint} -i input.mp4 -frames:v 1 -q:v 2 frame.jpg
+13. 生成 contentBlocks：
+    [
+      { type: "paragraph", sectionId, text },
+      { type: "image", sectionId, imagePath, time, caption }
+    ]
+14. 保存 draft JSON 到 app-data/drafts/{draftId}.json。
+15. 返回 PostDraft 给前端展示。
+
+IPC 要求：
+1. video:select
+   - 打开系统文件选择器
+   - 支持 mp4、mov、mkv、avi
+2. post:generate
+   - 输入 videoPath
+   - 执行完整生成流程
+   - 返回 PostDraft
+3. task:progress
+   - 后端推送任务进度给前端
+
+任务进度状态：
+- idle
+- copying_video
+- extracting_audio
+- splitting_audio
+- transcribing
+- generating_sections
+- extracting_frames
+- building_post
+- completed
+- failed
+
+目录结构：
+请按照以下结构创建：
+src/main/index.ts
+src/main/ipc.ts
+src/main/services/ffmpeg.service.ts
+src/main/services/doubao-asr.service.ts
+src/main/services/transcript.service.ts
+src/main/services/llm.service.ts
+src/main/services/post.service.ts
+src/main/types/app.types.ts
+src/preload/index.ts
+src/renderer/src/main.ts
+src/renderer/src/App.vue
+src/renderer/src/router/index.ts
+src/renderer/src/pages/HomePage.vue
+src/renderer/src/pages/VideoToPostPage.vue
+src/renderer/src/components/AppTitleBar.vue
+src/renderer/src/components/ToolCard.vue
+src/renderer/src/components/VideoImporter.vue
+src/renderer/src/components/TaskProgress.vue
+src/renderer/src/components/PostPreview.vue
+src/renderer/src/components/ContentBlock.vue
+src/renderer/src/api/desktop-api.ts
+src/renderer/src/styles/global.css
+
+验收标准：
+1. npm run dev 能启动桌面应用。
+2. 启动后先进入工具箱首页。
+3. 点击“视频转图文”能进入工具页。
+4. 能选择本地视频。
+5. 点击开始生成后能看到进度变化。
+6. 能生成 MP3。
+7. 能调用豆包 ASR 得到带时间戳 segments。
+8. 能调用 LLM 得到 title + sections + sourceTimeRanges。
+9. 能根据 midpoint 抽图。
+10. 前端能展示标题、段落、图片、段落、图片。
+11. 不实现波形图、OCR、复杂编辑器、自动发布、SQLite。
+19. 第一版完成后的效果
+
+用户看到的是：
+
+AI 自媒体工具箱
+  ├── 视频转图文        可用
+  ├── 图文改写          即将上线
+  ├── 爆款标题生成      即将上线
+  └── 封面文案生成      即将上线
+
+点击 视频转图文 后：
+
+选择视频
+  ↓
+开始生成
+  ↓
+正在抽取音频...
+  ↓
+正在识别语音...
+  ↓
+正在生成图文段落...
+  ↓
+正在抽取配图...
+  ↓
+完成
+
+最终展示：
+
+标题：xxxx
+
+正文段落 1
+
+[视频中抽取的图片 1]
+
+正文段落 2
+
+[视频中抽取的图片 2]
+
+正文段落 3
+
+[视频中抽取的图片 3]
+20. 后续第二版再做
+
+第一版跑通后，再升级这些：
+
+1. 每个 sourceTimeRange 都抽一张图
+2. 用户可以替换图片
+3. 支持导出 Markdown
+4. 支持导出 Word
+5. 支持复制小红书格式
+6. 增加右侧属性栏
+7. 增加草稿列表
+8. 增加本地 SQLite
+9. 增加软件授权
+10. 增加更多工具卡片
+
+现在先让 Codex 按这份做，目标就是把 视频 → 音频 → ASR → LLM → 抽图 → 图文混排 跑通。

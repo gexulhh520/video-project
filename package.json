@@ -1,0 +1,33 @@
+{
+  "name": "video-to-post",
+  "version": "0.1.0",
+  "description": "Desktop MVP for converting videos into mixed image-text post drafts.",
+  "main": "./out/main/index.js",
+  "author": "OpenAI Codex",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "vue-tsc --noEmit && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/utils": "^4.0.0",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "electron-log": "^5.4.0",
+    "uuid": "^11.1.0",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "electron": "^35.2.2",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vue-tsc": "^2.2.10"
+  }
+}

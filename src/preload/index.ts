@@ -1,15 +1,33 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, DraftSummary, FramePreviewResult, GeneratePostOptions, PostDraft, TaskProgress } from "../main/types/app.types";
+import type {
+  AppSettings,
+  DesktopApi,
+  DraftSummary,
+  FramePreviewResult,
+  GeneratePostOptions,
+  PostDraft,
+  TaskProgress,
+  VideoToPostConfigStatus,
+  VideoToPostSettings
+} from "../main/types/app.types";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
   selectImage: async () => ipcRenderer.invoke("image:select"),
+  selectDirectory: async () => ipcRenderer.invoke("directory:select"),
   generatePost: async (videoPath: string, options: GeneratePostOptions): Promise<PostDraft> =>
     ipcRenderer.invoke("post:generate", videoPath, options),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
   saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
   exportDraftToWord: async (draft: PostDraft): Promise<string | null> => ipcRenderer.invoke("draft:export-word", draft),
+  getAppSettings: async (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
+  saveAppSettings: async (settings: AppSettings): Promise<AppSettings> => ipcRenderer.invoke("settings:save", settings),
+  getVideoToPostSettings: async (): Promise<VideoToPostSettings> => ipcRenderer.invoke("video-to-post-settings:get"),
+  saveVideoToPostSettings: async (settings: VideoToPostSettings): Promise<VideoToPostSettings> =>
+    ipcRenderer.invoke("video-to-post-settings:save", settings),
+  getVideoToPostConfigStatus: async (): Promise<VideoToPostConfigStatus> =>
+    ipcRenderer.invoke("video-to-post-settings:status"),
   replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
   previewDraftFrame: async (draftId: string, timeSeconds: number): Promise<FramePreviewResult> =>

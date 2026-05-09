@@ -3,21 +3,38 @@ const props = defineProps<{
   selectedVideoPath: string | null;
   busy: boolean;
   frameOffsetSeconds: number;
+  configReady: boolean;
+  missingConfigItems: string[];
 }>();
 
 const emit = defineEmits<{
   select: [];
   generate: [];
   updateFrameOffset: [value: number];
+  openToolConfig: [];
 }>();
 </script>
 
 <template>
   <section class="importer-panel">
     <div class="panel-header">
-      <span class="kicker">工具操作</span>
-      <h2>视频转图文</h2>
-      <p>导入一个本地视频，自动抽音频、识别语音、生成段落并抽取配图。</p>
+      <div>
+        <span class="kicker">工具操作</span>
+        <h2>视频转图文</h2>
+        <p>导入一个本地视频，自动抽音频、识别语音、生成段落并抽取配图。</p>
+      </div>
+      <button class="config-link" @click="emit('openToolConfig')">
+        配置
+        <span v-if="!props.configReady" class="config-badge">未完成</span>
+      </button>
+    </div>
+
+    <div v-if="!props.configReady" class="config-alert">
+      <div>
+        <strong>先补全工具配置，才能开始生成</strong>
+        <p>当前还缺少：{{ props.missingConfigItems.join("、") }}</p>
+      </div>
+      <button class="alert-btn" @click="emit('openToolConfig')">去配置</button>
     </div>
 
     <div class="video-path">
@@ -34,12 +51,12 @@ const emit = defineEmits<{
         step="0.5"
         @input="emit('updateFrameOffset', Number(($event.target as HTMLInputElement).value))"
       />
-      <small>生成配图时，将从段落时间范围的 start 往后偏移这么多秒再抽帧。</small>
+      <small>生成配图时，会从段落时间范围的 start 往后偏移这么多秒再抽帧。</small>
     </label>
 
     <div class="actions">
       <button class="ghost-btn" @click="emit('select')">选择视频</button>
-      <button class="primary-btn" :disabled="!props.selectedVideoPath || props.busy" @click="emit('generate')">
+      <button class="primary-btn" :disabled="!props.selectedVideoPath || props.busy || !props.configReady" @click="emit('generate')">
         {{ props.busy ? "生成中..." : "开始生成" }}
       </button>
     </div>
@@ -53,6 +70,13 @@ const emit = defineEmits<{
   background: linear-gradient(180deg, rgba(14, 22, 40, 0.96), rgba(11, 17, 31, 0.94));
   border: 1px solid rgba(146, 180, 255, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .panel-header h2 {
@@ -71,6 +95,68 @@ const emit = defineEmits<{
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #78c0ff;
+}
+
+.config-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(145, 200, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: #91c8ff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.config-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 120, 120, 0.16);
+  color: #ffd3d3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.config-alert {
+  margin-top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 139, 93, 0.18);
+  background:
+    radial-gradient(circle at top right, rgba(255, 171, 106, 0.12), transparent 35%),
+    linear-gradient(180deg, rgba(255, 129, 87, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+.config-alert strong {
+  display: block;
+  color: #fff2e8;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.config-alert p {
+  margin: 0;
+  color: #ffc9ae;
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.alert-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 194, 149, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff1e5;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .video-path,

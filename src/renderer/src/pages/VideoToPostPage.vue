@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { DraftSummary, FramePreviewResult, GeneratePostOptions, PostDraft, TaskProgress } from "../../../main/types/app.types";
+import type {
+  AppSettings,
+  DraftSummary,
+  FramePreviewResult,
+  GeneratePostOptions,
+  PostDraft,
+  TaskProgress,
+  VideoToPostConfigStatus,
+  VideoToPostSettings
+} from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
+import AppSettingsModal from "../components/AppSettingsModal.vue";
 import DraftEditor from "../components/DraftEditor.vue";
 import DraftShelfModal from "../components/DraftShelfModal.vue";
 import FramePickerModal from "../components/FramePickerModal.vue";
 import PostPreview from "../components/PostPreview.vue";
 import TaskProgressBar from "../components/TaskProgress.vue";
 import VideoImporter from "../components/VideoImporter.vue";
+import VideoToPostSettingsModal from "../components/VideoToPostSettingsModal.vue";
 
 const router = useRouter();
 const selectedVideoPath = ref<string | null>(null);
@@ -17,6 +28,13 @@ const drafts = ref<DraftSummary[]>([]);
 const activeDraftId = ref<string | null>(null);
 const loadingDrafts = ref(false);
 const draftModalOpen = ref(false);
+const settingsOpen = ref(false);
+const settingsSaving = ref(false);
+const appSettings = ref<AppSettings | null>(null);
+const toolSettingsOpen = ref(false);
+const toolSettingsSaving = ref(false);
+const videoToPostSettings = ref<VideoToPostSettings | null>(null);
+const videoToPostConfigStatus = ref<VideoToPostConfigStatus | null>(null);
 const busy = ref(false);
 const savingDraft = ref(false);
 const exportingWord = ref(false);
@@ -53,11 +71,93 @@ onMounted(() => {
   });
 
   void refreshDrafts(true);
+  void loadSettings();
+  void loadVideoToPostConfigStatus();
 });
 
 onBeforeUnmount(() => {
   unsubscribe?.();
 });
+
+async function loadSettings(): Promise<void> {
+  appSettings.value = await desktopApi.getAppSettings();
+}
+
+async function loadVideoToPostSettings(): Promise<void> {
+  videoToPostSettings.value = await desktopApi.getVideoToPostSettings();
+}
+
+async function loadVideoToPostConfigStatus(): Promise<void> {
+  videoToPostConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
+}
+
+async function openSettings(): Promise<void> {
+  errorMessage.value = "";
+  await loadSettings();
+  settingsOpen.value = true;
+}
+
+async function browseWorkspaceDir(): Promise<void> {
+  const nextDirectory = await desktopApi.selectDirectory();
+  if (!nextDirectory) {
+    return;
+  }
+
+  appSettings.value = {
+    workspaceDir: nextDirectory
+  };
+}
+
+async function saveSettings(nextSettings: AppSettings): Promise<void> {
+  settingsSaving.value = true;
+  errorMessage.value = "";
+
+  try {
+    appSettings.value = await desktopApi.saveAppSettings(nextSettings);
+    settingsOpen.value = false;
+    draft.value = null;
+    activeDraftId.value = null;
+    progress.value = {
+      taskId: progress.value.taskId,
+      status: progress.value.status,
+      progress: progress.value.progress,
+      message: `空间目录已更新为 ${appSettings.value.workspaceDir}`
+    };
+    await refreshDrafts();
+    await loadVideoToPostConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "保存设置失败";
+  } finally {
+    settingsSaving.value = false;
+  }
+}
+
+async function openToolConfig(): Promise<void> {
+  errorMessage.value = "";
+  await loadVideoToPostSettings();
+  toolSettingsOpen.value = true;
+}
+
+async function saveToolSettings(nextSettings: VideoToPostSettings): Promise<void> {
+  toolSettingsSaving.value = true;
+  errorMessage.value = "";
+
+  try {
+    videoToPostSettings.value = await desktopApi.saveVideoToPostSettings(nextSettings);
+    toolSettingsOpen.value = false;
+    await loadVideoToPostConfigStatus();
+    progress.value = {
+      taskId: progress.value.taskId,
+      status: progress.value.status,
+      progress: progress.value.progress,
+      message: "视频转图文私有配置已保存"
+    };
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "保存工具配置失败";
+  } finally {
+    toolSettingsSaving.value = false;
+  }
+}
 
 async function handleSelectVideo(): Promise<void> {
   errorMessage.value = "";
@@ -75,6 +175,11 @@ function updateFrameOffset(value: number): void {
 
 async function handleGenerate(): Promise<void> {
   if (!selectedVideoPath.value || busy.value) {
+    return;
+  }
+
+  if (!videoToPostConfigStatus.value?.ready) {
+    errorMessage.value = "当前工具配置未完成，请先补全 Key 后再开始生成。";
     return;
   }
 
@@ -350,13 +455,22 @@ function toggleImmersiveEditor(): void {
         :selected-video-path="selectedVideoPath"
         :busy="busy"
         :frame-offset-seconds="frameOffsetSeconds"
+        :config-ready="videoToPostConfigStatus?.ready ?? false"
+        :missing-config-items="videoToPostConfigStatus?.missingItems ?? []"
         @select="handleSelectVideo"
         @generate="handleGenerate"
         @update-frame-offset="updateFrameOffset"
+        @open-tool-config="openToolConfig"
       />
+
+      <div class="workspace-card" v-if="appSettings">
+        <span>当前空间目录</span>
+        <strong>{{ appSettings.workspaceDir }}</strong>
+      </div>
 
       <div class="quick-actions">
         <button class="draft-trigger-btn" @click="openDraftModal">打开草稿箱</button>
+        <button class="draft-trigger-btn" @click="openSettings">全局设置</button>
         <button class="export-btn" :disabled="!draft || exportingWord" @click="handleExportWord">
           {{ exportingWord ? "正在导出 Word..." : "导出到 Word" }}
         </button>
@@ -427,6 +541,23 @@ function toggleImmersiveEditor(): void {
       @open-draft="openDraft"
       @refresh="refreshDrafts"
     />
+
+    <AppSettingsModal
+      :open="settingsOpen"
+      :settings="appSettings"
+      :saving="settingsSaving"
+      @close="settingsOpen = false"
+      @browse="browseWorkspaceDir"
+      @save="saveSettings"
+    />
+
+    <VideoToPostSettingsModal
+      :open="toolSettingsOpen"
+      :settings="videoToPostSettings"
+      :saving="toolSettingsSaving"
+      @close="toolSettingsOpen = false"
+      @save="saveToolSettings"
+    />
   </section>
 </template>
 
@@ -472,6 +603,26 @@ function toggleImmersiveEditor(): void {
 .export-btn:disabled {
   opacity: 0.56;
   cursor: not-allowed;
+}
+
+.workspace-card {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.workspace-card span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #86a8d5;
+}
+
+.workspace-card strong {
+  display: block;
+  line-height: 1.6;
+  word-break: break-all;
 }
 
 .quick-actions {

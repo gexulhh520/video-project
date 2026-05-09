@@ -1,12 +1,9 @@
-import { copyFile, mkdir, readFile, readdir, rm, writeFile, access } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { constants } from "node:fs";
+import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { spawn } from "node:child_process";
 import { v4 as uuidv4 } from "uuid";
-import { FfmpegService } from "./ffmpeg.service";
-import { TranscriptService } from "./transcript.service";
-import { LlmService } from "./llm.service";
 import type {
   ContentBlock,
   DraftSummary,
@@ -15,18 +12,19 @@ import type {
   PostDraft,
   TaskProgress
 } from "../types/app.types";
+import { FfmpegService } from "./ffmpeg.service";
+import { LlmService } from "./llm.service";
+import { SettingsService } from "./settings.service";
+import { TranscriptService } from "./transcript.service";
 
 const DEFAULT_FRAME_OFFSET_SECONDS = 2;
 
 export class PostService {
-  private readonly appDataRoot = resolve(process.cwd(), "app-data");
-  private readonly draftsDir = join(this.appDataRoot, "drafts");
-  private readonly videosDir = join(this.appDataRoot, "videos");
-
   constructor(
     private readonly ffmpegService: FfmpegService,
     private readonly transcriptService: TranscriptService,
-    private readonly llmService: LlmService
+    private readonly llmService: LlmService,
+    private readonly settingsService: SettingsService
   ) {}
 
   async generatePostFromVideo(
@@ -35,10 +33,12 @@ export class PostService {
     onProgress?: (progress: TaskProgress) => void
   ): Promise<PostDraft> {
     const draftId = uuidv4();
-    const videoDir = join(this.appDataRoot, "videos", draftId);
-    const audioDir = join(this.appDataRoot, "audios", draftId);
-    const chunkDir = join(this.appDataRoot, "chunks", draftId);
-    const frameDir = join(this.appDataRoot, "frames", draftId);
+    const workspaceDir = await this.getWorkspaceDir();
+    const draftsDir = join(workspaceDir, "drafts");
+    const videoDir = join(workspaceDir, "videos", draftId);
+    const audioDir = join(workspaceDir, "audios", draftId);
+    const chunkDir = join(workspaceDir, "chunks", draftId);
+    const frameDir = join(workspaceDir, "frames", draftId);
     const fileName = basename(sourceVideoPath);
     const copiedVideoPath = join(videoDir, fileName);
     const audioPath = join(audioDir, `${basename(fileName, extname(fileName))}.mp3`);
@@ -48,14 +48,14 @@ export class PostService {
       mkdir(audioDir, { recursive: true }),
       mkdir(chunkDir, { recursive: true }),
       mkdir(frameDir, { recursive: true }),
-      mkdir(this.draftsDir, { recursive: true })
+      mkdir(draftsDir, { recursive: true })
     ]);
 
     onProgress?.({
       taskId: draftId,
       status: "copying_video",
       progress: 8,
-      message: "正在复制原始视频到工作目录"
+      message: "正在复制原视频到空间目录"
     });
     await copyFile(sourceVideoPath, copiedVideoPath);
 
@@ -63,7 +63,7 @@ export class PostService {
       taskId: draftId,
       status: "extracting_audio",
       progress: 18,
-      message: "正在抽取 MP3 音频"
+      message: "正在提取 MP3 音频"
     });
     await this.ffmpegService.extractMp3(copiedVideoPath, audioPath);
 
@@ -93,7 +93,7 @@ export class PostService {
         text: section.paragraph
       });
 
-      const firstRange = section.sourceTimeRanges[0] ?? { start: 0, end: 0, reason: "自动兜底图片" };
+      const firstRange = section.sourceTimeRanges[0] ?? { start: 0, end: 0, reason: "自动兜底配图" };
       const requestedOffsetSeconds = Number.isFinite(options?.frameOffsetSeconds)
         ? Math.max(options?.frameOffsetSeconds ?? DEFAULT_FRAME_OFFSET_SECONDS, 0)
         : DEFAULT_FRAME_OFFSET_SECONDS;
@@ -146,14 +146,16 @@ export class PostService {
   }
 
   async listDrafts(): Promise<DraftSummary[]> {
-    await mkdir(this.draftsDir, { recursive: true });
-    const files = await readdir(this.draftsDir);
+    const draftsDir = await this.getDraftsDir();
+    await mkdir(draftsDir, { recursive: true });
+    const files = await readdir(draftsDir);
+
     const drafts = await Promise.all(
       files
         .filter((file) => file.endsWith(".json"))
         .map(async (file) => {
-          const content = await readFile(join(this.draftsDir, file), "utf8");
-          const draft = this.normalizeDraft(JSON.parse(content) as PostDraft);
+          const content = await readFile(join(draftsDir, file), "utf8");
+          const draft = await this.normalizeDraft(JSON.parse(content) as PostDraft);
           const coverImagePath = draft.contentBlocks.find((block) => block.type === "image")?.imagePath;
 
           return {
@@ -170,22 +172,25 @@ export class PostService {
   }
 
   async getDraftById(draftId: string): Promise<PostDraft> {
-    await mkdir(this.draftsDir, { recursive: true });
-    const draftPath = join(this.draftsDir, `${draftId}.json`);
+    const draftsDir = await this.getDraftsDir();
+    await mkdir(draftsDir, { recursive: true });
+    const draftPath = join(draftsDir, `${draftId}.json`);
     const content = await readFile(draftPath, "utf8");
     return this.normalizeDraft(JSON.parse(content) as PostDraft);
   }
 
   async saveDraft(draft: PostDraft): Promise<PostDraft> {
-    await mkdir(this.draftsDir, { recursive: true });
-    const normalizedDraft = this.normalizeDraft(draft, true);
-    await writeFile(join(this.draftsDir, `${normalizedDraft.draftId}.json`), JSON.stringify(normalizedDraft, null, 2), "utf8");
+    const draftsDir = await this.getDraftsDir();
+    await mkdir(draftsDir, { recursive: true });
+    const normalizedDraft = await this.normalizeDraft(draft, true);
+    await writeFile(join(draftsDir, `${normalizedDraft.draftId}.json`), JSON.stringify(normalizedDraft, null, 2), "utf8");
     return normalizedDraft;
   }
 
   async exportDraftToWord(draft: PostDraft, outputPath: string): Promise<string> {
-    const normalizedDraft = this.normalizeDraft(draft, true);
-    const exportTempDir = join(this.appDataRoot, "exports", "tmp", normalizedDraft.draftId);
+    const normalizedDraft = await this.normalizeDraft(draft, true);
+    const workspaceDir = await this.getWorkspaceDir();
+    const exportTempDir = join(workspaceDir, "exports", "tmp", normalizedDraft.draftId);
     const tempDraftJsonPath = join(exportTempDir, `draft-${Date.now()}.json`);
 
     await mkdir(exportTempDir, { recursive: true });
@@ -209,7 +214,8 @@ export class PostService {
       throw new Error("未找到要替换的图片块。");
     }
 
-    const frameDir = join(this.appDataRoot, "frames", draftId);
+    const workspaceDir = await this.getWorkspaceDir();
+    const frameDir = join(workspaceDir, "frames", draftId);
     await mkdir(frameDir, { recursive: true });
 
     const extension = extname(sourceImagePath) || ".jpg";
@@ -229,7 +235,8 @@ export class PostService {
       throw new Error("当前草稿缺少原视频路径，无法从视频重新选帧。");
     }
 
-    const frameDir = join(this.appDataRoot, "frames", draftId);
+    const workspaceDir = await this.getWorkspaceDir();
+    const frameDir = join(workspaceDir, "frames", draftId);
     await mkdir(frameDir, { recursive: true });
     const previewPath = join(frameDir, `__preview_${Math.round(timeSeconds * 1000)}.jpg`);
     await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, previewPath);
@@ -255,7 +262,8 @@ export class PostService {
       throw new Error("未找到要替换的图片块。");
     }
 
-    const frameDir = join(this.appDataRoot, "frames", draftId);
+    const workspaceDir = await this.getWorkspaceDir();
+    const frameDir = join(workspaceDir, "frames", draftId);
     await mkdir(frameDir, { recursive: true });
     const outputPath = join(frameDir, `${blockId}_frame_${timeSeconds.toFixed(3).replace(".", "_")}.jpg`);
     await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, outputPath);
@@ -266,6 +274,18 @@ export class PostService {
     targetBlock.caption = `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
 
     return this.saveDraft(draft);
+  }
+
+  private async getWorkspaceDir(): Promise<string> {
+    return (await this.settingsService.getSettings()).workspaceDir;
+  }
+
+  private async getDraftsDir(): Promise<string> {
+    return join(await this.getWorkspaceDir(), "drafts");
+  }
+
+  private async getVideosDir(): Promise<string> {
+    return join(await this.getWorkspaceDir(), "videos");
   }
 
   private async runWordExportScript(draftJsonPath: string, outputPath: string): Promise<void> {
@@ -317,7 +337,7 @@ export class PostService {
     }
   }
 
-  private normalizeDraft(draft: PostDraft, touchUpdatedAt = false): PostDraft {
+  private async normalizeDraft(draft: PostDraft, touchUpdatedAt = false): Promise<PostDraft> {
     const sections = draft.sections.map((section) => ({
       ...section,
       paragraph: section.paragraph ?? "",
@@ -341,7 +361,8 @@ export class PostService {
     });
 
     const nowIso = new Date().toISOString();
-    const fallbackVideoPath = draft.sourceVideoPath ?? this.resolveStoredVideoPath(draft.draftId);
+    const fallbackVideoPath = draft.sourceVideoPath ?? (await this.resolveStoredVideoPath(draft.draftId));
+
     return {
       ...draft,
       sections,
@@ -352,14 +373,11 @@ export class PostService {
     };
   }
 
-  private resolveStoredVideoPath(draftId: string): string | undefined {
-    const draftVideoDir = join(this.videosDir, draftId);
+  private async resolveStoredVideoPath(draftId: string): Promise<string | undefined> {
+    const draftVideoDir = join(await this.getVideosDir(), draftId);
 
     try {
-      const entries = require("node:fs").readdirSync(draftVideoDir, { withFileTypes: true }) as Array<{
-        isFile: () => boolean;
-        name: string;
-      }>;
+      const entries = await readdir(draftVideoDir, { withFileTypes: true });
       const fileEntry = entries.find((entry) => entry.isFile());
       return fileEntry ? join(draftVideoDir, fileEntry.name) : undefined;
     } catch {

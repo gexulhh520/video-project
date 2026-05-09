@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import { SettingsService } from "./settings.service";
 
 type DoubaoUtterance = {
   text?: string;
@@ -19,14 +20,18 @@ type DoubaoResponse = {
 };
 
 export class DoubaoAsrService {
-  private readonly apiKey = process.env.DOUBAO_ASR_API_KEY;
   private readonly baseUrl =
     process.env.DOUBAO_ASR_BASE_URL ?? "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
   private readonly resourceId = process.env.DOUBAO_ASR_RESOURCE_ID ?? "volc.bigasr.auc_turbo";
   private readonly uid = process.env.DOUBAO_UID ?? "video-to-post-user";
 
+  constructor(private readonly settingsService: SettingsService) {}
+
   async recognizeMp3ByDoubao(audioPath: string): Promise<DoubaoUtterance[]> {
-    if (!this.apiKey) {
+    const toolSettings = await this.settingsService.getVideoToPostSettings();
+    const apiKey = toolSettings.doubaoAsrApiKey || process.env.DOUBAO_ASR_API_KEY;
+
+    if (!apiKey) {
       throw new Error("Missing DOUBAO_ASR_API_KEY.");
     }
 
@@ -51,7 +56,7 @@ export class DoubaoAsrService {
       },
       {
         headers: {
-          "X-Api-Key": this.apiKey,
+          "X-Api-Key": apiKey,
           "X-Api-Resource-Id": this.resourceId,
           "X-Api-Request-Id": requestId,
           "X-Api-Sequence": "-1",

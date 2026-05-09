@@ -1,5 +1,6 @@
 import axios from "axios";
 import type { ArticleSection, LlmSectionsResult, TranscriptSegment } from "../types/app.types";
+import { SettingsService } from "./settings.service";
 
 type OpenAiLikeResponse = {
   choices?: Array<{
@@ -58,18 +59,22 @@ function buildUserPrompt(segments: TranscriptSegment[]): string {
 
 export class LlmService {
   private readonly baseUrl = process.env.LLM_BASE_URL;
-  private readonly apiKey = process.env.LLM_API_KEY;
-  private readonly model = process.env.LLM_MODEL ?? "deepseek-chat";
+
+  constructor(private readonly settingsService: SettingsService) {}
 
   async generateSectionsByLlm(segments: TranscriptSegment[]): Promise<LlmSectionsResult> {
-    if (!this.baseUrl || !this.apiKey) {
+    const toolSettings = await this.settingsService.getVideoToPostSettings();
+    const apiKey = toolSettings.llmApiKey || process.env.LLM_API_KEY;
+    const model = toolSettings.llmModel || process.env.LLM_MODEL || "deepseek-v4-flash";
+
+    if (!this.baseUrl || !apiKey) {
       throw new Error("Missing LLM_BASE_URL or LLM_API_KEY.");
     }
 
     const response = await axios.post<OpenAiLikeResponse>(
       `${this.baseUrl.replace(/\/$/, "")}/chat/completions`,
       {
-        model: this.model,
+        model,
         temperature: 0.7,
         response_format: {
           type: "json_object"
@@ -87,7 +92,7 @@ export class LlmService {
       },
       {
         headers: {
-          Authorization: `Bearer ${this.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         timeout: 120000

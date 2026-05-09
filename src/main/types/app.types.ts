@@ -71,6 +71,25 @@ export type GeneratePostOptions = {
   frameOffsetSeconds: number;
 };
 
+export type AppSettings = {
+  workspaceDir: string;
+  videoToPost?: VideoToPostSettings;
+};
+
+export type VideoToPostSettings = {
+  doubaoAsrApiKey: string;
+  llmApiKey: string;
+  llmModel: string;
+};
+
+export type VideoToPostConfigStatus = {
+  ready: boolean;
+  hasDoubaoAsrApiKey: boolean;
+  hasLlmApiKey: boolean;
+  resolvedLlmModel: string;
+  missingItems: string[];
+};
+
 export type TaskStatus =
   | "idle"
   | "copying_video"
@@ -98,11 +117,17 @@ export type LlmSectionsResult = {
 export type DesktopApi = {
   selectVideo: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
+  selectDirectory: () => Promise<string | null>;
   generatePost: (videoPath: string, options: GeneratePostOptions) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
   exportDraftToWord: (draft: PostDraft) => Promise<string | null>;
+  getAppSettings: () => Promise<AppSettings>;
+  saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
+  getVideoToPostSettings: () => Promise<VideoToPostSettings>;
+  saveVideoToPostSettings: (settings: VideoToPostSettings) => Promise<VideoToPostSettings>;
+  getVideoToPostConfigStatus: () => Promise<VideoToPostConfigStatus>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   previewDraftFrame: (draftId: string, timeSeconds: number) => Promise<FramePreviewResult>;
   replaceDraftImageFromFrame: (draftId: string, blockId: string, timeSeconds: number) => Promise<PostDraft>;

@@ -8,6 +8,7 @@ import { DoubaoAsrService } from "./services/doubao-asr.service";
 import { TranscriptService } from "./services/transcript.service";
 import { LlmService } from "./services/llm.service";
 import { PostService } from "./services/post.service";
+import { SettingsService } from "./services/settings.service";
 
 dotenv.config();
 
@@ -33,12 +34,13 @@ function createWindow(): void {
     return { action: "deny" };
   });
 
+  const settingsService = new SettingsService();
   const ffmpegService = new FfmpegService();
-  const doubaoAsrService = new DoubaoAsrService();
+  const doubaoAsrService = new DoubaoAsrService(settingsService);
   const transcriptService = new TranscriptService(ffmpegService, doubaoAsrService);
-  const llmService = new LlmService();
-  const postService = new PostService(ffmpegService, transcriptService, llmService);
-  registerIpcHandlers(mainWindow, postService);
+  const llmService = new LlmService(settingsService);
+  const postService = new PostService(ffmpegService, transcriptService, llmService, settingsService);
+  registerIpcHandlers(mainWindow, postService, settingsService);
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);

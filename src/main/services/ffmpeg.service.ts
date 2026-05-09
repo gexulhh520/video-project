@@ -62,14 +62,22 @@ export class FfmpegService {
   }
 
   async getExecutablePath(): Promise<string> {
-    const localPath = resolve(process.cwd(), "resources", "ffmpeg", "win", "ffmpeg.exe");
+    const candidatePaths = [
+      resolve(process.cwd(), "resources", "ffmpeg", "win", "ffmpeg.exe"),
+      resolve(process.resourcesPath, "ffmpeg", "win", "ffmpeg.exe"),
+      resolve(process.resourcesPath, "resources", "ffmpeg", "win", "ffmpeg.exe")
+    ];
 
-    try {
-      await access(localPath, constants.X_OK);
-      return localPath;
-    } catch {
-      return "ffmpeg";
+    for (const candidatePath of candidatePaths) {
+      try {
+        await access(candidatePath, constants.X_OK);
+        return candidatePath;
+      } catch {
+        continue;
+      }
     }
+
+    return "ffmpeg";
   }
 
   private async run(args: string[]): Promise<void> {

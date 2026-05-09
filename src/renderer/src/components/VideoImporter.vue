@@ -44,13 +44,15 @@ const emit = defineEmits<{
 
     <label class="offset-field">
       <span>抽帧偏移秒数</span>
-      <input
-        :value="props.frameOffsetSeconds"
-        type="number"
-        min="0"
-        step="0.5"
-        @input="emit('updateFrameOffset', Number(($event.target as HTMLInputElement).value))"
-      />
+      <div class="offset-input-shell">
+        <input
+          :value="props.frameOffsetSeconds"
+          type="number"
+          min="0"
+          step="0.5"
+          @input="emit('updateFrameOffset', Number(($event.target as HTMLInputElement).value))"
+        />
+      </div>
       <small>生成配图时，会从段落时间范围的 start 往后偏移这么多秒再抽帧。</small>
     </label>
 
@@ -160,7 +162,7 @@ const emit = defineEmits<{
 }
 
 .video-path,
-.offset-field {
+.video-path {
   margin-top: 22px;
   padding: 18px 18px 20px;
   border-radius: 18px;
@@ -181,6 +183,19 @@ const emit = defineEmits<{
   font-size: 14px;
   line-height: 1.6;
   word-break: break-all;
+}
+
+.offset-field {
+  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.offset-input-shell {
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(124, 178, 255, 0.08);
+  border: 1px solid rgba(124, 178, 255, 0.12);
 }
 
 .offset-field input {

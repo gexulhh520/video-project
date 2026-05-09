@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { PostDraft } from "../../../main/types/app.types";
+import { desktopApi } from "../api/desktop-api";
 
 const props = defineProps<{
   draft: PostDraft | null;
@@ -16,11 +17,31 @@ const emit = defineEmits<{
 }>();
 
 const editableDraft = ref<PostDraft | null>(null);
+const imageUrls = ref<Record<string, string>>({});
 
 watch(
   () => props.draft,
   (draft) => {
     editableDraft.value = draft ? JSON.parse(JSON.stringify(draft)) : null;
+  },
+  { immediate: true }
+);
+
+watch(
+  () => editableDraft.value?.contentBlocks,
+  async (contentBlocks) => {
+    if (!contentBlocks) {
+      imageUrls.value = {};
+      return;
+    }
+
+    const nextEntries = await Promise.all(
+      contentBlocks
+        .filter((block): block is Extract<PostDraft["contentBlocks"][number], { type: "image" }> => block.type === "image")
+        .map(async (block) => [block.blockId, await desktopApi.readImageAsDataUrl(block.imagePath)] as const)
+    );
+
+    imageUrls.value = Object.fromEntries(nextEntries);
   },
   { immediate: true }
 );
@@ -114,6 +135,16 @@ function updateSectionParagraph(sectionId: string, value: string): void {
               @input="updateSectionParagraph(section.sectionId, ($event.target as HTMLTextAreaElement).value)"
             />
           </label>
+
+          <div class="current-image">
+            <span class="image-label">当前图片</span>
+            <img
+              v-if="imageUrls[imageBlocksBySection[section.sectionId]?.blockId]"
+              :src="imageUrls[imageBlocksBySection[section.sectionId]?.blockId]"
+              :alt="`${section.sectionId} 当前图片`"
+            />
+            <div v-else class="image-placeholder">图片加载中...</div>
+          </div>
 
           <div class="image-actions">
             <button
@@ -259,6 +290,34 @@ textarea {
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-top: 14px;
+}
+
+.current-image {
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.image-label {
+  display: block;
+  padding: 12px 14px 0;
+  color: #9db4d8;
+  font-size: 12px;
+}
+
+.current-image img,
+.image-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.image-placeholder {
+  color: #90a7cb;
 }
 
 .hint {

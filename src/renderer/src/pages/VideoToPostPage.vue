@@ -21,7 +21,6 @@ const savingDraft = ref(false);
 const replacingImageBlockId = ref<string | null>(null);
 const editorOpen = ref(false);
 const immersiveEditor = ref(false);
-const editorWidth = ref(460);
 const framePickerOpen = ref(false);
 const framePickerBlockId = ref<string | null>(null);
 const framePickerSectionLabel = ref("");
@@ -40,21 +39,10 @@ const progress = ref<TaskProgress>({
 const errorMessage = ref("");
 
 let unsubscribe: (() => void) | null = null;
-let cleanupResizeListeners: (() => void) | null = null;
 
-const pageStyle = computed(() => {
-  if (!editorOpen.value) {
-    return {
-      gridTemplateColumns: "380px minmax(0, 1fr)"
-    };
-  }
-
-  const sidebarWidth = immersiveEditor.value ? "300px" : "380px";
-  const previewWidth = immersiveEditor.value ? "minmax(360px, 0.82fr)" : "minmax(0, 1fr)";
-  return {
-    gridTemplateColumns: `${sidebarWidth} ${previewWidth} ${editorWidth.value}px`
-  };
-});
+const pageStyle = computed(() => ({
+  gridTemplateColumns: "380px minmax(0, 1fr)"
+}));
 
 onMounted(() => {
   unsubscribe = desktopApi.onTaskProgress((nextProgress) => {
@@ -66,7 +54,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   unsubscribe?.();
-  cleanupResizeListeners?.();
 });
 
 async function handleSelectVideo(): Promise<void> {
@@ -113,7 +100,6 @@ async function refreshDrafts(openLatest = false): Promise<void> {
 
   try {
     drafts.value = await desktopApi.listDrafts();
-
     if (openLatest && drafts.value.length > 0) {
       await openDraft(drafts.value[0].draftId);
     }
@@ -216,9 +202,12 @@ async function openFramePicker(blockId?: string): Promise<void> {
     return;
   }
 
-  const range = imageBlock.sourceTimeRange ?? draft.value.sections.find((section) => section.sectionId === imageBlock.sectionId)?.sourceTimeRanges[0];
+  const range =
+    imageBlock.sourceTimeRange ??
+    draft.value.sections.find((section) => section.sectionId === imageBlock.sectionId)?.sourceTimeRanges[0];
   const baseStart = range?.start ?? Math.max(imageBlock.time - 5, 0);
   const baseEnd = range?.end ?? imageBlock.time + 5;
+
   framePickerMinSeconds.value = Math.max(baseStart - 5, 0);
   framePickerMaxSeconds.value = Math.max(framePickerMinSeconds.value + 1, baseEnd + 5);
   framePickerTimeSeconds.value = Math.min(
@@ -304,41 +293,11 @@ function toggleImmersiveEditor(): void {
 
   immersiveEditor.value = !immersiveEditor.value;
 }
-
-function startEditorResize(event: MouseEvent): void {
-  if (!editorOpen.value) {
-    return;
-  }
-
-  event.preventDefault();
-  const startX = event.clientX;
-  const startWidth = editorWidth.value;
-
-  const onMouseMove = (moveEvent: MouseEvent): void => {
-    const delta = startX - moveEvent.clientX;
-    editorWidth.value = Math.min(760, Math.max(360, startWidth + delta));
-  };
-
-  const onMouseUp = (): void => {
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", onMouseUp);
-    cleanupResizeListeners = null;
-  };
-
-  cleanupResizeListeners?.();
-  cleanupResizeListeners = () => {
-    window.removeEventListener("mousemove", onMouseMove);
-    window.removeEventListener("mouseup", onMouseUp);
-  };
-
-  window.addEventListener("mousemove", onMouseMove);
-  window.addEventListener("mouseup", onMouseUp);
-}
 </script>
 
 <template>
-  <section class="video-page" :class="{ 'editor-open': editorOpen, immersive: immersiveEditor }" :style="pageStyle">
-    <aside class="sidebar" :class="{ compact: immersiveEditor }">
+  <section class="video-page" :style="pageStyle">
+    <aside class="sidebar">
       <button class="back-btn" @click="router.push('/')">返回工具箱</button>
       <VideoImporter :selected-video-path="selectedVideoPath" :busy="busy" @select="handleSelectVideo" @generate="handleGenerate" />
       <DraftShelf
@@ -349,33 +308,37 @@ function startEditorResize(event: MouseEvent): void {
         @refresh="refreshDrafts"
       />
 
+      <div class="mode-card">
+        <span class="mode-label">当前视图</span>
+        <strong>{{ editorOpen ? "编辑模式" : "预览模式" }}</strong>
+        <div class="mode-actions">
+          <button v-if="editorOpen" class="secondary-toggle-btn" :disabled="!draft" @click="toggleImmersiveEditor">
+            {{ immersiveEditor ? "退出沉浸" : "沉浸编辑" }}
+          </button>
+          <button class="editor-toggle-btn" :disabled="!draft" @click="toggleEditor">
+            {{ editorOpen ? "返回预览" : "进入编辑" }}
+          </button>
+        </div>
+      </div>
+
       <div v-if="errorMessage" class="error-card">
         <span class="label">错误信息</span>
         <strong>{{ errorMessage }}</strong>
       </div>
     </aside>
 
-    <div class="preview-column">
-      <div class="preview-toolbar">
-        <div class="toolbar-copy">
-          <span class="toolbar-label">当前视图</span>
-          <strong>{{ editorOpen ? "编辑模式" : "预览模式" }}</strong>
-        </div>
-        <div class="toolbar-actions">
-          <button v-if="editorOpen" class="secondary-toggle-btn" :disabled="!draft" @click="toggleImmersiveEditor">
-            {{ immersiveEditor ? "退出沉浸" : "沉浸编辑" }}
-          </button>
-          <button class="editor-toggle-btn" :disabled="!draft" @click="toggleEditor">
-            {{ editorOpen ? "关闭编辑" : "进入编辑" }}
-          </button>
-        </div>
-      </div>
+    <div v-if="!editorOpen" class="preview-column">
       <PostPreview :draft="draft" />
       <TaskProgressBar :progress="progress" />
     </div>
 
-    <div v-if="editorOpen" class="editor-column">
-      <div class="resize-handle" title="拖拽调整编辑区宽度" @mousedown="startEditorResize"></div>
+    <div v-else class="editor-column" :class="{ immersive: immersiveEditor }">
+      <div class="editor-toolbar">
+        <div>
+          <span class="toolbar-label">编辑工作台</span>
+          <strong>修改标题、段落、图片</strong>
+        </div>
+      </div>
       <DraftEditor
         :draft="draft"
         :saving="savingDraft"
@@ -409,7 +372,7 @@ function startEditorResize(event: MouseEvent): void {
   display: grid;
   gap: 24px;
   padding: 24px 28px 28px;
-  transition: grid-template-columns 180ms ease;
+  align-items: stretch;
 }
 
 .sidebar {
@@ -417,11 +380,7 @@ function startEditorResize(event: MouseEvent): void {
   flex-direction: column;
   gap: 18px;
   min-height: 0;
-  transition: opacity 180ms ease;
-}
-
-.sidebar.compact {
-  opacity: 0.92;
+  overflow: auto;
 }
 
 .back-btn {
@@ -435,19 +394,57 @@ function startEditorResize(event: MouseEvent): void {
   cursor: pointer;
 }
 
+.mode-card,
+.error-card {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mode-label,
+.label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #92abd1;
+}
+
+.mode-card strong {
+  display: block;
+  font-size: 14px;
+  color: #eef5ff;
+  margin-bottom: 12px;
+}
+
+.mode-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .preview-column {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   gap: 18px;
+  overflow: hidden;
 }
 
 .editor-column {
   min-height: 0;
-  position: relative;
+  width: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  overflow: hidden;
 }
 
-.preview-toolbar {
+.editor-column.immersive {
+  width: 100%;
+}
+
+.editor-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -458,26 +455,15 @@ function startEditorResize(event: MouseEvent): void {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.toolbar-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 .toolbar-label {
+  display: block;
+  margin-bottom: 6px;
   font-size: 12px;
   color: #92abd1;
 }
 
-.toolbar-copy strong {
-  font-size: 14px;
+.editor-toolbar strong {
   color: #eef5ff;
-}
-
-.toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .editor-toggle-btn {
@@ -508,52 +494,15 @@ function startEditorResize(event: MouseEvent): void {
   cursor: not-allowed;
 }
 
-.resize-handle {
-  position: absolute;
-  left: -14px;
-  top: 12px;
-  bottom: 12px;
-  width: 14px;
-  cursor: col-resize;
-}
-
-.resize-handle::before {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  border-radius: 999px;
-  background: rgba(123, 177, 255, 0.2);
-}
-
-.resize-handle:hover::before {
-  background: rgba(123, 177, 255, 0.46);
-}
-
 .error-card {
-  padding: 18px;
-  border-radius: 18px;
-  background: rgba(255, 106, 106, 0.08);
-  border: 1px solid rgba(255, 106, 106, 0.22);
   color: #ffd9d9;
-}
-
-.label {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: #ffb9b9;
+  border-color: rgba(255, 106, 106, 0.22);
+  background: rgba(255, 106, 106, 0.08);
 }
 
 @media (max-width: 1180px) {
   .video-page {
     grid-template-columns: 1fr !important;
-  }
-
-  .editor-column {
-    min-height: 640px;
   }
 }
 </style>

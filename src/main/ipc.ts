@@ -8,6 +8,7 @@ import type {
   GeneratePostOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
+  RewriteDraftOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
   SaveEditedFrameOptions,
@@ -139,6 +140,7 @@ export function registerIpcHandlers(
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );
   ipcMain.handle("paragraph:rewrite", async (_event, options: RewriteParagraphOptions) => postService.rewriteParagraph(options.paragraph));
+  ipcMain.handle("draft:rewrite", async (_event, options: RewriteDraftOptions) => postService.rewriteDraft(options));
   ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => webTaskService.listTasks());
   ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => webTaskService.getTaskById(taskId));
   ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => webTaskService.createTask(title));

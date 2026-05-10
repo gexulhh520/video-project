@@ -23,6 +23,11 @@ const rewriteError = ref<{
   sectionId: string;
   message: string;
 } | null>(null);
+const showRewriteDraftDialog = ref(false);
+const rewritingDraft = ref(false);
+const rewriteDraftError = ref("");
+const rewriteTitle = ref(true);
+const rewriteUserPrompt = ref("");
 
 watch(
   () => props.draft,
@@ -126,6 +131,31 @@ async function rewriteSectionParagraph(sectionId: string): Promise<void> {
     rewritingSectionId.value = null;
   }
 }
+
+async function rewriteWholeDraft(): Promise<void> {
+  if (!editableDraft.value || rewritingDraft.value) {
+    return;
+  }
+
+  rewritingDraft.value = true;
+  rewriteDraftError.value = "";
+
+  try {
+    const updatedDraft = await desktopApi.rewriteDraft({
+      draft: editableDraft.value,
+      userPrompt: rewriteUserPrompt.value,
+      rewriteTitle: rewriteTitle.value
+    });
+
+    editableDraft.value = JSON.parse(JSON.stringify(updatedDraft)) as PostDraft;
+    emit("change", JSON.parse(JSON.stringify(updatedDraft)) as PostDraft);
+    showRewriteDraftDialog.value = false;
+  } catch (error) {
+    rewriteDraftError.value = error instanceof Error ? error.message : "整体洗稿失败";
+  } finally {
+    rewritingDraft.value = false;
+  }
+}
 </script>
 
 <template>
@@ -142,9 +172,14 @@ async function rewriteSectionParagraph(sectionId: string): Promise<void> {
           <span class="eyebrow">Edit Mode</span>
           <h3>编辑草稿</h3>
         </div>
-        <button class="save-btn" :disabled="saving" @click="emit('save')">
-          {{ saving ? "保存中..." : "保存草稿" }}
-        </button>
+        <div class="header-actions">
+          <button class="rewrite-btn" :disabled="rewritingDraft" @click="showRewriteDraftDialog = true">
+            重新洗稿
+          </button>
+          <button class="save-btn" :disabled="saving" @click="emit('save')">
+            {{ saving ? "保存中..." : "保存草稿" }}
+          </button>
+        </div>
       </div>
 
       <label class="field">
@@ -214,6 +249,60 @@ async function rewriteSectionParagraph(sectionId: string): Promise<void> {
         </article>
       </div>
     </div>
+
+    <div v-if="showRewriteDraftDialog" class="modal-mask">
+      <div class="rewrite-dialog">
+        <div class="dialog-header">
+          <div>
+            <span class="eyebrow">Rewrite Draft</span>
+            <h3>整体重新洗稿</h3>
+          </div>
+          <button class="ghost-btn" @click="showRewriteDraftDialog = false">关闭</button>
+        </div>
+
+        <label class="check-row">
+          <input v-model="rewriteTitle" type="checkbox" />
+          <span>同时重写标题</span>
+        </label>
+
+        <label class="field">
+          <span>个性化洗稿要求</span>
+          <textarea
+            v-model="rewriteUserPrompt"
+            rows="8"
+            placeholder="示例：请改成适合微头条发布的风格，开头要更有冲突感，语言更口语化，每段不要太长，整体控制在 600 字以内，不要像新闻稿。"
+          />
+        </label>
+
+        <div class="prompt-examples">
+          <p>可参考示例：</p>
+          <button type="button" @click="rewriteUserPrompt = '请改成适合微头条发布的风格，开头要更有冲突感，语言更口语化，每段不要太长，整体控制在 600 字以内，不要像新闻稿。'">
+            微头条风格
+          </button>
+          <button type="button" @click="rewriteUserPrompt = '请改成适合公众号文章发布的风格，逻辑更完整，段落衔接更自然，开头要有吸引力，中间要有分析，结尾要有总结。'">
+            公众号文章风格
+          </button>
+          <button type="button" @click="rewriteUserPrompt = '请改成适合小红书图文笔记的风格，表达更有分享感和情绪感，语言自然一点，不要太官方。'">
+            小红书风格
+          </button>
+        </div>
+
+        <p class="hint">
+          整体洗稿会重写标题和所有段落，但不会改变图片、视频时间范围和段落顺序。
+        </p>
+
+        <p v-if="rewriteDraftError" class="inline-error">{{ rewriteDraftError }}</p>
+
+        <div class="dialog-footer">
+          <button class="ghost-btn" :disabled="rewritingDraft" @click="showRewriteDraftDialog = false">
+            取消
+          </button>
+          <button class="action-btn" :disabled="rewritingDraft" @click="rewriteWholeDraft">
+            {{ rewritingDraft ? "整体洗稿中..." : "开始整体洗稿" }}
+          </button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -244,6 +333,27 @@ async function rewriteSectionParagraph(sectionId: string): Promise<void> {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.rewrite-btn {
+  min-height: 42px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf3ff;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.rewrite-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
 }
 
 .eyebrow {
@@ -392,5 +502,85 @@ textarea {
   color: #ffb4b4;
   font-size: 12px;
   line-height: 1.5;
+}
+
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 8, 16, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.rewrite-dialog {
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(820px, calc(100vh - 48px));
+  padding: 24px;
+  overflow: auto;
+  border-radius: 28px;
+  border: 1px solid rgba(149, 181, 255, 0.16);
+  background: linear-gradient(180deg, rgba(14, 21, 36, 0.98), rgba(8, 13, 24, 0.98));
+  display: grid;
+  gap: 18px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  color: #c8daf5;
+  font-size: 14px;
+}
+
+.check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #6bc3ff;
+  cursor: pointer;
+}
+
+.prompt-examples {
+  display: grid;
+  gap: 8px;
+}
+
+.prompt-examples p {
+  color: #9db4d8;
+  font-size: 12px;
+  margin: 0;
+}
+
+.prompt-examples button {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #c8daf5;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.prompt-examples button:hover {
+  background: rgba(107, 195, 255, 0.08);
+  border-color: rgba(107, 195, 255, 0.3);
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
 }
 </style>

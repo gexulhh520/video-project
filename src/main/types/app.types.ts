@@ -103,6 +103,20 @@ export type RewriteParagraphOptions = {
   paragraph: string;
 };
 
+export type RewriteDraftOptions = {
+  draft: PostDraft;
+  userPrompt: string;
+  rewriteTitle?: boolean;
+};
+
+export type RewriteDraftResult = {
+  title: string;
+  sections: Array<{
+    sectionId: string;
+    paragraph: string;
+  }>;
+};
+
 export type AppSettings = {
   workspaceDir: string;
   videoToPost?: VideoToPostSettings;
@@ -307,6 +321,7 @@ export type DesktopApi = {
   replaceDraftImageFromFrame: (draftId: string, blockId: string, options: ReplaceFrameAssetOptions) => Promise<PostDraft>;
   saveEditedFrame: (options: SaveEditedFrameOptions) => Promise<{ imagePath: string; updatedDraft: PostDraft }>;
   rewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
+  rewriteDraft: (options: RewriteDraftOptions) => Promise<PostDraft>;
   listWebTasks: () => Promise<WebTaskSummary[]>;
   getWebTaskById: (taskId: string) => Promise<WebCrawlTask>;
   createWebTask: (title?: string) => Promise<WebCrawlTask>;

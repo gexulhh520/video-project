@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { ArticleSection, ContentBlock, LlmSectionsResult, TranscriptSegment, WebRewriteResult } from "../types/app.types";
+import type { ArticleSection, ContentBlock, LlmSectionsResult, PostDraft, RewriteDraftOptions, RewriteDraftResult, TranscriptSegment, WebRewriteResult } from "../types/app.types";
 import { SettingsService } from "./settings.service";
 
 type OpenAiLikeResponse = {
@@ -276,6 +276,91 @@ export class LlmService {
       prompt,
       sourceRecordIds
     };
+  }
+
+  async rewriteDraft(options: RewriteDraftOptions): Promise<RewriteDraftResult> {
+    const prompt = this.buildRewriteDraftPrompt(options);
+
+    const content = await this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content: "你是一个专业的中文内容改写助手。请严格按照用户要求输出合法 JSON，不要附加任何解释。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      {
+        temperature: 0.8,
+        response_format: {
+          type: "json_object"
+        }
+      }
+    );
+
+    const parsed = JSON.parse(this.extractJson(content)) as RewriteDraftResult;
+    if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+      throw new Error("LLM returned an invalid rewrite result.");
+    }
+
+    return parsed;
+  }
+
+  private buildRewriteDraftPrompt(options: RewriteDraftOptions): string {
+    const { draft, userPrompt, rewriteTitle } = options;
+
+    return [
+      "请对下面这篇图文草稿进行整体洗稿重写。",
+      "",
+      "【核心任务】",
+      "你需要根据用户填写的个性化要求，把整篇图文重新改写一遍。",
+      "不是逐句同义词替换，而是重新组织表达、优化结构、增强可读性和传播感。",
+      "",
+      "【硬性规则】",
+      "1. 保留原文核心信息和事实边界，不要编造新事实。",
+      "2. 保持 sectionId 不变。",
+      "3. sections 数量必须和输入一致。",
+      "4. 不要改变图片、视频时间范围、section 顺序。",
+      "5. 每个 section 只输出新的 paragraph。",
+      "6. 输出必须是合法 JSON，不要 Markdown，不要解释。",
+      "",
+      "【标题处理】",
+      rewriteTitle ? "需要重写 title。" : "不重写 title，title 返回原标题。",
+      "",
+      "【用户个性化洗稿要求】",
+      userPrompt?.trim() || "用户没有填写额外要求。请默认改成自然、流畅、适合中文内容平台发布的图文表达。",
+      "",
+      "【输出 JSON 格式】",
+      JSON.stringify(
+        {
+          title: "新的标题",
+          sections: [
+            {
+              sectionId: "s1",
+              paragraph: "重写后的段落正文"
+            }
+          ]
+        },
+        null,
+        2
+      ),
+      "",
+      "【原始草稿】",
+      JSON.stringify(
+        {
+          title: draft.title,
+          sections: draft.sections.map((section) => ({
+            sectionId: section.sectionId,
+            paragraph: section.paragraph,
+            sourceTimeRanges: section.sourceTimeRanges
+          }))
+        },
+        null,
+        2
+      )
+    ].join("\n");
   }
 
   private extractJson(content: string): string {

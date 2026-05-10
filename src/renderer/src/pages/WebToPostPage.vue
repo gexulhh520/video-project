@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type {
@@ -23,6 +23,7 @@ const toolSettingsOpen = ref(false);
 const toolSettingsSaving = ref(false);
 const toolSettings = ref<WebToPostSettings | null>(null);
 const toolConfigStatus = ref<WebToPostConfigStatus | null>(null);
+const imagePoolOpen = ref(false);
 const taskList = ref<WebTaskSummary[]>([]);
 const activeTask = ref<WebCrawlTask | null>(null);
 const taskLoading = ref(false);
@@ -54,6 +55,9 @@ const currentRecord = computed<WebCrawlRecord | null>(() => {
 const confirmedRecords = computed(() =>
   activeTask.value?.records.filter((record) => record.userEditedBody.trim()).length ?? 0
 );
+
+const selectedImageCount = computed(() => activeTask.value?.imageAssets.filter((item) => item.selected).length ?? 0);
+const totalImageCount = computed(() => activeTask.value?.imageAssets.length ?? 0);
 
 const runtimeStatusLabel = computed(() => {
   const status = progress.value.status;
@@ -129,6 +133,16 @@ watch(
   { immediate: true }
 );
 
+watch(
+  totalImageCount,
+  (count) => {
+    if (!count) {
+      imagePoolOpen.value = false;
+    }
+  },
+  { immediate: true }
+);
+
 onMounted(() => {
   unsubscribe = desktopApi.onWebTaskProgress((nextProgress) => {
     progress.value = nextProgress;
@@ -166,6 +180,7 @@ async function refreshTaskList(): Promise<void> {
 async function openTask(taskId: string): Promise<void> {
   taskLoading.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.getWebTaskById(taskId);
   } catch (error) {
@@ -178,6 +193,7 @@ async function openTask(taskId: string): Promise<void> {
 async function createTask(): Promise<void> {
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.createWebTask();
     await refreshTaskList();
@@ -200,6 +216,7 @@ async function runCrawl(recordId?: string): Promise<void> {
 
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.startWebCrawl(activeTask.value.taskId, {
       url: urlInput.value.trim(),
@@ -220,6 +237,7 @@ async function saveConfirmedBody(): Promise<void> {
 
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.saveWebRecordBody(activeTask.value.taskId, {
       recordId: currentRecord.value.recordId,
@@ -240,6 +258,7 @@ async function retryExtract(): Promise<void> {
 
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.retryWebRecordExtract(activeTask.value.taskId, {
       recordId: currentRecord.value.recordId,
@@ -259,6 +278,7 @@ async function collectImages(): Promise<void> {
 
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.collectWebRecordImages(activeTask.value.taskId, currentRecord.value.recordId);
     await refreshTaskList();
@@ -276,6 +296,7 @@ async function rewriteTask(): Promise<void> {
 
   busy.value = true;
   errorMessage.value = "";
+
   try {
     activeTask.value = await desktopApi.rewriteWebTask(activeTask.value.taskId, {
       prompt: rewritePromptInput.value
@@ -303,6 +324,7 @@ async function exportWord(): Promise<void> {
 
   exportBusy.value = true;
   errorMessage.value = "";
+
   try {
     const outputPath = await desktopApi.exportWebTaskToWord(activeTask.value.taskId);
     if (outputPath) {
@@ -338,6 +360,7 @@ async function browseWorkspaceDir(): Promise<void> {
 
 async function saveSettings(nextSettings: AppSettings): Promise<void> {
   settingsSaving.value = true;
+
   try {
     appSettings.value = await desktopApi.saveAppSettings(nextSettings);
     settingsOpen.value = false;
@@ -354,12 +377,39 @@ async function openToolSettings(): Promise<void> {
 
 async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> {
   toolSettingsSaving.value = true;
+
   try {
     toolSettings.value = await desktopApi.saveWebToPostSettings(nextSettings);
     toolSettingsOpen.value = false;
     await loadToolConfigStatus();
   } finally {
     toolSettingsSaving.value = false;
+  }
+}
+
+function openImagePool(): void {
+  if (!totalImageCount.value) {
+    return;
+  }
+
+  imagePoolOpen.value = true;
+}
+
+function closeImagePool(): void {
+  imagePoolOpen.value = false;
+}
+
+function summarizeUrl(value: string, maxLength = 56): string {
+  if (!value) {
+    return "";
+  }
+
+  try {
+    const url = new URL(value);
+    const compact = `${url.hostname}${url.pathname}`.replace(/\/$/, "");
+    return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
+  } catch {
+    return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
   }
 }
 </script>
@@ -389,7 +439,7 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
 
       <div class="panel">
         <span class="label">当前任务状态</span>
-        <strong>{{ progress.message }}</strong>
+        <strong class="status-text">{{ progress.message }}</strong>
         <span class="subtle">{{ Math.round(progress.progress) }}%</span>
         <span class="subtle">浏览器环境：{{ runtimeStatusLabel }}</span>
       </div>
@@ -403,7 +453,7 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
             重新执行抓取流程
           </button>
         </div>
-        <small>每次执行前都会先做 bb-browser 健康检测，不健康时自动 reset 后再继续。</small>
+        <small>每次执行前都会先做 bb-browser 健康检查，不健康时会自动 reset 后继续。</small>
       </div>
 
       <div class="panel">
@@ -418,7 +468,7 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
     </aside>
 
     <main class="main-grid">
-      <section class="content-panel">
+      <section class="content-panel full-height-panel">
         <div class="panel-header">
           <div>
             <span class="eyebrow">Confirm</span>
@@ -426,7 +476,7 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
           </div>
           <div class="header-meta">
             <span>{{ currentRecord?.title || "等待抓取标题" }}</span>
-            <span>{{ currentRecord?.sourceUrl || "尚未输入链接" }}</span>
+            <span>{{ currentRecord?.sourceUrl ? summarizeUrl(currentRecord.sourceUrl, 72) : "尚未输入链接" }}</span>
           </div>
         </div>
 
@@ -441,12 +491,20 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
 
           <label class="field">
             <span>补充提示词后重新提取</span>
-            <textarea v-model="extractPromptInput" rows="3" placeholder="例如：只保留新闻正文，不要评论区和相关推荐。" />
+            <textarea
+              v-model="extractPromptInput"
+              rows="3"
+              placeholder="例如：只保留新闻正文，不要评论区和相关推荐。"
+            />
           </label>
 
-          <label class="field">
+          <label class="field field-grow">
             <span>提取正文</span>
-            <textarea v-model="editableBody" rows="16" placeholder="抓取后，这里会出现 LLM 提取的正文。" />
+            <textarea
+              v-model="editableBody"
+              rows="16"
+              placeholder="抓取后，这里会出现 LLM 提取的正文。"
+            />
           </label>
 
           <div class="action-row">
@@ -455,13 +513,23 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
             <button class="ghost-btn" :disabled="busy" @click="collectImages">确认正文并抓取图片</button>
           </div>
 
-          <p class="hint">
-            页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击“重新执行抓取流程”。
-          </p>
+          <p class="hint">页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击“重新执行抓取流程”。</p>
+
+          <div class="inline-media-entry">
+            <div>
+              <strong>这次正文的图片池</strong>
+              <span>
+                {{ totalImageCount ? `已抓取 ${totalImageCount} 张，可勾选 ${selectedImageCount} 张` : "确认正文并抓图后，可在这里统一查看" }}
+              </span>
+            </div>
+            <button class="ghost-btn media-entry-btn" :disabled="!totalImageCount" @click="openImagePool">
+              查看这次正文的图片池
+            </button>
+          </div>
         </div>
       </section>
 
-      <section class="content-panel">
+      <section class="content-panel full-height-panel">
         <div class="panel-header">
           <div>
             <span class="eyebrow">Compose</span>
@@ -469,52 +537,73 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
           </div>
           <div class="header-meta">
             <span>已确认 {{ confirmedRecords }} 条正文</span>
-            <span>已选 {{ activeTask?.imageAssets.filter((item) => item.selected).length ?? 0 }} 张图片</span>
+            <span>已选 {{ selectedImageCount }} 张图片</span>
           </div>
         </div>
 
-        <label class="field">
-          <span>追加到系统提示词</span>
-          <textarea v-model="rewritePromptInput" rows="4" placeholder="例如：用更强的信息差开头，控制在 800 字内。" />
-        </label>
-
-        <div class="action-row">
-          <button class="primary-btn" :disabled="busy || !activeTask" @click="rewriteTask">开始二次原创</button>
-          <button class="ghost-btn" :disabled="exportBusy || !activeTask?.rewriteResult" @click="exportWord">
-            {{ exportBusy ? "导出中..." : "导出到 Word" }}
-          </button>
-        </div>
-
-        <div v-if="activeTask?.rewriteResult" class="rewrite-result">
-          <h3>{{ activeTask.rewriteResult.title }}</h3>
-          <p v-for="(paragraph, index) in activeTask.rewriteResult.paragraphs" :key="`${index}-${paragraph.slice(0, 12)}`">
-            {{ paragraph }}
-          </p>
-        </div>
-        <div v-else class="empty-note">当前任务还没有最终原创结果。</div>
-      </section>
-
-      <section class="content-panel media-panel">
-        <div class="panel-header">
-          <div>
-            <span class="eyebrow">Assets</span>
-            <h2>当前任务图片池</h2>
-          </div>
-        </div>
-
-        <div v-if="!activeTask?.imageAssets.length" class="empty-note">确认正文并抓取图片后，这里会显示本任务下的全部素材。</div>
-        <div v-else class="asset-grid">
-          <label v-for="asset in activeTask.imageAssets" :key="asset.assetId" class="asset-card">
-            <input :checked="asset.selected" type="checkbox" @change="toggleImage(asset.assetId, ($event.target as HTMLInputElement).checked)" />
-            <img v-if="imageUrls[asset.assetId]" :src="imageUrls[asset.assetId]" :alt="asset.sourceUrl" />
-            <div v-else class="asset-placeholder">图片预览不可用</div>
-            <span>{{ asset.failedReason ? `失败：${asset.failedReason}` : asset.sourceUrl }}</span>
+        <div class="rewrite-result">
+          <label class="field">
+            <span>追加到系统提示词</span>
+            <textarea
+              v-model="rewritePromptInput"
+              rows="4"
+              placeholder="例如：用更强的信息差开头，控制在 800 字内。"
+            />
           </label>
+
+          <div class="action-row">
+            <button class="primary-btn" :disabled="busy || !activeTask" @click="rewriteTask">开始二次原创</button>
+            <button class="ghost-btn" :disabled="exportBusy || !activeTask?.rewriteResult" @click="exportWord">
+              {{ exportBusy ? "导出中..." : "导出到 Word" }}
+            </button>
+          </div>
+
+          <div v-if="activeTask?.rewriteResult" class="rewrite-preview">
+            <h3>{{ activeTask.rewriteResult.title }}</h3>
+            <p v-for="(paragraph, index) in activeTask.rewriteResult.paragraphs" :key="`${index}-${paragraph.slice(0, 12)}`">
+              {{ paragraph }}
+            </p>
+          </div>
+          <div v-else class="empty-note">当前任务还没有最终原创结果。</div>
         </div>
       </section>
     </main>
 
     <div v-if="errorMessage" class="error-toast">{{ errorMessage }}</div>
+
+    <div v-if="imagePoolOpen" class="modal-backdrop" @click.self="closeImagePool">
+      <section class="image-pool-modal">
+        <div class="panel-header image-pool-header">
+          <div>
+            <span class="eyebrow">Assets</span>
+            <h2>当前任务图片池</h2>
+          </div>
+          <div class="header-meta">
+            <span>{{ totalImageCount }} 张素材</span>
+            <span>已选 {{ selectedImageCount }} 张</span>
+          </div>
+        </div>
+
+        <button class="ghost-btn modal-close-btn" @click="closeImagePool">关闭</button>
+
+        <div v-if="!activeTask?.imageAssets.length" class="empty-note">
+          确认正文并抓取图片后，这里会显示本任务下的全部素材。
+        </div>
+        <div v-else class="asset-grid image-pool-grid">
+          <label v-for="asset in activeTask.imageAssets" :key="asset.assetId" class="asset-card">
+            <div class="asset-check">
+              <input :checked="asset.selected" type="checkbox" @change="toggleImage(asset.assetId, ($event.target as HTMLInputElement).checked)" />
+            </div>
+            <img v-if="imageUrls[asset.assetId]" :src="imageUrls[asset.assetId]" :alt="asset.sourceUrl" />
+            <div v-else class="asset-placeholder">图片预览不可用</div>
+            <div class="asset-meta">
+              <strong>{{ asset.failedReason ? "下载失败" : summarizeUrl(asset.sourceUrl, 42) }}</strong>
+              <span>{{ asset.failedReason ? asset.failedReason : summarizeUrl(asset.sourceUrl, 72) }}</span>
+            </div>
+          </label>
+        </div>
+      </section>
+    </div>
 
     <AppSettingsModal
       :open="settingsOpen"
@@ -556,7 +645,7 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: minmax(0, 1fr) minmax(280px, auto);
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
 }
 
@@ -570,18 +659,21 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
 
 .content-panel {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.media-panel {
-  grid-column: 1 / -1;
+.full-height-panel {
+  min-height: 0;
+  height: 100%;
 }
 
 .panel-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   margin-bottom: 16px;
 }
 
@@ -594,11 +686,16 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
   color: #79c8ff;
 }
 
-.header-meta,
 .task-list,
-.stack-actions {
+.stack-actions,
+.header-meta {
   display: grid;
   gap: 8px;
+}
+
+.header-meta {
+  min-width: 0;
+  text-align: right;
 }
 
 .header-meta span,
@@ -608,6 +705,17 @@ small,
   color: #96add1;
   line-height: 1.6;
   font-size: 12px;
+}
+
+.header-meta span {
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-text {
+  line-height: 1.6;
 }
 
 .task-item,
@@ -666,6 +774,15 @@ small,
   margin-bottom: 14px;
 }
 
+.field-grow {
+  min-height: 0;
+}
+
+.field-grow textarea {
+  min-height: 0;
+  height: 100%;
+}
+
 .field span {
   color: #9db4d8;
   font-size: 12px;
@@ -688,9 +805,34 @@ textarea {
 }
 
 .editor-shell,
+.rewrite-result,
+.empty-state,
+.empty-note,
+.asset-grid {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.editor-shell,
 .rewrite-result {
   display: grid;
   gap: 14px;
+}
+
+.rewrite-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.rewrite-preview h3 {
+  margin: 2px 0 0;
+}
+
+.rewrite-preview p {
+  margin: 0;
+  color: #d6e4ff;
+  line-height: 1.8;
 }
 
 .action-row {
@@ -699,25 +841,65 @@ textarea {
   gap: 10px;
 }
 
+.inline-media-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.inline-media-entry strong,
+.inline-media-entry span {
+  display: block;
+}
+
+.inline-media-entry strong {
+  margin-bottom: 4px;
+  color: #edf5ff;
+}
+
+.inline-media-entry span {
+  color: #8fa8cf;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.media-entry-btn {
+  width: auto;
+  min-width: 220px;
+}
+
 .asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
+  gap: 12px;
+  align-content: start;
 }
 
 .asset-card {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  grid-template-rows: auto auto 1fr;
+  gap: 10px;
+  padding: 10px;
   border-radius: 16px;
   border: 1px solid rgba(149, 181, 255, 0.12);
   background: rgba(255, 255, 255, 0.025);
 }
 
+.asset-check {
+  display: flex;
+  justify-content: center;
+}
+
 .asset-card img,
 .asset-placeholder {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
+  max-height: 156px;
   border-radius: 12px;
   object-fit: cover;
   display: grid;
@@ -726,11 +908,28 @@ textarea {
   color: #90a7cb;
 }
 
-.asset-card span {
-  color: #9cb3d7;
+.asset-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.asset-meta strong {
   font-size: 12px;
+  color: #edf5ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-meta span {
+  font-size: 11px;
+  color: #8fa8cf;
   line-height: 1.5;
-  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .empty-state,
@@ -752,6 +951,44 @@ textarea {
   color: #ffdcdc;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(6, 11, 20, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.image-pool-modal {
+  width: min(1240px, 100%);
+  max-height: min(84vh, 920px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(140, 173, 247, 0.2);
+  background: linear-gradient(180deg, rgba(11, 17, 32, 0.96), rgba(8, 14, 28, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.image-pool-header {
+  margin-bottom: 0;
+}
+
+.modal-close-btn {
+  width: auto;
+  justify-self: end;
+  padding-inline: 20px;
+}
+
+.image-pool-grid {
+  padding-right: 8px;
+}
+
 @media (max-width: 1280px) {
   .web-page {
     grid-template-columns: 1fr;
@@ -759,11 +996,34 @@ textarea {
 
   .main-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto;
+    grid-template-rows: repeat(2, minmax(320px, 1fr));
   }
 
-  .media-panel {
-    grid-column: auto;
+  .header-meta {
+    text-align: left;
+  }
+
+  .header-meta span {
+    max-width: none;
+  }
+
+  .inline-media-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .media-entry-btn,
+  .modal-close-btn {
+    width: 100%;
+  }
+
+  .modal-backdrop {
+    padding: 18px;
+  }
+
+  .image-pool-modal {
+    max-height: 88vh;
+    padding: 18px;
   }
 }
 </style>

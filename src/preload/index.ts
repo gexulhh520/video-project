@@ -74,6 +74,9 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("web-task:toggle-image", taskId, assetId, selected),
   deleteWebRecord: async (taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:delete-record", taskId, options),
+  deleteWebTask: async (taskId: string): Promise<void> => ipcRenderer.invoke("web-task:delete-task", taskId),
+  renameWebTask: async (taskId: string, title: string): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:rename-task", taskId, title),
   exportWebTaskToWord: async (taskId: string): Promise<string | null> => ipcRenderer.invoke("web-task:export-word", taskId),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {

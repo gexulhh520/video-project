@@ -175,6 +175,10 @@ export function registerIpcHandlers(
   ipcMain.handle("web-task:delete-record", async (_event, taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
     webTaskService.deleteRecord(taskId, options.recordId)
   );
+  ipcMain.handle("web-task:delete-task", async (_event, taskId: string): Promise<void> => webTaskService.deleteTask(taskId));
+  ipcMain.handle("web-task:rename-task", async (_event, taskId: string, title: string): Promise<WebCrawlTask> =>
+    webTaskService.renameTask(taskId, title)
+  );
   ipcMain.handle("web-task:export-word", async (_event, taskId: string) => {
     const task = await webTaskService.getTaskById(taskId);
     const defaultFileName = `${sanitizeFileName(task.rewriteResult?.title || task.title || "网页原创草稿")}.docx`;

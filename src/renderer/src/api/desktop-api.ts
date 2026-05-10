@@ -74,6 +74,9 @@ export const desktopApi = {
     window.desktopApi.toggleWebImageSelection(taskId, assetId, selected),
   deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
     window.desktopApi.deleteWebRecord(taskId, toPlainObject(options)),
+  deleteWebTask: (taskId: string): Promise<void> => window.desktopApi.deleteWebTask(taskId),
+  renameWebTask: (taskId: string, title: string): Promise<WebCrawlTask> =>
+    window.desktopApi.renameWebTask(taskId, title),
   exportWebTaskToWord: (taskId: string): Promise<string | null> => window.desktopApi.exportWebTaskToWord(taskId),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>

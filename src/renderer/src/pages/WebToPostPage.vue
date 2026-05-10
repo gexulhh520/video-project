@@ -59,10 +59,15 @@ const editingRecordTitle = ref("");
 const editingRecordBody = ref("");
 const viewingRecordImagePool = ref<string | null>(null);
 const selectedImageAssetIds = ref<string[]>([]);
+const taskListModalOpen = ref(false);
+const editingTaskId = ref<string | null>(null);
+const editingTaskTitle = ref("");
 
 let unsubscribe: (() => void) | null = null;
 
 const historyRecords = computed(() => activeTask.value?.records ?? []);
+
+const visibleTaskList = computed(() => taskList.value.slice(0, 2));
 
 const currentRecord = computed<WebCrawlRecord | null>(() => {
   const records = activeTask.value?.records ?? [];
@@ -517,6 +522,43 @@ async function deleteSelectedImages(): Promise<void> {
   }
 }
 
+function startEditingTask(task: WebTaskSummary): void {
+  editingTaskId.value = task.taskId;
+  editingTaskTitle.value = task.title;
+}
+
+async function saveEditingTask(taskId: string): Promise<void> {
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    await desktopApi.renameWebTask(taskId, editingTaskTitle.value);
+    await refreshTaskList();
+    editingTaskId.value = null;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "重命名任务失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function deleteTask(taskId: string): Promise<void> {
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    await desktopApi.deleteWebTask(taskId);
+    if (activeTask.value?.taskId === taskId) {
+      activeTask.value = null;
+    }
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除任务失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function rewriteTask(): Promise<void> {
   if (!activeTask.value) {
     return;
@@ -884,7 +926,7 @@ function formatDateTime(value?: string): string {
         <span class="label">任务列表</span>
         <div class="task-list">
           <button
-            v-for="task in taskList"
+            v-for="task in visibleTaskList"
             :key="task.taskId"
             class="task-item"
             :class="{ active: activeTask?.taskId === task.taskId }"
@@ -895,6 +937,9 @@ function formatDateTime(value?: string): string {
           </button>
           <div v-if="!taskList.length" class="empty-note">还没有任务，先创建一个。</div>
         </div>
+        <button class="ghost-btn view-all-tasks-btn" :disabled="taskList.length <= 2" @click="taskListModalOpen = true">
+          查看全部任务 ({{ taskList.length }})
+        </button>
       </div>
 
       <div class="panel">
@@ -1171,6 +1216,50 @@ function formatDateTime(value?: string): string {
                 </div>
               </template>
             </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="taskListModalOpen" class="modal-backdrop task-list-backdrop" @click.self="taskListModalOpen = false">
+      <section class="task-list-modal">
+        <div class="panel-header task-list-header">
+          <div>
+            <span class="eyebrow">Tasks</span>
+            <h2>所有任务</h2>
+          </div>
+          <div class="header-meta">
+            <span>{{ taskList.length }} 个任务</span>
+          </div>
+        </div>
+
+        <button class="ghost-btn modal-close-btn" @click="taskListModalOpen = false">关闭</button>
+
+        <div v-if="!taskList.length" class="empty-note">暂无任务</div>
+        <div v-else class="task-list-modal-list">
+          <div
+            v-for="task in taskList"
+            :key="task.taskId"
+            class="task-list-modal-item"
+            :class="{ active: activeTask?.taskId === task.taskId }"
+          >
+            <div v-if="editingTaskId === task.taskId" class="task-edit-form">
+              <input v-model="editingTaskTitle" type="text" placeholder="输入任务名称" @keyup.enter="saveEditingTask(task.taskId)" />
+              <div class="task-edit-actions">
+                <button class="primary-btn small-btn" :disabled="busy" @click="saveEditingTask(task.taskId)">保存</button>
+                <button class="ghost-btn small-btn" @click="editingTaskId = null">取消</button>
+              </div>
+            </div>
+            <template v-else>
+              <button class="task-list-modal-item-main" @click="openTask(task.taskId); taskListModalOpen = false">
+                <strong>{{ task.title }}</strong>
+                <span>{{ task.recordCount }} 条链接 · {{ task.status }}</span>
+              </button>
+              <div class="task-list-modal-item-actions">
+                <button class="ghost-btn small-btn" @click.stop="startEditingTask(task)">编辑</button>
+                <button class="ghost-btn small-btn delete-task-btn" :disabled="busy" @click.stop="deleteTask(task.taskId)">删除</button>
+              </div>
+            </template>
           </div>
         </div>
       </section>
@@ -1772,6 +1861,117 @@ textarea {
   width: 20px;
   height: 20px;
   cursor: pointer;
+}
+
+.view-all-tasks-btn {
+  width: 100%;
+  margin-top: 8px;
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.view-all-tasks-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.task-list-modal {
+  width: min(500px, 100%);
+  max-height: min(88vh, 800px);
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(140, 173, 247, 0.2);
+  background: linear-gradient(180deg, rgba(11, 17, 32, 0.96), rgba(8, 14, 28, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.task-list-header {
+  margin-bottom: 0;
+}
+
+.task-list-modal-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.task-list-modal-item {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+  display: grid;
+  gap: 8px;
+}
+
+.task-list-modal-item.active {
+  border-color: rgba(108, 174, 255, 0.46);
+  background: rgba(108, 174, 255, 0.08);
+}
+
+.task-list-modal-item-main {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.task-list-modal-item-main strong {
+  color: #edf5ff;
+}
+
+.task-list-modal-item-main span {
+  color: #9cb3d7;
+  font-size: 12px;
+}
+
+.task-list-modal-item-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.task-list-modal-item-actions .small-btn {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.delete-task-btn {
+  color: #ff8a8a;
+  border-color: rgba(255, 106, 106, 0.22);
+}
+
+.task-edit-form {
+  display: grid;
+  gap: 10px;
+}
+
+.task-edit-form input {
+  width: 100%;
+  border: 1px solid rgba(149, 181, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #edf5ff;
+  padding: 10px 14px;
+  outline: none;
+}
+
+.task-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .record-card strong,

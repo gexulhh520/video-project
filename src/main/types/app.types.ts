@@ -301,6 +301,8 @@ export type DesktopApi = {
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions) => Promise<WebCrawlTask>;
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
   deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions) => Promise<WebCrawlTask>;
+  deleteWebTask: (taskId: string) => Promise<void>;
+  renameWebTask: (taskId: string, title: string) => Promise<WebCrawlTask>;
   exportWebTaskToWord: (taskId: string) => Promise<string | null>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;

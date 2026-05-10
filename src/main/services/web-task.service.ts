@@ -470,6 +470,18 @@ export class WebTaskService {
     await writeFile(join(taskDir, "task.json"), JSON.stringify(task, null, 2), "utf8");
   }
 
+  async deleteTask(taskId: string): Promise<void> {
+    const taskDir = await this.getTaskDir(taskId);
+    await rm(taskDir, { recursive: true, force: true });
+  }
+
+  async renameTask(taskId: string, title: string): Promise<WebCrawlTask> {
+    const task = await this.getTaskById(taskId);
+    task.title = title.trim() || task.title;
+    await this.saveTask(task);
+    return task;
+  }
+
   private async getWorkspaceDir(): Promise<string> {
     return (await this.settingsService.getSettings()).workspaceDir;
   }

@@ -39,7 +39,7 @@ export type ContentBlock =
       imagePath: string;
       time: number;
       caption?: string;
-      sourceType?: "auto" | "upload" | "video-frame";
+      sourceType?: "auto" | "upload" | "video-frame" | "video-gif";
       sourceTimeRange?: SourceTimeRange;
     };
 
@@ -62,13 +62,29 @@ export type DraftSummary = {
   coverImagePath?: string;
 };
 
+export type FrameAssetMode = "image" | "gif";
+
 export type FramePreviewResult = {
   imageDataUrl: string;
   timeSeconds: number;
+  mode: FrameAssetMode;
+  durationSeconds?: number;
+  sizeBytes?: number;
+  width?: number;
+};
+
+export type ReplaceFrameAssetOptions = {
+  mode: FrameAssetMode;
+  timeSeconds: number;
+  durationSeconds?: number;
 };
 
 export type GeneratePostOptions = {
   frameOffsetSeconds: number;
+};
+
+export type RewriteParagraphOptions = {
+  paragraph: string;
 };
 
 export type AppSettings = {
@@ -129,8 +145,9 @@ export type DesktopApi = {
   saveVideoToPostSettings: (settings: VideoToPostSettings) => Promise<VideoToPostSettings>;
   getVideoToPostConfigStatus: () => Promise<VideoToPostConfigStatus>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
-  previewDraftFrame: (draftId: string, timeSeconds: number) => Promise<FramePreviewResult>;
-  replaceDraftImageFromFrame: (draftId: string, blockId: string, timeSeconds: number) => Promise<PostDraft>;
+  previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions) => Promise<FramePreviewResult>;
+  replaceDraftImageFromFrame: (draftId: string, blockId: string, options: ReplaceFrameAssetOptions) => Promise<PostDraft>;
+  rewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
 };

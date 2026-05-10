@@ -5,6 +5,8 @@ import type {
   AppSettings,
   GeneratePostOptions,
   PostDraft,
+  ReplaceFrameAssetOptions,
+  RewriteParagraphOptions,
   TaskProgress,
   VideoToPostConfigStatus,
   VideoToPostSettings
@@ -47,7 +49,7 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
 
   ipcMain.handle("directory:select", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "选择空间目录",
+      title: "选择工作空间目录",
       properties: ["openDirectory", "createDirectory"]
     });
 
@@ -109,17 +111,26 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
   ipcMain.handle("draft:replace-image", async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );
-  ipcMain.handle("draft:preview-frame", async (_event, draftId: string, timeSeconds: number) =>
-    postService.previewDraftFrame(draftId, timeSeconds)
+  ipcMain.handle("paragraph:rewrite", async (_event, options: RewriteParagraphOptions) => postService.rewriteParagraph(options.paragraph));
+  ipcMain.handle("draft:preview-frame", async (_event, draftId: string, options: ReplaceFrameAssetOptions) =>
+    postService.previewDraftFrame(draftId, options)
   );
-  ipcMain.handle("draft:replace-image-from-frame", async (_event, draftId: string, blockId: string, timeSeconds: number) =>
-    postService.replaceDraftImageFromFrame(draftId, blockId, timeSeconds)
+  ipcMain.handle(
+    "draft:replace-image-from-frame",
+    async (_event, draftId: string, blockId: string, options: ReplaceFrameAssetOptions) =>
+      postService.replaceDraftImageFromFrame(draftId, blockId, options)
   );
   ipcMain.handle("image:read-data-url", async (_event, imagePath: string) => {
     const buffer = await readFile(imagePath);
     const extension = extname(imagePath).toLowerCase();
     const mimeType =
-      extension === ".png" ? "image/png" : extension === ".webp" ? "image/webp" : "image/jpeg";
+      extension === ".png"
+        ? "image/png"
+        : extension === ".webp"
+          ? "image/webp"
+          : extension === ".gif"
+            ? "image/gif"
+            : "image/jpeg";
 
     return `data:${mimeType};base64,${buffer.toString("base64")}`;
   });

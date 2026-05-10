@@ -4,6 +4,8 @@ import type {
   FramePreviewResult,
   GeneratePostOptions,
   PostDraft,
+  ReplaceFrameAssetOptions,
+  RewriteParagraphOptions,
   TaskProgress,
   VideoToPostConfigStatus,
   VideoToPostSettings
@@ -31,10 +33,14 @@ export const desktopApi = {
   getVideoToPostConfigStatus: (): Promise<VideoToPostConfigStatus> => window.desktopApi.getVideoToPostConfigStatus(),
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     window.desktopApi.replaceDraftImage(draftId, blockId, sourceImagePath),
-  previewDraftFrame: (draftId: string, timeSeconds: number): Promise<FramePreviewResult> =>
-    window.desktopApi.previewDraftFrame(draftId, timeSeconds),
-  replaceDraftImageFromFrame: (draftId: string, blockId: string, timeSeconds: number): Promise<PostDraft> =>
-    window.desktopApi.replaceDraftImageFromFrame(draftId, blockId, timeSeconds),
+  previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> =>
+    window.desktopApi.previewDraftFrame(draftId, toPlainObject(options)),
+  replaceDraftImageFromFrame: (
+    draftId: string,
+    blockId: string,
+    options: ReplaceFrameAssetOptions
+  ): Promise<PostDraft> => window.desktopApi.replaceDraftImageFromFrame(draftId, blockId, toPlainObject(options)),
+  rewriteParagraph: (options: RewriteParagraphOptions): Promise<string> => window.desktopApi.rewriteParagraph(toPlainObject(options)),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback)

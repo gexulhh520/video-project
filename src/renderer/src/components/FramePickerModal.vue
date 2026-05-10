@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import type { FramePreviewResult } from "../../../main/types/app.types";
+import type { FrameAssetMode, FramePreviewResult } from "../../../main/types/app.types";
 
 const props = defineProps<{
   open: boolean;
@@ -11,11 +11,15 @@ const props = defineProps<{
   maxSeconds: number;
   preview: FramePreviewResult | null;
   sectionLabel: string;
+  assetMode: FrameAssetMode;
+  gifDurationSeconds: number;
 }>();
 
 const emit = defineEmits<{
   close: [];
   changeTime: [timeSeconds: number];
+  changeMode: [mode: FrameAssetMode];
+  changeGifDuration: [durationSeconds: number];
   confirm: [];
 }>();
 
@@ -47,11 +51,40 @@ function handleSliderInput(value: string): void {
         <button class="close-btn" @click="emit('close')">关闭</button>
       </header>
 
+      <div class="mode-panel">
+        <button class="mode-chip" :class="{ active: assetMode === 'image' }" @click="emit('changeMode', 'image')">
+          单张图片
+        </button>
+        <button class="mode-chip" :class="{ active: assetMode === 'gif' }" @click="emit('changeMode', 'gif')">
+          GIF 动画
+        </button>
+
+        <div v-if="assetMode === 'gif'" class="duration-group">
+          <button
+            v-for="duration in [3, 4, 5]"
+            :key="duration"
+            class="duration-chip"
+            :class="{ active: gifDurationSeconds === duration }"
+            @click="emit('changeGifDuration', duration)"
+          >
+            {{ duration }} 秒
+          </button>
+        </div>
+      </div>
+
       <div class="preview-panel">
         <img v-if="preview?.imageDataUrl" :src="preview.imageDataUrl" alt="当前帧预览" />
         <div v-else class="preview-placeholder">
-          {{ loading ? "正在抽取预览帧..." : "拖动时间轴后会显示帧预览" }}
+          {{ loading ? "正在生成预览..." : "拖动时间轴后会显示预览" }}
         </div>
+      </div>
+
+      <div v-if="assetMode === 'gif'" class="gif-meta">
+        <span>从当前帧开始往后截 {{ gifDurationSeconds }} 秒</span>
+        <span v-if="preview?.mode === 'gif' && preview.sizeBytes">
+          宽 {{ preview.width ?? 640 }}px / 约 {{ (preview.sizeBytes / (1024 * 1024)).toFixed(2) }}MB
+        </span>
+        <span v-else>目标压缩到 640px 宽，尽量控制在 5MB 内</span>
       </div>
 
       <div class="slider-panel">
@@ -74,7 +107,7 @@ function handleSliderInput(value: string): void {
       <footer class="modal-footer">
         <button class="ghost-btn" @click="emit('close')">取消</button>
         <button class="primary-btn" :disabled="loading || saving || !preview" @click="emit('confirm')">
-          {{ saving ? "保存中..." : "使用这一帧" }}
+          {{ saving ? "保存中..." : assetMode === 'gif' ? "使用这个 GIF" : "使用这一帧" }}
         </button>
       </footer>
     </section>
@@ -127,6 +160,16 @@ function handleSliderInput(value: string): void {
   color: #98afd2;
 }
 
+.mode-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.mode-chip,
+.duration-chip,
 .close-btn,
 .ghost-btn,
 .primary-btn {
@@ -138,15 +181,26 @@ function handleSliderInput(value: string): void {
   font-weight: 600;
 }
 
+.mode-chip,
+.duration-chip,
 .close-btn,
 .ghost-btn {
   background: rgba(255, 255, 255, 0.03);
   color: #eaf3ff;
 }
 
+.mode-chip.active,
+.duration-chip.active,
 .primary-btn {
   background: linear-gradient(135deg, #6bc3ff, #3f7df7);
   color: #08111f;
+}
+
+.duration-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-left: auto;
 }
 
 .primary-btn:disabled {
@@ -175,6 +229,16 @@ function handleSliderInput(value: string): void {
 
 .preview-placeholder {
   color: #93abd0;
+}
+
+.gif-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  color: #9db4d8;
+  font-size: 13px;
 }
 
 .slider-panel {
@@ -206,5 +270,11 @@ function handleSliderInput(value: string): void {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+@media (max-width: 860px) {
+  .duration-group {
+    margin-left: 0;
+  }
 }
 </style>

@@ -18,11 +18,18 @@ const emit = defineEmits<{
 
 const editableDraft = ref<PostDraft | null>(null);
 const imageUrls = ref<Record<string, string>>({});
+const rewritingSectionId = ref<string | null>(null);
+const rewriteError = ref<{
+  sectionId: string;
+  message: string;
+} | null>(null);
 
 watch(
   () => props.draft,
   (draft) => {
     editableDraft.value = draft ? JSON.parse(JSON.stringify(draft)) : null;
+    rewritingSectionId.value = null;
+    rewriteError.value = null;
   },
   { immediate: true }
 );
@@ -91,6 +98,34 @@ function updateSectionParagraph(sectionId: string, value: string): void {
   editableDraft.value.fullText = editableDraft.value.sections.map((item) => item.paragraph).join("\n\n");
   emit("change", JSON.parse(JSON.stringify(editableDraft.value)) as PostDraft);
 }
+
+async function rewriteSectionParagraph(sectionId: string): Promise<void> {
+  if (!editableDraft.value || rewritingSectionId.value) {
+    return;
+  }
+
+  const section = editableDraft.value.sections.find((item) => item.sectionId === sectionId);
+  if (!section || !section.paragraph.trim()) {
+    return;
+  }
+
+  rewritingSectionId.value = sectionId;
+  rewriteError.value = null;
+
+  try {
+    const rewrittenParagraph = await desktopApi.rewriteParagraph({
+      paragraph: section.paragraph
+    });
+    updateSectionParagraph(sectionId, rewrittenParagraph);
+  } catch (error) {
+    rewriteError.value = {
+      sectionId,
+      message: error instanceof Error ? error.message : "洗稿失败"
+    };
+  } finally {
+    rewritingSectionId.value = null;
+  }
+}
 </script>
 
 <template>
@@ -135,6 +170,19 @@ function updateSectionParagraph(sectionId: string, value: string): void {
               @input="updateSectionParagraph(section.sectionId, ($event.target as HTMLTextAreaElement).value)"
             />
           </label>
+
+          <div class="section-tools">
+            <button
+              class="action-btn"
+              :disabled="Boolean(rewritingSectionId) || !section.paragraph.trim()"
+              @click="rewriteSectionParagraph(section.sectionId)"
+            >
+              {{ rewritingSectionId === section.sectionId ? "洗稿中..." : "LLM 洗稿重写" }}
+            </button>
+            <span class="tool-hint">把当前段落发给 LLM，重新生成一个新的表达版本。</span>
+          </div>
+
+          <p v-if="rewriteError?.sectionId === section.sectionId" class="inline-error">{{ rewriteError.message }}</p>
 
           <div class="current-image">
             <span class="image-label">当前图片</span>
@@ -292,6 +340,18 @@ textarea {
   margin-top: 14px;
 }
 
+.section-tools {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.tool-hint {
+  color: #93abd0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .current-image {
   margin-top: 14px;
   overflow: hidden;
@@ -325,5 +385,12 @@ textarea {
   color: #93abd0;
   line-height: 1.6;
   font-size: 12px;
+}
+
+.inline-error {
+  margin: 8px 0 0;
+  color: #ffb4b4;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

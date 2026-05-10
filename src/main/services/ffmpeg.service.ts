@@ -1,9 +1,12 @@
-import { access, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
-import { join, resolve } from "node:path";
+import { access, mkdir, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { join, resolve } from "node:path";
 
 export class FfmpegService {
+  private readonly gifWidth = 640;
+  private readonly gifMaxBytes = 5 * 1024 * 1024;
+
   async extractMp3(videoPath: string, outputMp3Path: string): Promise<void> {
     await this.ensureParentDirectory(outputMp3Path);
     await this.run([
@@ -59,6 +62,76 @@ export class FfmpegService {
       "2",
       outputImagePath
     ]);
+  }
+
+  async createGifFromVideoSegment(
+    videoPath: string,
+    startSeconds: number,
+    durationSeconds: number,
+    outputGifPath: string
+  ): Promise<{ sizeBytes: number; width: number }> {
+    await this.ensureParentDirectory(outputGifPath);
+
+    const attempts = [
+      { fps: 12, colors: 96 },
+      { fps: 10, colors: 80 },
+      { fps: 8, colors: 64 },
+      { fps: 6, colors: 48 },
+      { fps: 5, colors: 40 }
+    ];
+
+    let lastSizeBytes = 0;
+
+    for (const attempt of attempts) {
+      const palettePath = `${outputGifPath}.palette.png`;
+
+      try {
+        const filterBase = `fps=${attempt.fps},scale=${this.gifWidth}:-1:flags=lanczos`;
+        await this.run([
+          "-y",
+          "-ss",
+          startSeconds.toFixed(3),
+          "-t",
+          durationSeconds.toFixed(3),
+          "-i",
+          videoPath,
+          "-vf",
+          `${filterBase},palettegen=max_colors=${attempt.colors}:stats_mode=diff`,
+          palettePath
+        ]);
+
+        await this.run([
+          "-y",
+          "-ss",
+          startSeconds.toFixed(3),
+          "-t",
+          durationSeconds.toFixed(3),
+          "-i",
+          videoPath,
+          "-i",
+          palettePath,
+          "-lavfi",
+          `${filterBase}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle`,
+          outputGifPath
+        ]);
+
+        const outputStats = await stat(outputGifPath);
+        lastSizeBytes = outputStats.size;
+        if (outputStats.size <= this.gifMaxBytes) {
+          return {
+            sizeBytes: outputStats.size,
+            width: this.gifWidth
+          };
+        }
+      } finally {
+        await rm(palettePath, { force: true }).catch(() => undefined);
+      }
+    }
+
+    return {
+      sizeBytes: lastSizeBytes,
+      width: this.gifWidth
+    };
   }
 
   async getExecutablePath(): Promise<string> {

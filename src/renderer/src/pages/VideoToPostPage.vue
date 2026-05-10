@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import type {
   AppSettings,
   DraftSummary,
+  FrameAssetMode,
   FramePreviewResult,
   GeneratePostOptions,
   PostDraft,
@@ -51,6 +52,8 @@ const framePickerTimeSeconds = ref(0);
 const framePickerPreview = ref<FramePreviewResult | null>(null);
 const framePreviewLoading = ref(false);
 const frameReplacing = ref(false);
+const framePickerAssetMode = ref<FrameAssetMode>("image");
+const framePickerGifDurationSeconds = ref(4);
 const progress = ref<TaskProgress>({
   taskId: "idle",
   status: "idle",
@@ -121,7 +124,7 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
       taskId: progress.value.taskId,
       status: progress.value.status,
       progress: progress.value.progress,
-      message: `空间目录已更新为 ${appSettings.value.workspaceDir}`
+      message: `工作空间已更新为 ${appSettings.value.workspaceDir}`
     };
     await refreshDrafts();
     await loadVideoToPostConfigStatus();
@@ -150,7 +153,7 @@ async function saveToolSettings(nextSettings: VideoToPostSettings): Promise<void
       taskId: progress.value.taskId,
       status: progress.value.status,
       progress: progress.value.progress,
-      message: "视频转图文私有配置已保存"
+      message: "视频转图文配置已保存"
     };
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "保存工具配置失败";
@@ -267,7 +270,7 @@ async function openDraft(draftId: string): Promise<void> {
     taskId: draftId,
     status: "completed",
     progress: 100,
-    message: "已从草稿箱加载历史内容"
+    message: "已加载历史草稿"
   };
 }
 
@@ -366,8 +369,10 @@ async function openFramePicker(blockId?: string): Promise<void> {
     framePickerMaxSeconds.value,
     Math.max(framePickerMinSeconds.value, imageBlock.time ?? (baseStart + baseEnd) / 2)
   );
+  framePickerAssetMode.value = imageBlock.sourceType === "video-gif" ? "gif" : "image";
+  framePickerGifDurationSeconds.value = 4;
   framePickerBlockId.value = blockId;
-  framePickerSectionLabel.value = `${imageBlock.sectionId} 建议在 ${framePickerMinSeconds.value.toFixed(1)}s - ${framePickerMaxSeconds.value.toFixed(1)}s 之间选帧`;
+  framePickerSectionLabel.value = `${imageBlock.sectionId} 建议在 ${framePickerMinSeconds.value.toFixed(1)}s - ${framePickerMaxSeconds.value.toFixed(1)}s 之间选择起始时间`;
   framePickerPreview.value = null;
   framePickerOpen.value = true;
   errorMessage.value = "";
@@ -389,12 +394,26 @@ async function refreshFramePreview(timeSeconds: number): Promise<void> {
   framePreviewLoading.value = true;
 
   try {
-    framePickerPreview.value = await desktopApi.previewDraftFrame(draft.value.draftId, timeSeconds);
+    framePickerPreview.value = await desktopApi.previewDraftFrame(draft.value.draftId, {
+      mode: framePickerAssetMode.value,
+      timeSeconds,
+      durationSeconds: framePickerAssetMode.value === "gif" ? framePickerGifDurationSeconds.value : undefined
+    });
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "抽取预览帧失败";
   } finally {
     framePreviewLoading.value = false;
   }
+}
+
+async function handleFramePickerModeChange(mode: FrameAssetMode): Promise<void> {
+  framePickerAssetMode.value = mode;
+  await refreshFramePreview(framePickerTimeSeconds.value);
+}
+
+async function handleFramePickerGifDurationChange(durationSeconds: number): Promise<void> {
+  framePickerGifDurationSeconds.value = durationSeconds;
+  await refreshFramePreview(framePickerTimeSeconds.value);
 }
 
 async function confirmFrameReplacement(): Promise<void> {
@@ -406,11 +425,11 @@ async function confirmFrameReplacement(): Promise<void> {
   errorMessage.value = "";
 
   try {
-    draft.value = await desktopApi.replaceDraftImageFromFrame(
-      draft.value.draftId,
-      framePickerBlockId.value,
-      framePickerTimeSeconds.value
-    );
+    draft.value = await desktopApi.replaceDraftImageFromFrame(draft.value.draftId, framePickerBlockId.value, {
+      mode: framePickerAssetMode.value,
+      timeSeconds: framePickerTimeSeconds.value,
+      durationSeconds: framePickerAssetMode.value === "gif" ? framePickerGifDurationSeconds.value : undefined
+    });
     activeDraftId.value = draft.value.draftId;
     await refreshDrafts();
     closeFramePicker();
@@ -418,7 +437,7 @@ async function confirmFrameReplacement(): Promise<void> {
       taskId: draft.value.draftId,
       status: "completed",
       progress: 100,
-      message: "已从原视频重新选帧并替换图片"
+      message: framePickerAssetMode.value === "gif" ? "已替换为 GIF 动画" : "已从原视频重新选帧并替换图片"
     };
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "视频选帧替换失败";
@@ -463,8 +482,8 @@ function toggleImmersiveEditor(): void {
         @open-tool-config="openToolConfig"
       />
 
-      <div class="workspace-card" v-if="appSettings">
-        <span>当前空间目录</span>
+      <div v-if="appSettings" class="workspace-card">
+        <span>当前工作空间</span>
         <strong>{{ appSettings.workspaceDir }}</strong>
       </div>
 
@@ -527,8 +546,12 @@ function toggleImmersiveEditor(): void {
       :max-seconds="framePickerMaxSeconds"
       :preview="framePickerPreview"
       :section-label="framePickerSectionLabel"
+      :asset-mode="framePickerAssetMode"
+      :gif-duration-seconds="framePickerGifDurationSeconds"
       @close="closeFramePicker"
       @change-time="refreshFramePreview"
+      @change-mode="handleFramePickerModeChange"
+      @change-gif-duration="handleFramePickerGifDurationChange"
       @confirm="confirmFrameReplacement"
     />
 

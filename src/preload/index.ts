@@ -6,6 +6,8 @@ import type {
   FramePreviewResult,
   GeneratePostOptions,
   PostDraft,
+  ReplaceFrameAssetOptions,
+  RewriteParagraphOptions,
   TaskProgress,
   VideoToPostConfigStatus,
   VideoToPostSettings
@@ -30,10 +32,14 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("video-to-post-settings:status"),
   replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
-  previewDraftFrame: async (draftId: string, timeSeconds: number): Promise<FramePreviewResult> =>
-    ipcRenderer.invoke("draft:preview-frame", draftId, timeSeconds),
-  replaceDraftImageFromFrame: async (draftId: string, blockId: string, timeSeconds: number): Promise<PostDraft> =>
-    ipcRenderer.invoke("draft:replace-image-from-frame", draftId, blockId, timeSeconds),
+  previewDraftFrame: async (draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> =>
+    ipcRenderer.invoke("draft:preview-frame", draftId, options),
+  replaceDraftImageFromFrame: async (
+    draftId: string,
+    blockId: string,
+    options: ReplaceFrameAssetOptions
+  ): Promise<PostDraft> => ipcRenderer.invoke("draft:replace-image-from-frame", draftId, blockId, options),
+  rewriteParagraph: async (options: RewriteParagraphOptions): Promise<string> => ipcRenderer.invoke("paragraph:rewrite", options),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {

@@ -7,9 +7,11 @@ import { v4 as uuidv4 } from "uuid";
 import type {
   ContentBlock,
   DraftSummary,
+  FrameAssetMode,
   FramePreviewResult,
   GeneratePostOptions,
   PostDraft,
+  ReplaceFrameAssetOptions,
   TaskProgress
 } from "../types/app.types";
 import { FfmpegService } from "./ffmpeg.service";
@@ -18,6 +20,8 @@ import { SettingsService } from "./settings.service";
 import { TranscriptService } from "./transcript.service";
 
 const DEFAULT_FRAME_OFFSET_SECONDS = 2;
+const DEFAULT_GIF_DURATION_SECONDS = 4;
+const GIF_DURATION_OPTIONS = new Set([3, 4, 5]);
 
 export class PostService {
   constructor(
@@ -55,7 +59,7 @@ export class PostService {
       taskId: draftId,
       status: "copying_video",
       progress: 8,
-      message: "正在复制原视频到空间目录"
+      message: "正在复制原视频到工作空间"
     });
     await copyFile(sourceVideoPath, copiedVideoPath);
 
@@ -187,6 +191,10 @@ export class PostService {
     return normalizedDraft;
   }
 
+  async rewriteParagraph(paragraph: string): Promise<string> {
+    return this.llmService.rewriteParagraph(paragraph);
+  }
+
   async exportDraftToWord(draft: PostDraft, outputPath: string): Promise<string> {
     const normalizedDraft = await this.normalizeDraft(draft, true);
     const workspaceDir = await this.getWorkspaceDir();
@@ -211,7 +219,7 @@ export class PostService {
     );
 
     if (!targetBlock) {
-      throw new Error("未找到要替换的图片块。");
+      throw new Error("没有找到要替换的图片块。");
     }
 
     const workspaceDir = await this.getWorkspaceDir();
@@ -229,26 +237,57 @@ export class PostService {
     return this.saveDraft(draft);
   }
 
-  async previewDraftFrame(draftId: string, timeSeconds: number): Promise<FramePreviewResult> {
+  async previewDraftFrame(draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> {
     const draft = await this.getDraftById(draftId);
     if (!draft.sourceVideoPath) {
       throw new Error("当前草稿缺少原视频路径，无法从视频重新选帧。");
     }
 
+    const normalizedMode = this.normalizeAssetMode(options.mode);
     const workspaceDir = await this.getWorkspaceDir();
     const frameDir = join(workspaceDir, "frames", draftId);
     await mkdir(frameDir, { recursive: true });
-    const previewPath = join(frameDir, `__preview_${Math.round(timeSeconds * 1000)}.jpg`);
-    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, previewPath);
+
+    if (normalizedMode === "gif") {
+      const durationSeconds = this.normalizeGifDuration(options.durationSeconds);
+      const previewPath = join(
+        frameDir,
+        `__preview_${Math.round(options.timeSeconds * 1000)}_${durationSeconds}s.gif`
+      );
+      const gifMeta = await this.ffmpegService.createGifFromVideoSegment(
+        draft.sourceVideoPath,
+        options.timeSeconds,
+        durationSeconds,
+        previewPath
+      );
+      const imageBuffer = await readFile(previewPath);
+
+      return {
+        imageDataUrl: `data:image/gif;base64,${imageBuffer.toString("base64")}`,
+        timeSeconds: options.timeSeconds,
+        mode: "gif",
+        durationSeconds,
+        sizeBytes: gifMeta.sizeBytes,
+        width: gifMeta.width
+      };
+    }
+
+    const previewPath = join(frameDir, `__preview_${Math.round(options.timeSeconds * 1000)}.jpg`);
+    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, options.timeSeconds, previewPath);
     const imageBuffer = await readFile(previewPath);
 
     return {
       imageDataUrl: `data:image/jpeg;base64,${imageBuffer.toString("base64")}`,
-      timeSeconds
+      timeSeconds: options.timeSeconds,
+      mode: "image"
     };
   }
 
-  async replaceDraftImageFromFrame(draftId: string, blockId: string, timeSeconds: number): Promise<PostDraft> {
+  async replaceDraftImageFromFrame(
+    draftId: string,
+    blockId: string,
+    options: ReplaceFrameAssetOptions
+  ): Promise<PostDraft> {
     const draft = await this.getDraftById(draftId);
     if (!draft.sourceVideoPath) {
       throw new Error("当前草稿缺少原视频路径，无法从视频重新选帧。");
@@ -259,19 +298,41 @@ export class PostService {
     );
 
     if (!targetBlock) {
-      throw new Error("未找到要替换的图片块。");
+      throw new Error("没有找到要替换的图片块。");
     }
 
+    const normalizedMode = this.normalizeAssetMode(options.mode);
     const workspaceDir = await this.getWorkspaceDir();
     const frameDir = join(workspaceDir, "frames", draftId);
     await mkdir(frameDir, { recursive: true });
-    const outputPath = join(frameDir, `${blockId}_frame_${timeSeconds.toFixed(3).replace(".", "_")}.jpg`);
-    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, timeSeconds, outputPath);
+
+    if (normalizedMode === "gif") {
+      const durationSeconds = this.normalizeGifDuration(options.durationSeconds);
+      const outputPath = join(
+        frameDir,
+        `${blockId}_gif_${options.timeSeconds.toFixed(3).replace(".", "_")}_${durationSeconds}s.gif`
+      );
+      const gifMeta = await this.ffmpegService.createGifFromVideoSegment(
+        draft.sourceVideoPath,
+        options.timeSeconds,
+        durationSeconds,
+        outputPath
+      );
+
+      targetBlock.imagePath = outputPath;
+      targetBlock.time = options.timeSeconds;
+      targetBlock.sourceType = "video-gif";
+      targetBlock.caption = this.buildAssetCaption("gif", options.timeSeconds, durationSeconds, gifMeta.sizeBytes);
+      return this.saveDraft(draft);
+    }
+
+    const outputPath = join(frameDir, `${blockId}_frame_${options.timeSeconds.toFixed(3).replace(".", "_")}.jpg`);
+    await this.ffmpegService.extractFrameAt(draft.sourceVideoPath, options.timeSeconds, outputPath);
 
     targetBlock.imagePath = outputPath;
-    targetBlock.time = timeSeconds;
+    targetBlock.time = options.timeSeconds;
     targetBlock.sourceType = "video-frame";
-    targetBlock.caption = `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
+    targetBlock.caption = this.buildAssetCaption("image", options.timeSeconds);
 
     return this.saveDraft(draft);
   }
@@ -383,5 +444,31 @@ export class PostService {
     } catch {
       return undefined;
     }
+  }
+
+  private normalizeGifDuration(durationSeconds?: number): number {
+    return GIF_DURATION_OPTIONS.has(durationSeconds ?? DEFAULT_GIF_DURATION_SECONDS)
+      ? (durationSeconds ?? DEFAULT_GIF_DURATION_SECONDS)
+      : DEFAULT_GIF_DURATION_SECONDS;
+  }
+
+  private normalizeAssetMode(mode?: FrameAssetMode): FrameAssetMode {
+    return mode === "gif" ? "gif" : "image";
+  }
+
+  private buildAssetCaption(
+    mode: FrameAssetMode,
+    timeSeconds: number,
+    durationSeconds?: number,
+    sizeBytes?: number
+  ): string {
+    if (mode === "gif") {
+      const sizeMb = sizeBytes ? (sizeBytes / (1024 * 1024)).toFixed(2) : null;
+      return `用户从视频 ${timeSeconds.toFixed(1)}s 开始截取 ${durationSeconds ?? DEFAULT_GIF_DURATION_SECONDS}s GIF${
+        sizeMb ? `，约 ${sizeMb}MB` : ""
+      }`;
+    }
+
+    return `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
   }
 }

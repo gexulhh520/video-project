@@ -9,6 +9,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveWebRewriteResultOptions,
   TaskProgress,
   WebCrawlStartOptions,
   WebCrawlTask,
@@ -164,6 +165,9 @@ export function registerIpcHandlers(
 
     return webTaskService.rewriteTask(taskId, options, sendProgress);
   });
+  ipcMain.handle("web-task:save-rewrite-result", async (_event, taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
+    webTaskService.saveRewriteResult(taskId, options)
+  );
   ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     webTaskService.toggleImageSelection(taskId, assetId, selected)
   );

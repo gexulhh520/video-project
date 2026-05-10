@@ -1,10 +1,14 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type {
   AppSettings,
+  ContentBlock,
+  PostDraft,
   WebCrawlRecord,
   WebCrawlTask,
+  WebImageAsset,
+  WebRewriteResult,
   WebTaskProgress,
   WebTaskSummary,
   WebToPostConfigStatus,
@@ -23,18 +27,25 @@ const toolSettingsOpen = ref(false);
 const toolSettingsSaving = ref(false);
 const toolSettings = ref<WebToPostSettings | null>(null);
 const toolConfigStatus = ref<WebToPostConfigStatus | null>(null);
-const imagePoolOpen = ref(false);
 const taskList = ref<WebTaskSummary[]>([]);
 const activeTask = ref<WebCrawlTask | null>(null);
 const taskLoading = ref(false);
 const busy = ref(false);
 const exportBusy = ref(false);
+const rewriteSaveBusy = ref(false);
+const selectingUploadImage = ref(false);
 const errorMessage = ref("");
 const urlInput = ref("");
 const extractPromptInput = ref("");
 const rewritePromptInput = ref("");
 const editableBody = ref("");
-const imageUrls = ref<Record<string, string>>({});
+const selectedRecordId = ref("");
+const rewriteSelectedRecordIds = ref<string[]>([]);
+const confirmImagePoolOpen = ref(false);
+const rewriteResultOpen = ref(false);
+const imagePickerSectionId = ref<string | null>(null);
+const rewriteDraft = ref<WebRewriteResult | null>(null);
+const imageUrlsByPath = ref<Record<string, string>>({});
 const progress = ref<WebTaskProgress>({
   taskId: "idle",
   status: "idle",
@@ -44,20 +55,52 @@ const progress = ref<WebTaskProgress>({
 
 let unsubscribe: (() => void) | null = null;
 
+const historyRecords = computed(() => activeTask.value?.records ?? []);
+
 const currentRecord = computed<WebCrawlRecord | null>(() => {
-  if (!activeTask.value?.currentRecordId) {
-    return activeTask.value?.records[0] ?? null;
+  const records = activeTask.value?.records ?? [];
+  if (!records.length) {
+    return null;
   }
 
-  return activeTask.value.records.find((item) => item.recordId === activeTask.value?.currentRecordId) ?? null;
+  return records.find((item) => item.recordId === selectedRecordId.value) ?? records[0] ?? null;
 });
 
 const confirmedRecords = computed(() =>
   activeTask.value?.records.filter((record) => record.userEditedBody.trim()).length ?? 0
 );
 
-const selectedImageCount = computed(() => activeTask.value?.imageAssets.filter((item) => item.selected).length ?? 0);
-const totalImageCount = computed(() => activeTask.value?.imageAssets.length ?? 0);
+const rewriteCandidateRecords = computed(() =>
+  activeTask.value?.records.filter((record) => record.userEditedBody.trim()) ?? []
+);
+
+const currentRecordImageAssets = computed(() => {
+  if (!activeTask.value || !currentRecord.value) {
+    return [] as WebImageAsset[];
+  }
+
+  const assetMap = new Map(activeTask.value.imageAssets.map((asset) => [asset.assetId, asset]));
+  return currentRecord.value.imageAssetIds
+    .map((assetId) => assetMap.get(assetId))
+    .filter((asset): asset is WebImageAsset => Boolean(asset));
+});
+
+const rewriteSourceRecordIds = computed(() => rewriteDraft.value?.sourceRecordIds ?? rewriteSelectedRecordIds.value);
+
+const rewriteSourceImageAssets = computed(() => {
+  if (!activeTask.value) {
+    return [] as WebImageAsset[];
+  }
+
+  return activeTask.value.imageAssets.filter((asset) => rewriteSourceRecordIds.value.includes(asset.originRecordId));
+});
+
+const rewriteParagraphBlocks = computed(() =>
+  (rewriteDraft.value?.contentBlocks.filter((block) => block.type === "paragraph") as Extract<
+    ContentBlock,
+    { type: "paragraph" }
+  >[]) ?? []
+);
 
 const runtimeStatusLabel = computed(() => {
   const status = progress.value.status;
@@ -100,7 +143,7 @@ watch(
   (record) => {
     editableBody.value = record?.userEditedBody ?? "";
     extractPromptInput.value = record?.extractPrompt ?? "";
-    if (record?.sourceUrl && (!urlInput.value || record.recordId === activeTask.value?.currentRecordId)) {
+    if (record?.sourceUrl && (!urlInput.value || record.recordId === selectedRecordId.value)) {
       urlInput.value = record.sourceUrl;
     }
   },
@@ -116,29 +159,80 @@ watch(
 );
 
 watch(
-  () => activeTask.value?.imageAssets,
-  async (assets) => {
-    if (!assets?.length) {
-      imageUrls.value = {};
-      return;
+  () => activeTask.value?.currentRecordId,
+  (recordId) => {
+    if (recordId) {
+      selectedRecordId.value = recordId;
     }
-
-    const nextEntries = await Promise.all(
-      assets
-        .filter((asset) => asset.localPath)
-        .map(async (asset) => [asset.assetId, await desktopApi.readImageAsDataUrl(asset.localPath!)] as const)
-    );
-    imageUrls.value = Object.fromEntries(nextEntries);
   },
   { immediate: true }
 );
 
 watch(
-  totalImageCount,
-  (count) => {
-    if (!count) {
-      imagePoolOpen.value = false;
+  [historyRecords, rewriteCandidateRecords],
+  ([records, candidates]) => {
+    if (!records.length) {
+      selectedRecordId.value = "";
+    } else if (!records.some((record) => record.recordId === selectedRecordId.value)) {
+      selectedRecordId.value = activeTask.value?.currentRecordId ?? records[0]?.recordId ?? "";
     }
+
+    const candidateIds = new Set(candidates.map((record) => record.recordId));
+    const nextSelectedIds = rewriteSelectedRecordIds.value.filter((recordId) => candidateIds.has(recordId));
+    rewriteSelectedRecordIds.value = nextSelectedIds.length > 0 ? nextSelectedIds : candidates.map((record) => record.recordId);
+  },
+  { immediate: true }
+);
+
+watch(
+  () => activeTask.value?.rewriteResult?.updatedAt,
+  () => {
+    if (!rewriteResultOpen.value && activeTask.value?.rewriteResult) {
+      rewriteDraft.value = cloneRewriteResult(activeTask.value.rewriteResult);
+    }
+
+    if (!activeTask.value?.rewriteResult) {
+      rewriteDraft.value = null;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  [currentRecordImageAssets, rewriteSourceImageAssets, rewriteDraft],
+  async () => {
+    const imagePaths = new Set<string>();
+
+    currentRecordImageAssets.value.forEach((asset) => {
+      if (asset.localPath) {
+        imagePaths.add(asset.localPath);
+      }
+    });
+
+    rewriteSourceImageAssets.value.forEach((asset) => {
+      if (asset.localPath) {
+        imagePaths.add(asset.localPath);
+      }
+    });
+
+    rewriteDraft.value?.contentBlocks.forEach((block) => {
+      if (block.type === "image" && block.imagePath) {
+        imagePaths.add(block.imagePath);
+      }
+    });
+
+    const pendingPaths = Array.from(imagePaths).filter((path) => !imageUrlsByPath.value[path]);
+    if (!pendingPaths.length) {
+      return;
+    }
+
+    const nextEntries = await Promise.all(
+      pendingPaths.map(async (path) => [path, await desktopApi.readImageAsDataUrl(path)] as const)
+    );
+    imageUrlsByPath.value = {
+      ...imageUrlsByPath.value,
+      ...Object.fromEntries(nextEntries)
+    };
   },
   { immediate: true }
 );
@@ -294,13 +388,22 @@ async function rewriteTask(): Promise<void> {
     return;
   }
 
+  if (!rewriteSelectedRecordIds.value.length) {
+    errorMessage.value = "请先勾选需要参与二次原创的正文。";
+    return;
+  }
+
   busy.value = true;
   errorMessage.value = "";
 
   try {
     activeTask.value = await desktopApi.rewriteWebTask(activeTask.value.taskId, {
-      prompt: rewritePromptInput.value
+      prompt: rewritePromptInput.value,
+      recordIds: rewriteSelectedRecordIds.value
     });
+    rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    imagePickerSectionId.value = null;
     await refreshTaskList();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "二次原创失败";
@@ -309,16 +412,203 @@ async function rewriteTask(): Promise<void> {
   }
 }
 
-async function toggleImage(assetId: string, selected: boolean): Promise<void> {
-  if (!activeTask.value) {
+function openConfirmImagePool(): void {
+  if (!currentRecordImageAssets.value.length) {
     return;
   }
 
-  activeTask.value = await desktopApi.toggleWebImageSelection(activeTask.value.taskId, assetId, selected);
+  confirmImagePoolOpen.value = true;
 }
 
-async function exportWord(): Promise<void> {
-  if (!activeTask.value || exportBusy.value) {
+function closeConfirmImagePool(): void {
+  confirmImagePoolOpen.value = false;
+}
+
+function openRewriteResult(): void {
+  if (!activeTask.value?.rewriteResult) {
+    return;
+  }
+
+  rewriteDraft.value = cloneRewriteResult(activeTask.value.rewriteResult);
+  rewriteResultOpen.value = true;
+  imagePickerSectionId.value = null;
+}
+
+function closeRewriteResult(): void {
+  rewriteResultOpen.value = false;
+  imagePickerSectionId.value = null;
+}
+
+function toggleRewriteRecord(recordId: string, checked: boolean): void {
+  if (checked) {
+    rewriteSelectedRecordIds.value = Array.from(new Set([...rewriteSelectedRecordIds.value, recordId]));
+    return;
+  }
+
+  rewriteSelectedRecordIds.value = rewriteSelectedRecordIds.value.filter((item) => item !== recordId);
+}
+
+function updateRewriteTitle(value: string): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  rewriteDraft.value.title = value;
+  rewriteDraft.value.updatedAt = new Date().toISOString();
+}
+
+function updateParagraphText(blockId: string, value: string): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  const targetBlock = rewriteDraft.value.contentBlocks.find(
+    (block): block is Extract<ContentBlock, { type: "paragraph" }> => block.type === "paragraph" && block.blockId === blockId
+  );
+  if (!targetBlock) {
+    return;
+  }
+
+  targetBlock.text = value;
+  targetBlock.edited = true;
+  syncRewriteDraftText();
+}
+
+function syncRewriteDraftText(): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  rewriteDraft.value.paragraphs = rewriteDraft.value.contentBlocks
+    .filter((block): block is Extract<ContentBlock, { type: "paragraph" }> => block.type === "paragraph")
+    .map((block) => block.text.trim())
+    .filter(Boolean);
+  rewriteDraft.value.fullText = rewriteDraft.value.paragraphs.join("\n\n");
+  rewriteDraft.value.updatedAt = new Date().toISOString();
+}
+
+function getSectionImages(sectionId: string): Extract<ContentBlock, { type: "image" }>[] {
+  return (rewriteDraft.value?.contentBlocks.filter(
+    (block): block is Extract<ContentBlock, { type: "image" }> => block.type === "image" && block.sectionId === sectionId
+  ) ?? []) as Extract<ContentBlock, { type: "image" }>[];
+}
+
+function openImagePicker(sectionId: string): void {
+  imagePickerSectionId.value = sectionId;
+}
+
+function closeImagePicker(): void {
+  imagePickerSectionId.value = null;
+}
+
+async function insertRecordImage(asset: WebImageAsset): Promise<void> {
+  if (!imagePickerSectionId.value || !asset.localPath) {
+    return;
+  }
+
+  insertImageBlock(imagePickerSectionId.value, asset.localPath, asset.sourceUrl, "auto");
+  imagePickerSectionId.value = null;
+}
+
+async function uploadImageToSection(): Promise<void> {
+  if (!imagePickerSectionId.value || selectingUploadImage.value) {
+    return;
+  }
+
+  selectingUploadImage.value = true;
+  try {
+    const imagePath = await desktopApi.selectImage();
+    if (!imagePath) {
+      return;
+    }
+
+    if (!imageUrlsByPath.value[imagePath]) {
+      imageUrlsByPath.value = {
+        ...imageUrlsByPath.value,
+        [imagePath]: await desktopApi.readImageAsDataUrl(imagePath)
+      };
+    }
+
+    insertImageBlock(imagePickerSectionId.value, imagePath, "本地上传图片", "upload");
+    imagePickerSectionId.value = null;
+  } finally {
+    selectingUploadImage.value = false;
+  }
+}
+
+function insertImageBlock(
+  sectionId: string,
+  imagePath: string,
+  caption: string,
+  sourceType: "auto" | "upload"
+): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  const nextBlock: Extract<ContentBlock, { type: "image" }> = {
+    type: "image",
+    blockId: `web_img_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    sectionId,
+    imagePath,
+    time: Date.now(),
+    caption,
+    sourceType
+  };
+
+  const paragraphIndex = rewriteDraft.value.contentBlocks.findIndex(
+    (block) => block.type === "paragraph" && block.sectionId === sectionId
+  );
+  if (paragraphIndex < 0) {
+    return;
+  }
+
+  let insertIndex = paragraphIndex + 1;
+  while (
+    insertIndex < rewriteDraft.value.contentBlocks.length &&
+    rewriteDraft.value.contentBlocks[insertIndex]?.sectionId === sectionId &&
+    rewriteDraft.value.contentBlocks[insertIndex]?.type === "image"
+  ) {
+    insertIndex += 1;
+  }
+
+  rewriteDraft.value.contentBlocks.splice(insertIndex, 0, nextBlock);
+  rewriteDraft.value.updatedAt = new Date().toISOString();
+}
+
+function removeImageBlock(blockId: string): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  rewriteDraft.value.contentBlocks = rewriteDraft.value.contentBlocks.filter((block) => block.blockId !== blockId);
+  rewriteDraft.value.updatedAt = new Date().toISOString();
+}
+
+async function saveRewriteResult(): Promise<void> {
+  if (!activeTask.value || !rewriteDraft.value || rewriteSaveBusy.value) {
+    return;
+  }
+
+  rewriteSaveBusy.value = true;
+  errorMessage.value = "";
+
+  try {
+    syncRewriteDraftText();
+    activeTask.value = await desktopApi.saveWebRewriteResult(activeTask.value.taskId, {
+      rewriteResult: cloneRewriteResult(rewriteDraft.value)
+    });
+    rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "保存原创结果失败";
+  } finally {
+    rewriteSaveBusy.value = false;
+  }
+}
+
+async function exportRewriteResult(): Promise<void> {
+  if (!rewriteDraft.value || exportBusy.value) {
     return;
   }
 
@@ -326,10 +616,11 @@ async function exportWord(): Promise<void> {
   errorMessage.value = "";
 
   try {
-    const outputPath = await desktopApi.exportWebTaskToWord(activeTask.value.taskId);
+    syncRewriteDraftText();
+    const outputPath = await desktopApi.exportDraftToWord(buildExportDraft(rewriteDraft.value, activeTask.value?.taskId ?? "web-task"));
     if (outputPath) {
       progress.value = {
-        taskId: activeTask.value.taskId,
+        taskId: activeTask.value?.taskId ?? "web-task",
         status: "completed",
         progress: 100,
         message: `Word 已导出到 ${outputPath}`
@@ -387,16 +678,24 @@ async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> 
   }
 }
 
-function openImagePool(): void {
-  if (!totalImageCount.value) {
-    return;
-  }
-
-  imagePoolOpen.value = true;
+function cloneRewriteResult(result: WebRewriteResult): WebRewriteResult {
+  return JSON.parse(JSON.stringify(result)) as WebRewriteResult;
 }
 
-function closeImagePool(): void {
-  imagePoolOpen.value = false;
+function buildExportDraft(result: WebRewriteResult, draftId: string): PostDraft {
+  return {
+    draftId,
+    title: result.title,
+    fullText: result.fullText,
+    sections: result.paragraphs.map((paragraph, index) => ({
+      sectionId: `web_s_${index + 1}`,
+      paragraph,
+      sourceTimeRanges: []
+    })),
+    contentBlocks: JSON.parse(JSON.stringify(result.contentBlocks)) as ContentBlock[],
+    createdAt: result.createdAt,
+    updatedAt: result.updatedAt
+  };
 }
 
 function summarizeUrl(value: string, maxLength = 56): string {
@@ -411,6 +710,33 @@ function summarizeUrl(value: string, maxLength = 56): string {
   } catch {
     return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
   }
+}
+
+function summarizeBody(value: string, maxLength = 96): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "暂无正文";
+  }
+
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 1)}…` : normalized;
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 </script>
 
@@ -448,12 +774,12 @@ function summarizeUrl(value: string, maxLength = 56): string {
         <span class="label">抓取入口</span>
         <input v-model="urlInput" type="text" placeholder="输入网页链接" />
         <div class="stack-actions">
-          <button class="primary-btn" :disabled="busy || !activeTask" @click="runCrawl()">开始抓取</button>
+          <button class="primary-btn" :disabled="busy || !activeTask" @click="runCrawl()">开始爬取</button>
           <button class="ghost-btn" :disabled="busy || !currentRecord" @click="runCrawl(currentRecord?.recordId)">
-            重新执行抓取流程
+            重新执行当前正文
           </button>
         </div>
-        <small>每次执行前都会先做 bb-browser 健康检查，不健康时会自动 reset 后继续。</small>
+        <small>开始爬取会新增一条正文记录；重新执行只会更新当前这条正文。</small>
       </div>
 
       <div class="panel">
@@ -482,50 +808,81 @@ function summarizeUrl(value: string, maxLength = 56): string {
 
         <div v-if="taskLoading" class="empty-state">正在读取任务...</div>
         <div v-else-if="!activeTask" class="empty-state">先创建一个任务，再开始抓取链接。</div>
-        <div v-else-if="!currentRecord" class="empty-state">输入链接后开始抓取，这里会显示标题和提取正文。</div>
         <div v-else class="editor-shell">
-          <label class="field">
-            <span>网页标题</span>
-            <input :value="currentRecord.title" type="text" disabled />
-          </label>
-
-          <label class="field">
-            <span>补充提示词后重新提取</span>
-            <textarea
-              v-model="extractPromptInput"
-              rows="3"
-              placeholder="例如：只保留新闻正文，不要评论区和相关推荐。"
-            />
-          </label>
-
-          <label class="field field-grow">
-            <span>提取正文</span>
-            <textarea
-              v-model="editableBody"
-              rows="16"
-              placeholder="抓取后，这里会出现 LLM 提取的正文。"
-            />
-          </label>
-
-          <div class="action-row">
-            <button class="primary-btn" :disabled="busy" @click="saveConfirmedBody">保存正文修改</button>
-            <button class="ghost-btn" :disabled="busy" @click="retryExtract">基于提示词重新提取</button>
-            <button class="ghost-btn" :disabled="busy" @click="collectImages">确认正文并抓取图片</button>
-          </div>
-
-          <p class="hint">页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击“重新执行抓取流程”。</p>
-
-          <div class="inline-media-entry">
-            <div>
-              <strong>这次正文的图片池</strong>
-              <span>
-                {{ totalImageCount ? `已抓取 ${totalImageCount} 张，可勾选 ${selectedImageCount} 张` : "确认正文并抓图后，可在这里统一查看" }}
-              </span>
+          <div class="history-shell">
+            <div class="history-header">
+              <strong>当前任务历史正文</strong>
+              <span>{{ historyRecords.length }} 条</span>
             </div>
-            <button class="ghost-btn media-entry-btn" :disabled="!totalImageCount" @click="openImagePool">
-              查看这次正文的图片池
-            </button>
+            <div v-if="!historyRecords.length" class="empty-note">开始爬取后，这里会累积当前任务下的历史链接正文。</div>
+            <div v-else class="record-list">
+              <button
+                v-for="record in historyRecords"
+                :key="record.recordId"
+                class="record-card"
+                :class="{ active: currentRecord?.recordId === record.recordId }"
+                @click="selectedRecordId = record.recordId"
+              >
+                <div class="record-card-top">
+                  <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
+                  <span>{{ formatDateTime(record.lastRunAt) }}</span>
+                </div>
+                <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
+                <p>{{ summarizeBody(record.userEditedBody || record.extractedBody) }}</p>
+                <div class="record-card-meta">
+                  <span>{{ record.status }}</span>
+                  <span>重跑 {{ record.rerunCount }} 次</span>
+                  <span>{{ record.imageAssetIds.length }} 张图</span>
+                </div>
+              </button>
+            </div>
           </div>
+
+          <div v-if="!currentRecord" class="empty-state">输入链接后开始抓取，这里会显示标题和提取正文。</div>
+          <template v-else>
+            <label class="field">
+              <span>网页标题</span>
+              <input :value="currentRecord.title" type="text" disabled />
+            </label>
+
+            <label class="field">
+              <span>补充提示词后重新提取</span>
+              <textarea
+                v-model="extractPromptInput"
+                rows="3"
+                placeholder="例如：只保留新闻正文，不要评论区和相关推荐。"
+              />
+            </label>
+
+            <label class="field field-grow">
+              <span>提取正文</span>
+              <textarea
+                v-model="editableBody"
+                rows="16"
+                placeholder="抓取后，这里会出现 LLM 提取的正文。"
+              />
+            </label>
+
+            <div class="action-row">
+              <button class="primary-btn" :disabled="busy" @click="saveConfirmedBody">保存正文修改</button>
+              <button class="ghost-btn" :disabled="busy" @click="retryExtract">基于提示词重新提取</button>
+              <button class="ghost-btn" :disabled="busy" @click="collectImages">确认正文并抓取图片</button>
+            </div>
+
+            <p class="hint">页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击“重新执行当前正文”。</p>
+
+            <div class="inline-media-entry">
+              <div>
+                <strong>这次正文的图片池</strong>
+                <span>
+                  {{ currentRecordImageAssets.length ? `已抓取 ${currentRecordImageAssets.length} 张，点击后大图查看` : "确认正文并抓图后，可在这里统一查看" }}
+                </span>
+              </div>
+              <button class="ghost-btn media-entry-btn" :disabled="!currentRecordImageAssets.length" @click="openConfirmImagePool">
+                查看这次正文的图片池
+              </button>
+            </div>
+          </template>
         </div>
       </section>
 
@@ -537,11 +894,36 @@ function summarizeUrl(value: string, maxLength = 56): string {
           </div>
           <div class="header-meta">
             <span>已确认 {{ confirmedRecords }} 条正文</span>
-            <span>已选 {{ selectedImageCount }} 张图片</span>
+            <span>已勾选 {{ rewriteSelectedRecordIds.length }} 条正文</span>
           </div>
         </div>
 
-        <div class="rewrite-result">
+        <div v-if="!activeTask" class="empty-state">创建任务并抓取正文后，这里可以勾选需要参与二次原创的正文。</div>
+        <div v-else class="rewrite-result">
+          <div class="selection-shell">
+            <div class="history-header">
+              <strong>勾选需要参与二次原创的正文</strong>
+              <span>{{ rewriteCandidateRecords.length }} 条可用</span>
+            </div>
+            <div v-if="!rewriteCandidateRecords.length" class="empty-note">先在左侧确认正文，这里才会出现可勾选的正文。</div>
+            <div v-else class="compose-record-list">
+              <label v-for="record in rewriteCandidateRecords" :key="record.recordId" class="compose-record-card">
+                <div class="compose-record-top">
+                  <input
+                    :checked="rewriteSelectedRecordIds.includes(record.recordId)"
+                    type="checkbox"
+                    @change="toggleRewriteRecord(record.recordId, ($event.target as HTMLInputElement).checked)"
+                  />
+                  <div>
+                    <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
+                    <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
+                  </div>
+                </div>
+                <p>{{ summarizeBody(record.userEditedBody) }}</p>
+              </label>
+            </div>
+          </div>
+
           <label class="field">
             <span>追加到系统提示词</span>
             <textarea
@@ -553,54 +935,143 @@ function summarizeUrl(value: string, maxLength = 56): string {
 
           <div class="action-row">
             <button class="primary-btn" :disabled="busy || !activeTask" @click="rewriteTask">开始二次原创</button>
-            <button class="ghost-btn" :disabled="exportBusy || !activeTask?.rewriteResult" @click="exportWord">
-              {{ exportBusy ? "导出中..." : "导出到 Word" }}
-            </button>
+            <button class="ghost-btn" :disabled="!activeTask?.rewriteResult" @click="openRewriteResult">查看结果</button>
           </div>
 
-          <div v-if="activeTask?.rewriteResult" class="rewrite-preview">
-            <h3>{{ activeTask.rewriteResult.title }}</h3>
-            <p v-for="(paragraph, index) in activeTask.rewriteResult.paragraphs" :key="`${index}-${paragraph.slice(0, 12)}`">
-              {{ paragraph }}
-            </p>
+          <div v-if="activeTask?.rewriteResult" class="result-brief">
+            <strong>{{ activeTask.rewriteResult.title }}</strong>
+            <span>结果编辑、插图、本地上传、保存和导出都在“查看结果”的大弹窗里完成。</span>
           </div>
-          <div v-else class="empty-note">当前任务还没有最终原创结果。</div>
+          <div v-else class="empty-note">当前任务还没有原创结果。</div>
         </div>
       </section>
     </main>
 
     <div v-if="errorMessage" class="error-toast">{{ errorMessage }}</div>
 
-    <div v-if="imagePoolOpen" class="modal-backdrop" @click.self="closeImagePool">
+    <div v-if="confirmImagePoolOpen" class="modal-backdrop" @click.self="closeConfirmImagePool">
       <section class="image-pool-modal">
         <div class="panel-header image-pool-header">
           <div>
             <span class="eyebrow">Assets</span>
-            <h2>当前任务图片池</h2>
+            <h2>这次正文的图片池</h2>
           </div>
           <div class="header-meta">
-            <span>{{ totalImageCount }} 张素材</span>
-            <span>已选 {{ selectedImageCount }} 张</span>
+            <span>{{ currentRecordImageAssets.length }} 张素材</span>
+            <span>{{ currentRecord?.title || "当前正文" }}</span>
           </div>
         </div>
 
-        <button class="ghost-btn modal-close-btn" @click="closeImagePool">关闭</button>
+        <button class="ghost-btn modal-close-btn" @click="closeConfirmImagePool">关闭</button>
 
-        <div v-if="!activeTask?.imageAssets.length" class="empty-note">
-          确认正文并抓取图片后，这里会显示本任务下的全部素材。
-        </div>
-        <div v-else class="asset-grid image-pool-grid">
-          <label v-for="asset in activeTask.imageAssets" :key="asset.assetId" class="asset-card">
-            <div class="asset-check">
-              <input :checked="asset.selected" type="checkbox" @change="toggleImage(asset.assetId, ($event.target as HTMLInputElement).checked)" />
-            </div>
-            <img v-if="imageUrls[asset.assetId]" :src="imageUrls[asset.assetId]" :alt="asset.sourceUrl" />
+        <div class="asset-grid image-pool-grid">
+          <article v-for="asset in currentRecordImageAssets" :key="asset.assetId" class="asset-card preview-only-card">
+            <img v-if="asset.localPath && imageUrlsByPath[asset.localPath]" :src="imageUrlsByPath[asset.localPath]" :alt="asset.sourceUrl" />
             <div v-else class="asset-placeholder">图片预览不可用</div>
             <div class="asset-meta">
               <strong>{{ asset.failedReason ? "下载失败" : summarizeUrl(asset.sourceUrl, 42) }}</strong>
               <span>{{ asset.failedReason ? asset.failedReason : summarizeUrl(asset.sourceUrl, 72) }}</span>
             </div>
-          </label>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <div v-if="rewriteResultOpen && rewriteDraft" class="modal-backdrop result-backdrop" @click.self="closeRewriteResult">
+      <section class="result-modal">
+        <div class="panel-header result-header">
+          <div>
+            <span class="eyebrow">Result</span>
+            <h2>二次原创结果</h2>
+          </div>
+          <div class="header-meta">
+            <span>本次使用 {{ rewriteDraft.sourceRecordIds.length }} 条正文</span>
+            <span>{{ rewriteSourceImageAssets.length }} 张可插入图片</span>
+          </div>
+        </div>
+
+        <div class="result-toolbar">
+          <button class="primary-btn toolbar-btn" :disabled="rewriteSaveBusy" @click="saveRewriteResult">
+            {{ rewriteSaveBusy ? "保存中..." : "保存" }}
+          </button>
+          <button class="ghost-btn toolbar-btn" :disabled="exportBusy" @click="exportRewriteResult">
+            {{ exportBusy ? "导出中..." : "导出 Word" }}
+          </button>
+          <button class="ghost-btn toolbar-btn" @click="closeRewriteResult">关闭</button>
+        </div>
+
+        <div class="result-body">
+          <div class="result-editor">
+            <label class="field">
+              <span>标题</span>
+              <input :value="rewriteDraft.title" type="text" @input="updateRewriteTitle(($event.target as HTMLInputElement).value)" />
+            </label>
+
+            <div class="paragraph-list">
+              <article v-for="(block, index) in rewriteParagraphBlocks" :key="block.blockId" class="paragraph-card">
+                <div class="paragraph-top">
+                  <strong>第 {{ index + 1 }} 段</strong>
+                  <div class="paragraph-actions">
+                    <button class="ghost-btn small-btn" @click="openImagePicker(block.sectionId)">从图片池插图</button>
+                    <button class="ghost-btn small-btn" :disabled="selectingUploadImage" @click="imagePickerSectionId = block.sectionId; uploadImageToSection()">
+                      上传本地图片
+                    </button>
+                  </div>
+                </div>
+
+                <textarea
+                  class="paragraph-editor"
+                  :value="block.text"
+                  rows="6"
+                  @input="updateParagraphText(block.blockId, ($event.target as HTMLTextAreaElement).value)"
+                />
+
+                <div v-if="getSectionImages(block.sectionId).length" class="inline-image-list">
+                  <article v-for="imageBlock in getSectionImages(block.sectionId)" :key="imageBlock.blockId" class="inline-image-card">
+                    <img v-if="imageUrlsByPath[imageBlock.imagePath]" :src="imageUrlsByPath[imageBlock.imagePath]" :alt="imageBlock.caption || imageBlock.imagePath" />
+                    <div v-else class="asset-placeholder">图片预览不可用</div>
+                    <div class="asset-meta">
+                      <strong>{{ imageBlock.caption || "插图" }}</strong>
+                      <span>{{ summarizeUrl(imageBlock.imagePath, 64) }}</span>
+                    </div>
+                    <button class="ghost-btn small-btn remove-btn" @click="removeImageBlock(imageBlock.blockId)">移除图片</button>
+                  </article>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <aside class="picker-panel">
+            <div class="history-header">
+              <strong>{{ imagePickerSectionId ? "本次正文图片池" : "选择段落后可插图" }}</strong>
+              <span>{{ rewriteSourceImageAssets.length }} 张</span>
+            </div>
+            <p class="hint">这里只显示本次参与原创的正文对应图片池，也可以直接上传本地图片插入到当前段落后面。</p>
+            <div class="picker-actions">
+              <button class="ghost-btn" :disabled="!imagePickerSectionId || selectingUploadImage" @click="uploadImageToSection">
+                {{ selectingUploadImage ? "选择中..." : "上传本地图片" }}
+              </button>
+              <button class="ghost-btn" :disabled="!imagePickerSectionId" @click="closeImagePicker">收起图片池</button>
+            </div>
+            <div v-if="!rewriteSourceImageAssets.length" class="empty-note">当前这次原创还没有可用图片素材。</div>
+            <div v-else class="picker-grid">
+              <article v-for="asset in rewriteSourceImageAssets" :key="asset.assetId" class="asset-card picker-card">
+                <img v-if="asset.localPath && imageUrlsByPath[asset.localPath]" :src="imageUrlsByPath[asset.localPath]" :alt="asset.sourceUrl" />
+                <div v-else class="asset-placeholder">图片预览不可用</div>
+                <div class="asset-meta">
+                  <strong>{{ asset.failedReason ? "下载失败" : summarizeUrl(asset.sourceUrl, 42) }}</strong>
+                  <span>{{ asset.failedReason ? asset.failedReason : summarizeUrl(asset.sourceUrl, 72) }}</span>
+                </div>
+                <button
+                  class="primary-btn small-insert-btn"
+                  :disabled="!imagePickerSectionId || !asset.localPath"
+                  @click="insertRecordImage(asset)"
+                >
+                  插入当前段后
+                </button>
+              </article>
+            </div>
+          </aside>
         </div>
       </section>
     </div>
@@ -719,6 +1190,7 @@ small,
 }
 
 .task-item,
+.record-card,
 .ghost-btn,
 .primary-btn {
   width: 100%;
@@ -731,6 +1203,7 @@ small,
 }
 
 .task-item,
+.record-card,
 .ghost-btn {
   background: rgba(255, 255, 255, 0.03);
   color: #edf5ff;
@@ -753,7 +1226,8 @@ small,
   font-weight: 400;
 }
 
-.task-item.active {
+.task-item.active,
+.record-card.active {
   border-color: rgba(108, 174, 255, 0.46);
 }
 
@@ -820,25 +1294,79 @@ textarea {
   gap: 14px;
 }
 
-.rewrite-preview {
+.history-shell,
+.selection-shell,
+.result-brief {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.history-header,
+.record-card-top,
+.record-card-meta,
+.compose-record-top,
+.result-toolbar,
+.paragraph-top,
+.paragraph-actions,
+.picker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.record-list,
+.compose-record-list,
+.paragraph-list,
+.inline-image-list,
+.picker-grid {
   display: grid;
   gap: 12px;
 }
 
-.rewrite-preview h3 {
-  margin: 2px 0 0;
+.record-card,
+.compose-record-card,
+.paragraph-card,
+.inline-image-card,
+.picker-card {
+  padding: 12px 14px;
 }
 
-.rewrite-preview p {
-  margin: 0;
-  color: #d6e4ff;
-  line-height: 1.8;
+.record-card {
+  text-align: left;
 }
 
-.action-row {
-  display: flex;
+.record-card strong,
+.compose-record-card strong,
+.result-brief strong,
+.paragraph-card strong,
+.inline-image-card strong {
+  color: #edf5ff;
+}
+
+.record-card span,
+.record-card p,
+.compose-record-card span,
+.compose-record-card p,
+.result-brief span {
+  color: #9cb3d7;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.record-card p,
+.compose-record-card p {
+  margin: 8px 0 0;
+}
+
+.record-card-meta {
+  margin-top: 10px;
+  justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 10px;
 }
 
 .inline-media-entry {
@@ -873,7 +1401,27 @@ textarea {
   min-width: 220px;
 }
 
-.asset-grid {
+.compose-record-card {
+  display: grid;
+  gap: 8px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.compose-record-top {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.compose-record-top input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.asset-grid,
+.picker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
   gap: 12px;
@@ -882,7 +1430,6 @@ textarea {
 
 .asset-card {
   display: grid;
-  grid-template-rows: auto auto 1fr;
   gap: 10px;
   padding: 10px;
   border-radius: 16px;
@@ -890,16 +1437,15 @@ textarea {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.asset-check {
-  display: flex;
-  justify-content: center;
+.preview-only-card {
+  padding: 10px;
 }
 
 .asset-card img,
 .asset-placeholder {
   width: 100%;
   aspect-ratio: 1 / 1;
-  max-height: 156px;
+  max-height: 180px;
   border-radius: 12px;
   object-fit: cover;
   display: grid;
@@ -962,11 +1508,11 @@ textarea {
   backdrop-filter: blur(10px);
 }
 
-.image-pool-modal {
-  width: min(1240px, 100%);
-  max-height: min(84vh, 920px);
+.image-pool-modal,
+.result-modal {
+  width: min(1280px, 100%);
+  max-height: min(88vh, 980px);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 16px;
   padding: 24px;
   border-radius: 24px;
@@ -975,18 +1521,74 @@ textarea {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
 }
 
-.image-pool-header {
+.image-pool-modal {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.result-modal {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.image-pool-header,
+.result-header {
   margin-bottom: 0;
 }
 
-.modal-close-btn {
+.modal-close-btn,
+.toolbar-btn,
+.small-btn,
+.small-insert-btn {
   width: auto;
-  justify-self: end;
-  padding-inline: 20px;
 }
 
-.image-pool-grid {
-  padding-right: 8px;
+.result-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.95fr);
+  gap: 18px;
+}
+
+.result-editor,
+.picker-panel {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.picker-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.paragraph-card,
+.inline-image-card {
+  display: grid;
+  gap: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.paragraph-editor {
+  min-height: 140px;
+}
+
+.inline-image-list {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.inline-image-card {
+  align-content: start;
+}
+
+.remove-btn,
+.small-insert-btn {
+  justify-self: start;
 }
 
 @media (max-width: 1280px) {
@@ -1007,13 +1609,21 @@ textarea {
     max-width: none;
   }
 
-  .inline-media-entry {
+  .inline-media-entry,
+  .result-body,
+  .result-toolbar,
+  .paragraph-top,
+  .paragraph-actions,
+  .picker-actions {
     align-items: stretch;
     flex-direction: column;
   }
 
   .media-entry-btn,
-  .modal-close-btn {
+  .modal-close-btn,
+  .toolbar-btn,
+  .small-btn,
+  .small-insert-btn {
     width: 100%;
   }
 
@@ -1021,9 +1631,14 @@ textarea {
     padding: 18px;
   }
 
-  .image-pool-modal {
-    max-height: 88vh;
+  .image-pool-modal,
+  .result-modal {
+    max-height: 92vh;
     padding: 18px;
+  }
+
+  .result-body {
+    grid-template-columns: 1fr;
   }
 }
 </style>

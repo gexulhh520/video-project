@@ -8,6 +8,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveWebRewriteResultOptions,
   TaskProgress,
   VideoToPostConfigStatus,
   VideoToPostSettings,
@@ -66,6 +67,8 @@ export const desktopApi = {
     window.desktopApi.collectWebRecordImages(taskId, recordId),
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> =>
     window.desktopApi.rewriteWebTask(taskId, toPlainObject(options)),
+  saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
+    window.desktopApi.saveWebRewriteResult(taskId, toPlainObject(options)),
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     window.desktopApi.toggleWebImageSelection(taskId, assetId, selected),
   exportWebTaskToWord: (taskId: string): Promise<string | null> => window.desktopApi.exportWebTaskToWord(taskId),

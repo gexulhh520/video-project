@@ -7,8 +7,8 @@ import { v4 as uuidv4 } from "uuid";
 import type {
   BrowserRuntimeHealthStatus,
   ConfirmWebRecordBodyOptions,
-  ContentBlock,
   RewriteWebTaskOptions,
+  SaveWebRewriteResultOptions,
   WebCrawlRecord,
   WebCrawlStartOptions,
   WebCrawlTask,
@@ -267,9 +267,12 @@ export class WebTaskService {
     onProgress?: (progress: WebTaskProgress) => void
   ): Promise<WebCrawlTask> {
     const task = await this.getTaskById(taskId);
-    const confirmedRecords = task.records.filter((record) => record.userEditedBody.trim());
+    const requestedRecordIds = Array.from(new Set(options.recordIds.map((item) => item.trim()).filter(Boolean)));
+    const confirmedRecords = task.records.filter(
+      (record) => requestedRecordIds.includes(record.recordId) && record.userEditedBody.trim()
+    );
     if (confirmedRecords.length === 0) {
-      throw new Error("请至少确认一条正文后再开始二次原创。");
+      throw new Error("请至少确认并勾选一条正文后再开始二次原创。");
     }
 
     task.status = "rewriting";
@@ -284,21 +287,10 @@ export class WebTaskService {
         title: record.title,
         body: record.userEditedBody
       })),
-      task.rewritePrompt
+      task.rewritePrompt,
+      confirmedRecords.map((record) => record.recordId)
     );
 
-    const selectedAssets = task.imageAssets.filter((asset) => asset.selected && asset.localPath);
-    const imageBlocks: ContentBlock[] = selectedAssets.map((asset, index) => ({
-      type: "image",
-      blockId: `web_img_${index + 1}`,
-      sectionId: `web_img_s_${index + 1}`,
-      imagePath: asset.localPath!,
-      time: index,
-      caption: `来源链接素材 ${index + 1}`,
-      sourceType: "upload"
-    }));
-
-    rewriteResult.contentBlocks = this.interleaveContentBlocks(rewriteResult.contentBlocks, imageBlocks);
     rewriteResult.updatedAt = new Date().toISOString();
 
     task.rewriteResult = rewriteResult;
@@ -306,6 +298,26 @@ export class WebTaskService {
     task.updatedAt = new Date().toISOString();
     await this.saveTask(task);
     this.emitProgress(task, undefined, "completed", 100, "原创内容已生成完成", onProgress);
+    return task;
+  }
+
+  async saveRewriteResult(taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> {
+    const task = await this.getTaskById(taskId);
+    const paragraphs = options.rewriteResult.paragraphs.map((item) => item.trim()).filter(Boolean);
+    if (!options.rewriteResult.title.trim() || paragraphs.length === 0) {
+      throw new Error("当前原创结果不完整，无法保存。");
+    }
+
+    task.rewriteResult = {
+      ...options.rewriteResult,
+      title: options.rewriteResult.title.trim(),
+      paragraphs,
+      fullText: paragraphs.join("\n\n"),
+      updatedAt: new Date().toISOString(),
+      sourceRecordIds: Array.from(new Set(options.rewriteResult.sourceRecordIds.map((item) => item.trim()).filter(Boolean)))
+    };
+    task.updatedAt = new Date().toISOString();
+    await this.saveTask(task);
     return task;
   }
 
@@ -420,27 +432,6 @@ export class WebTaskService {
       progress,
       message
     });
-  }
-
-  private interleaveContentBlocks(paragraphBlocks: ContentBlock[], imageBlocks: ContentBlock[]): ContentBlock[] {
-    if (imageBlocks.length === 0) {
-      return paragraphBlocks;
-    }
-
-    const result: ContentBlock[] = [];
-    paragraphBlocks.forEach((paragraphBlock, index) => {
-      result.push(paragraphBlock);
-      const imageBlock = imageBlocks[index];
-      if (imageBlock) {
-        result.push(imageBlock);
-      }
-    });
-
-    if (imageBlocks.length > paragraphBlocks.length) {
-      result.push(...imageBlocks.slice(paragraphBlocks.length));
-    }
-
-    return result;
   }
 
   private isRuntimeDisconnectedError(error: unknown): boolean {

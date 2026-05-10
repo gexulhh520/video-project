@@ -207,7 +207,8 @@ export class LlmService {
   async rewriteWebContent(
     title: string,
     articles: Array<{ title: string; body: string }>,
-    prompt: string
+    prompt: string,
+    sourceRecordIds: string[]
   ): Promise<WebRewriteResult> {
     if (articles.length === 0) {
       throw new Error("No confirmed articles to rewrite.");
@@ -272,7 +273,8 @@ export class LlmService {
       fullText: paragraphs.join("\n\n"),
       createdAt: now,
       updatedAt: now,
-      prompt
+      prompt,
+      sourceRecordIds
     };
   }
 

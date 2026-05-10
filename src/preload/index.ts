@@ -10,6 +10,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveWebRewriteResultOptions,
   TaskProgress,
   VideoToPostConfigStatus,
   VideoToPostSettings,
@@ -66,6 +67,8 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("web-task:collect-images", taskId, recordId),
   rewriteWebTask: async (taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:rewrite", taskId, options),
+  saveWebRewriteResult: async (taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:save-rewrite-result", taskId, options),
   toggleWebImageSelection: async (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:toggle-image", taskId, assetId, selected),
   exportWebTaskToWord: async (taskId: string): Promise<string | null> => ipcRenderer.invoke("web-task:export-word", taskId),

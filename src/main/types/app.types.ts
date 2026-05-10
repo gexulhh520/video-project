@@ -210,6 +210,7 @@ export type WebRewriteResult = {
   createdAt: string;
   updatedAt: string;
   prompt: string;
+  sourceRecordIds: string[];
 };
 
 export type WebCrawlTask = {
@@ -252,6 +253,11 @@ export type RetryExtractWebRecordOptions = {
 
 export type RewriteWebTaskOptions = {
   prompt: string;
+  recordIds: string[];
+};
+
+export type SaveWebRewriteResultOptions = {
+  rewriteResult: WebRewriteResult;
 };
 
 export type LlmSectionsResult = {
@@ -288,6 +294,7 @@ export type DesktopApi = {
   retryWebRecordExtract: (taskId: string, options: RetryExtractWebRecordOptions) => Promise<WebCrawlTask>;
   collectWebRecordImages: (taskId: string, recordId: string) => Promise<WebCrawlTask>;
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions) => Promise<WebCrawlTask>;
+  saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions) => Promise<WebCrawlTask>;
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
   exportWebTaskToWord: (taskId: string) => Promise<string | null>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;

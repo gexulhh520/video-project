@@ -4,6 +4,7 @@ import { extname } from "node:path";
 import type {
   AppSettings,
   ConfirmWebRecordBodyOptions,
+  DeleteWebRecordOptions,
   GeneratePostOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
@@ -170,6 +171,9 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     webTaskService.toggleImageSelection(taskId, assetId, selected)
+  );
+  ipcMain.handle("web-task:delete-record", async (_event, taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
+    webTaskService.deleteRecord(taskId, options.recordId)
   );
   ipcMain.handle("web-task:export-word", async (_event, taskId: string) => {
     const task = await webTaskService.getTaskById(taskId);

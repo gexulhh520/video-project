@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   ConfirmWebRecordBodyOptions,
+  DeleteWebRecordOptions,
   DraftSummary,
   FramePreviewResult,
   GeneratePostOptions,
@@ -71,6 +72,8 @@ export const desktopApi = {
     window.desktopApi.saveWebRewriteResult(taskId, toPlainObject(options)),
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     window.desktopApi.toggleWebImageSelection(taskId, assetId, selected),
+  deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
+    window.desktopApi.deleteWebRecord(taskId, toPlainObject(options)),
   exportWebTaskToWord: (taskId: string): Promise<string | null> => window.desktopApi.exportWebTaskToWord(taskId),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>

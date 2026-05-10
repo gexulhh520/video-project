@@ -260,6 +260,10 @@ export type SaveWebRewriteResultOptions = {
   rewriteResult: WebRewriteResult;
 };
 
+export type DeleteWebRecordOptions = {
+  recordId: string;
+};
+
 export type LlmSectionsResult = {
   title: string;
   sections: ArticleSection[];
@@ -296,6 +300,7 @@ export type DesktopApi = {
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions) => Promise<WebCrawlTask>;
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions) => Promise<WebCrawlTask>;
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
+  deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions) => Promise<WebCrawlTask>;
   exportWebTaskToWord: (taskId: string) => Promise<string | null>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;

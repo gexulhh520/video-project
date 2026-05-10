@@ -383,6 +383,24 @@ async function collectImages(): Promise<void> {
   }
 }
 
+async function deleteRecord(recordId: string): Promise<void> {
+  if (!activeTask.value) {
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    activeTask.value = await desktopApi.deleteWebRecord(activeTask.value.taskId, { recordId });
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除记录失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function rewriteTask(): Promise<void> {
   if (!activeTask.value) {
     return;
@@ -816,25 +834,27 @@ function formatDateTime(value?: string): string {
             </div>
             <div v-if="!historyRecords.length" class="empty-note">开始爬取后，这里会累积当前任务下的历史链接正文。</div>
             <div v-else class="record-list">
-              <button
+              <div
                 v-for="record in historyRecords"
                 :key="record.recordId"
                 class="record-card"
                 :class="{ active: currentRecord?.recordId === record.recordId }"
-                @click="selectedRecordId = record.recordId"
               >
-                <div class="record-card-top">
-                  <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
-                  <span>{{ formatDateTime(record.lastRunAt) }}</span>
-                </div>
-                <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
-                <p>{{ summarizeBody(record.userEditedBody || record.extractedBody) }}</p>
-                <div class="record-card-meta">
-                  <span>{{ record.status }}</span>
-                  <span>重跑 {{ record.rerunCount }} 次</span>
-                  <span>{{ record.imageAssetIds.length }} 张图</span>
-                </div>
-              </button>
+                <button class="record-card-main" @click="selectedRecordId = record.recordId">
+                  <div class="record-card-top">
+                    <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
+                    <span>{{ formatDateTime(record.lastRunAt) }}</span>
+                  </div>
+                  <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
+                  <p>{{ summarizeBody(record.userEditedBody || record.extractedBody) }}</p>
+                  <div class="record-card-meta">
+                    <span>{{ record.status }}</span>
+                    <span>重跑 {{ record.rerunCount }} 次</span>
+                    <span>{{ record.imageAssetIds.length }} 张图</span>
+                  </div>
+                </button>
+                <button class="ghost-btn small-btn delete-record-btn" :disabled="busy" @click.stop="deleteRecord(record.recordId)">删除</button>
+              </div>
             </div>
           </div>
 
@@ -1338,6 +1358,25 @@ textarea {
 
 .record-card {
   text-align: left;
+  display: grid;
+  gap: 8px;
+}
+
+.record-card-main {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.delete-record-btn {
+  width: auto;
+  justify-self: end;
+  color: #ff8a8a;
+  border-color: rgba(255, 106, 106, 0.22);
 }
 
 .record-card strong,

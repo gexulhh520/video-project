@@ -261,6 +261,27 @@ export class WebTaskService {
     return task;
   }
 
+  async deleteRecord(taskId: string, recordId: string): Promise<WebCrawlTask> {
+    const task = await this.getTaskById(taskId);
+    const recordIndex = task.records.findIndex((item) => item.recordId === recordId);
+    if (recordIndex === -1) {
+      throw new Error("未找到对应的抓取记录。");
+    }
+
+    const record = task.records[recordIndex];
+    task.records.splice(recordIndex, 1);
+
+    task.imageAssets = task.imageAssets.filter((item) => item.originRecordId !== recordId);
+
+    if (task.currentRecordId === recordId) {
+      task.currentRecordId = undefined;
+    }
+
+    task.updatedAt = new Date().toISOString();
+    await this.saveTask(task);
+    return task;
+  }
+
   async rewriteTask(
     taskId: string,
     options: RewriteWebTaskOptions,

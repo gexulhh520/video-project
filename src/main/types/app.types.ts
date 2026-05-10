@@ -24,6 +24,13 @@ export type ArticleSection = {
   sourceTimeRanges: SourceTimeRange[];
 };
 
+export type ImageEditMeta = {
+  originalImagePath: string;
+  editedImagePath: string;
+  editedAt: string;
+  effect: "mosaic";
+};
+
 export type ContentBlock =
   | {
       type: "paragraph";
@@ -41,6 +48,7 @@ export type ContentBlock =
       caption?: string;
       sourceType?: "auto" | "upload" | "video-frame" | "video-gif";
       sourceTimeRange?: SourceTimeRange;
+      editMeta?: ImageEditMeta;
     };
 
 export type PostDraft = {
@@ -77,6 +85,14 @@ export type ReplaceFrameAssetOptions = {
   mode: FrameAssetMode;
   timeSeconds: number;
   durationSeconds?: number;
+};
+
+export type SaveEditedFrameOptions = {
+  draftId: string;
+  blockId: string;
+  sourceImagePath: string;
+  imageBase64: string;
+  time: number;
 };
 
 export type GeneratePostOptions = {
@@ -289,6 +305,7 @@ export type DesktopApi = {
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions) => Promise<FramePreviewResult>;
   replaceDraftImageFromFrame: (draftId: string, blockId: string, options: ReplaceFrameAssetOptions) => Promise<PostDraft>;
+  saveEditedFrame: (options: SaveEditedFrameOptions) => Promise<{ imagePath: string; updatedDraft: PostDraft }>;
   rewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
   listWebTasks: () => Promise<WebTaskSummary[]>;
   getWebTaskById: (taskId: string) => Promise<WebCrawlTask>;

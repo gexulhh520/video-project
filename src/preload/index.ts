@@ -11,6 +11,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TaskProgress,
   VideoToPostConfigStatus,
@@ -54,6 +55,7 @@ const desktopApi: DesktopApi = {
     blockId: string,
     options: ReplaceFrameAssetOptions
   ): Promise<PostDraft> => ipcRenderer.invoke("draft:replace-image-from-frame", draftId, blockId, options),
+  saveEditedFrame: async (options: SaveEditedFrameOptions) => ipcRenderer.invoke("image:save-edited-frame", options),
   rewriteParagraph: async (options: RewriteParagraphOptions): Promise<string> => ipcRenderer.invoke("paragraph:rewrite", options),
   listWebTasks: async (): Promise<WebTaskSummary[]> => ipcRenderer.invoke("web-task:list"),
   getWebTaskById: async (taskId: string): Promise<WebCrawlTask> => ipcRenderer.invoke("web-task:get", taskId),

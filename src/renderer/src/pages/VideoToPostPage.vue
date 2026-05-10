@@ -17,6 +17,7 @@ import AppSettingsModal from "../components/AppSettingsModal.vue";
 import DraftEditor from "../components/DraftEditor.vue";
 import DraftShelfModal from "../components/DraftShelfModal.vue";
 import FramePickerModal from "../components/FramePickerModal.vue";
+import MosaicEditorDialog from "../components/MosaicEditorDialog.vue";
 import PostPreview from "../components/PostPreview.vue";
 import TaskProgressBar from "../components/TaskProgress.vue";
 import VideoImporter from "../components/VideoImporter.vue";
@@ -54,6 +55,11 @@ const framePreviewLoading = ref(false);
 const frameReplacing = ref(false);
 const framePickerAssetMode = ref<FrameAssetMode>("image");
 const framePickerGifDurationSeconds = ref(4);
+const mosaicEditorOpen = ref(false);
+const mosaicEditorImageDataUrl = ref("");
+const mosaicEditorSourceImagePath = ref("");
+const mosaicEditorTimeSeconds = ref(0);
+const mosaicEditorSaving = ref(false);
 const progress = ref<TaskProgress>({
   taskId: "idle",
   status: "idle",
@@ -385,6 +391,106 @@ function closeFramePicker(): void {
   framePickerPreview.value = null;
 }
 
+async function openMosaicEditor(): Promise<void> {
+  if (!draft.value || !framePickerBlockId.value || !framePickerPreview.value) {
+    return;
+  }
+
+  const imageBlock = draft.value.contentBlocks.find(
+    (block): block is Extract<PostDraft["contentBlocks"][number], { type: "image" }> =>
+      block.type === "image" && block.blockId === framePickerBlockId.value
+  );
+
+  if (!imageBlock) {
+    errorMessage.value = "没有找到对应的图片块";
+    return;
+  }
+
+  mosaicEditorImageDataUrl.value = framePickerPreview.value.imageDataUrl;
+  mosaicEditorSourceImagePath.value = imageBlock.imagePath;
+  mosaicEditorTimeSeconds.value = framePickerTimeSeconds.value;
+  mosaicEditorOpen.value = true;
+  framePickerOpen.value = false;
+}
+
+function closeMosaicEditor(): void {
+  mosaicEditorOpen.value = false;
+  mosaicEditorImageDataUrl.value = "";
+  mosaicEditorSourceImagePath.value = "";
+}
+
+async function handleMosaicUseDirectly(): Promise<void> {
+  if (!draft.value || !framePickerBlockId.value) {
+    return;
+  }
+
+  frameReplacing.value = true;
+  errorMessage.value = "";
+
+  try {
+    draft.value = await desktopApi.replaceDraftImageFromFrame(draft.value.draftId, framePickerBlockId.value, {
+      mode: "image",
+      timeSeconds: mosaicEditorTimeSeconds.value
+    });
+    activeDraftId.value = draft.value.draftId;
+    await refreshDrafts();
+    closeMosaicEditor();
+    progress.value = {
+      taskId: draft.value.draftId,
+      status: "completed",
+      progress: 100,
+      message: "已从原视频重新选帧并替换图片"
+    };
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "视频选帧替换失败";
+  } finally {
+    frameReplacing.value = false;
+  }
+}
+
+async function handleMosaicSave(imageBase64: string): Promise<void> {
+  if (!draft.value || !framePickerBlockId.value) {
+    return;
+  }
+
+  mosaicEditorSaving.value = true;
+  errorMessage.value = "";
+
+  try {
+    const imageBlock = draft.value.contentBlocks.find(
+      (block): block is Extract<PostDraft["contentBlocks"][number], { type: "image" }> =>
+        block.type === "image" && block.blockId === framePickerBlockId.value
+    );
+
+    if (!imageBlock) {
+      throw new Error("没有找到对应的图片块");
+    }
+
+    const result = await desktopApi.saveEditedFrame({
+      draftId: draft.value.draftId,
+      blockId: framePickerBlockId.value,
+      sourceImagePath: imageBlock.imagePath,
+      imageBase64,
+      time: mosaicEditorTimeSeconds.value
+    });
+
+    draft.value = result.updatedDraft;
+    activeDraftId.value = draft.value.draftId;
+    await refreshDrafts();
+    closeMosaicEditor();
+    progress.value = {
+      taskId: draft.value.draftId,
+      status: "completed",
+      progress: 100,
+      message: "已涂抹马赛克并替换图片"
+    };
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "保存马赛克编辑失败";
+  } finally {
+    mosaicEditorSaving.value = false;
+  }
+}
+
 async function refreshFramePreview(timeSeconds: number): Promise<void> {
   if (!draft.value) {
     return;
@@ -553,6 +659,18 @@ function toggleImmersiveEditor(): void {
       @change-mode="handleFramePickerModeChange"
       @change-gif-duration="handleFramePickerGifDurationChange"
       @confirm="confirmFrameReplacement"
+      @open-mosaic-editor="openMosaicEditor"
+    />
+
+    <MosaicEditorDialog
+      :open="mosaicEditorOpen"
+      :source-image-data-url="mosaicEditorImageDataUrl"
+      :source-image-path="mosaicEditorSourceImagePath"
+      :time-seconds="mosaicEditorTimeSeconds"
+      :saving="mosaicEditorSaving"
+      @close="closeMosaicEditor"
+      @use-directly="handleMosaicUseDirectly"
+      @save-mosaic="handleMosaicSave"
     />
 
     <DraftShelfModal

@@ -21,6 +21,7 @@ const emit = defineEmits<{
   changeMode: [mode: FrameAssetMode];
   changeGifDuration: [durationSeconds: number];
   confirm: [];
+  openMosaicEditor: [];
 }>();
 
 const sliderValue = ref(String(props.timeSeconds));
@@ -106,6 +107,9 @@ function handleSliderInput(value: string): void {
 
       <footer class="modal-footer">
         <button class="ghost-btn" @click="emit('close')">取消</button>
+        <button class="mosaic-btn" :disabled="loading || saving || !preview" @click="emit('openMosaicEditor')">
+          涂抹马赛克后使用
+        </button>
         <button class="primary-btn" :disabled="loading || saving || !preview" @click="emit('confirm')">
           {{ saving ? "保存中..." : assetMode === 'gif' ? "使用这个 GIF" : "使用这一帧" }}
         </button>
@@ -270,6 +274,22 @@ function handleSliderInput(value: string): void {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 22px;
+}
+
+.mosaic-btn {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 180, 100, 0.12);
+  color: #ffd4a8;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.mosaic-btn:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
 }
 
 @media (max-width: 860px) {

@@ -9,6 +9,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TaskProgress,
   VideoToPostConfigStatus,
@@ -54,6 +55,7 @@ export const desktopApi = {
     blockId: string,
     options: ReplaceFrameAssetOptions
   ): Promise<PostDraft> => window.desktopApi.replaceDraftImageFromFrame(draftId, blockId, toPlainObject(options)),
+  saveEditedFrame: (options: SaveEditedFrameOptions) => window.desktopApi.saveEditedFrame(toPlainObject(options)),
   rewriteParagraph: (options: RewriteParagraphOptions): Promise<string> => window.desktopApi.rewriteParagraph(toPlainObject(options)),
   listWebTasks: (): Promise<WebTaskSummary[]> => window.desktopApi.listWebTasks(),
   getWebTaskById: (taskId: string): Promise<WebCrawlTask> => window.desktopApi.getWebTaskById(taskId),

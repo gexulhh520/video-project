@@ -10,6 +10,7 @@ import type {
   ReplaceFrameAssetOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
+  SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TaskProgress,
   WebCrawlStartOptions,
@@ -24,6 +25,7 @@ import type {
 import { PostService } from "./services/post.service";
 import { SettingsService } from "./services/settings.service";
 import { WebTaskService } from "./services/web-task.service";
+import { ImageEditService } from "./services/image-edit.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -32,7 +34,8 @@ export function registerIpcHandlers(
   mainWindow: BrowserWindow,
   postService: PostService,
   settingsService: SettingsService,
-  webTaskService: WebTaskService
+  webTaskService: WebTaskService,
+  imageEditService: ImageEditService
 ): void {
   ipcMain.handle("video:select", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -206,6 +209,9 @@ export function registerIpcHandlers(
     "draft:replace-image-from-frame",
     async (_event, draftId: string, blockId: string, options: ReplaceFrameAssetOptions) =>
       postService.replaceDraftImageFromFrame(draftId, blockId, options)
+  );
+  ipcMain.handle("image:save-edited-frame", async (_event, options: SaveEditedFrameOptions) =>
+    imageEditService.saveEditedFrame(options)
   );
   ipcMain.handle("image:read-data-url", async (_event, imagePath: string) => {
     const buffer = await readFile(imagePath);

@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { ArticleSection, LlmSectionsResult, TranscriptSegment } from "../types/app.types";
+import type { ArticleSection, ContentBlock, LlmSectionsResult, TranscriptSegment, WebRewriteResult } from "../types/app.types";
 import { SettingsService } from "./settings.service";
 
 type OpenAiLikeResponse = {
@@ -160,6 +160,122 @@ export class LlmService {
     return rewrittenParagraph;
   }
 
+  async extractArticleFromSnapshot(title: string, snapshot: string, prompt = ""): Promise<string> {
+    if (!snapshot.trim()) {
+      throw new Error("Snapshot is empty.");
+    }
+
+    const content = await this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content: [
+            "你是中文网页正文抽取助手。",
+            "你的任务是根据网页标题和网页快照，提取真正的文章正文。",
+            "必须排除导航、页眉、页脚、作者信息、评论区、相关推荐、广告、按钮文案、标签、版权声明和重复内容。",
+            "如果页面里存在多段正文，请按自然阅读顺序拼接成连贯正文。",
+            "不要总结，不要改写，不要二创，只做清洗提取。",
+            "只输出纯正文，不要带标题，不要带解释，不要带 Markdown。"
+          ].join("")
+        },
+        {
+          role: "user",
+          content: [
+            `标题：${title || "未获取到标题"}`,
+            prompt.trim() ? `额外要求：${prompt.trim()}` : "",
+            "网页快照如下：",
+            snapshot
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        }
+      ],
+      {
+        temperature: 0.2
+      },
+      "web"
+    );
+
+    const result = content.trim();
+    if (!result) {
+      throw new Error("LLM returned an empty extracted article.");
+    }
+
+    return result;
+  }
+
+  async rewriteWebContent(
+    title: string,
+    articles: Array<{ title: string; body: string }>,
+    prompt: string
+  ): Promise<WebRewriteResult> {
+    if (articles.length === 0) {
+      throw new Error("No confirmed articles to rewrite.");
+    }
+
+    const content = await this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content: [
+            "你是一个中文平台爆款内容二创编辑。",
+            "你会基于多个来源正文，重新组织信息，写出新的标题和多段原创正文。",
+            "要保留事实边界，不虚构额外事实，不照抄原文句子。",
+            "语言要自然、紧凑、适合图文发布。",
+            "输出合法 JSON，不要附加解释。",
+            "JSON 格式必须为 {\"title\":\"...\",\"paragraphs\":[\"...\" ]}。"
+          ].join("")
+        },
+        {
+          role: "user",
+          content: [
+            `任务标题：${title || "未命名任务"}`,
+            prompt.trim() ? `额外要求：${prompt.trim()}` : "",
+            "来源正文：",
+            JSON.stringify(articles, null, 2)
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        }
+      ],
+      {
+        temperature: 0.8,
+        response_format: {
+          type: "json_object"
+        }
+      },
+      "web"
+    );
+
+    const parsed = JSON.parse(this.extractJson(content)) as {
+      title?: string;
+      paragraphs?: string[];
+    };
+
+    const paragraphs = (parsed.paragraphs ?? []).map((item) => item.trim()).filter(Boolean);
+    if (!parsed.title?.trim() || paragraphs.length === 0) {
+      throw new Error("LLM response JSON is missing title or paragraphs.");
+    }
+
+    const now = new Date().toISOString();
+    const contentBlocks: ContentBlock[] = paragraphs.map((paragraph, index) => ({
+      type: "paragraph",
+      blockId: `web_p_${index + 1}`,
+      sectionId: `web_s_${index + 1}`,
+      text: paragraph
+    }));
+
+    return {
+      title: parsed.title.trim(),
+      paragraphs,
+      contentBlocks,
+      fullText: paragraphs.join("\n\n"),
+      createdAt: now,
+      updatedAt: now,
+      prompt
+    };
+  }
+
   private extractJson(content: string): string {
     const fencedMatch = content.match(/```json\s*([\s\S]*?)```/i) ?? content.match(/```([\s\S]*?)```/i);
     return fencedMatch?.[1]?.trim() ?? content.trim();
@@ -172,9 +288,11 @@ export class LlmService {
       response_format?: {
         type: "json_object";
       };
-    }
+    },
+    scope: "video" | "web" = "video"
   ): Promise<string> {
-    const toolSettings = await this.settingsService.getVideoToPostSettings();
+    const toolSettings =
+      scope === "web" ? await this.settingsService.getWebToPostSettings() : await this.settingsService.getVideoToPostSettings();
     const apiKey = toolSettings.llmApiKey || process.env.LLM_API_KEY;
     const model = toolSettings.llmModel || process.env.LLM_MODEL || "deepseek-v4-flash";
 

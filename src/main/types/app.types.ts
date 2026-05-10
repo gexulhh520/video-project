@@ -98,10 +98,27 @@ export type VideoToPostSettings = {
   llmModel: string;
 };
 
+export type WebToPostSettings = {
+  llmApiKey: string;
+  llmModel: string;
+  bbBrowserCommand: string;
+  bbBrowserArgs: string;
+  bbBrowserMcpCommand: string;
+  bbBrowserMcpArgs: string;
+};
+
 export type VideoToPostConfigStatus = {
   ready: boolean;
   hasDoubaoAsrApiKey: boolean;
   hasLlmApiKey: boolean;
+  resolvedLlmModel: string;
+  missingItems: string[];
+};
+
+export type WebToPostConfigStatus = {
+  ready: boolean;
+  hasLlmApiKey: boolean;
+  hasBbBrowserCommand: boolean;
   resolvedLlmModel: string;
   missingItems: string[];
 };
@@ -125,6 +142,118 @@ export type TaskProgress = {
   message: string;
 };
 
+export type BrowserRuntimeHealthStatus = {
+  healthy: boolean;
+  daemonRunning: boolean;
+  cdpConnected: boolean;
+  checkedAt: string;
+  message: string;
+  rawOutput?: string;
+};
+
+export type WebTaskStatus =
+  | "idle"
+  | "checking_runtime_health"
+  | "resetting_runtime"
+  | "opening_page"
+  | "waiting_page_ready"
+  | "fetching_title"
+  | "capturing_snapshot"
+  | "extracting_article"
+  | "awaiting_user_confirmation"
+  | "collecting_images"
+  | "closing_tab"
+  | "ready_for_next_url"
+  | "rewriting"
+  | "completed"
+  | "failed";
+
+export type WebTaskProgress = {
+  taskId: string;
+  recordId?: string;
+  status: WebTaskStatus;
+  progress: number;
+  message: string;
+};
+
+export type WebImageAsset = {
+  assetId: string;
+  sourceUrl: string;
+  localPath?: string;
+  originRecordId: string;
+  selected: boolean;
+  downloadedAt?: string;
+  failedReason?: string;
+};
+
+export type WebCrawlRecord = {
+  recordId: string;
+  sourceUrl: string;
+  tabId?: string;
+  title: string;
+  snapshot: string;
+  extractedBody: string;
+  userEditedBody: string;
+  extractPrompt: string;
+  status: WebTaskStatus;
+  lastRunAt?: string;
+  rerunCount: number;
+  failureReason?: string;
+  imageAssetIds: string[];
+};
+
+export type WebRewriteResult = {
+  title: string;
+  paragraphs: string[];
+  contentBlocks: ContentBlock[];
+  fullText: string;
+  createdAt: string;
+  updatedAt: string;
+  prompt: string;
+};
+
+export type WebCrawlTask = {
+  taskId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  status: WebTaskStatus;
+  currentRecordId?: string;
+  records: WebCrawlRecord[];
+  imageAssets: WebImageAsset[];
+  rewritePrompt: string;
+  rewriteResult?: WebRewriteResult;
+  runtimeHealth?: BrowserRuntimeHealthStatus;
+};
+
+export type WebTaskSummary = {
+  taskId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  recordCount: number;
+  status: WebTaskStatus;
+};
+
+export type WebCrawlStartOptions = {
+  url: string;
+  recordId?: string;
+};
+
+export type ConfirmWebRecordBodyOptions = {
+  recordId: string;
+  body: string;
+};
+
+export type RetryExtractWebRecordOptions = {
+  recordId: string;
+  prompt: string;
+};
+
+export type RewriteWebTaskOptions = {
+  prompt: string;
+};
+
 export type LlmSectionsResult = {
   title: string;
   sections: ArticleSection[];
@@ -144,10 +273,24 @@ export type DesktopApi = {
   getVideoToPostSettings: () => Promise<VideoToPostSettings>;
   saveVideoToPostSettings: (settings: VideoToPostSettings) => Promise<VideoToPostSettings>;
   getVideoToPostConfigStatus: () => Promise<VideoToPostConfigStatus>;
+  getWebToPostSettings: () => Promise<WebToPostSettings>;
+  saveWebToPostSettings: (settings: WebToPostSettings) => Promise<WebToPostSettings>;
+  getWebToPostConfigStatus: () => Promise<WebToPostConfigStatus>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions) => Promise<FramePreviewResult>;
   replaceDraftImageFromFrame: (draftId: string, blockId: string, options: ReplaceFrameAssetOptions) => Promise<PostDraft>;
   rewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
+  listWebTasks: () => Promise<WebTaskSummary[]>;
+  getWebTaskById: (taskId: string) => Promise<WebCrawlTask>;
+  createWebTask: (title?: string) => Promise<WebCrawlTask>;
+  startWebCrawl: (taskId: string, options: WebCrawlStartOptions) => Promise<WebCrawlTask>;
+  saveWebRecordBody: (taskId: string, options: ConfirmWebRecordBodyOptions) => Promise<WebCrawlTask>;
+  retryWebRecordExtract: (taskId: string, options: RetryExtractWebRecordOptions) => Promise<WebCrawlTask>;
+  collectWebRecordImages: (taskId: string, recordId: string) => Promise<WebCrawlTask>;
+  rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions) => Promise<WebCrawlTask>;
+  toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
+  exportWebTaskToWord: (taskId: string) => Promise<string | null>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
+  onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;
 };

@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from "vue-router";
 import HomePage from "../pages/HomePage.vue";
 import VideoToPostPage from "../pages/VideoToPostPage.vue";
+import WebToPostPage from "../pages/WebToPostPage.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -14,6 +15,11 @@ export const router = createRouter({
       path: "/tools/video-to-post",
       name: "video-to-post",
       component: VideoToPostPage
+    },
+    {
+      path: "/tools/web-to-post",
+      name: "web-to-post",
+      component: WebToPostPage
     }
   ]
 });

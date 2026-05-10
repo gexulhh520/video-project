@@ -3,20 +3,35 @@ import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type {
   AppSettings,
+  ConfirmWebRecordBodyOptions,
   GeneratePostOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
+  RewriteWebTaskOptions,
   RewriteParagraphOptions,
   TaskProgress,
+  WebCrawlStartOptions,
+  WebCrawlTask,
+  WebTaskProgress,
   VideoToPostConfigStatus,
-  VideoToPostSettings
+  VideoToPostSettings,
+  WebTaskSummary,
+  WebToPostConfigStatus,
+  WebToPostSettings
 } from "./types/app.types";
 import { PostService } from "./services/post.service";
 import { SettingsService } from "./services/settings.service";
+import { WebTaskService } from "./services/web-task.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
+export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
 
-export function registerIpcHandlers(mainWindow: BrowserWindow, postService: PostService, settingsService: SettingsService): void {
+export function registerIpcHandlers(
+  mainWindow: BrowserWindow,
+  postService: PostService,
+  settingsService: SettingsService,
+  webTaskService: WebTaskService
+): void {
   ipcMain.handle("video:select", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "选择视频文件",
@@ -67,6 +82,13 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
   ipcMain.handle("video-to-post-settings:status", async (): Promise<VideoToPostConfigStatus> =>
     settingsService.getVideoToPostConfigStatus()
   );
+  ipcMain.handle("web-to-post-settings:get", async (): Promise<WebToPostSettings> => settingsService.getWebToPostSettings());
+  ipcMain.handle("web-to-post-settings:save", async (_event, settings: WebToPostSettings): Promise<WebToPostSettings> =>
+    settingsService.saveWebToPostSettings(settings)
+  );
+  ipcMain.handle("web-to-post-settings:status", async (): Promise<WebToPostConfigStatus> =>
+    settingsService.getWebToPostConfigStatus()
+  );
 
   ipcMain.handle("post:generate", async (_event, videoPath: string, options: GeneratePostOptions): Promise<PostDraft> => {
     const sendProgress = (progress: TaskProgress): void => {
@@ -112,6 +134,59 @@ export function registerIpcHandlers(mainWindow: BrowserWindow, postService: Post
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );
   ipcMain.handle("paragraph:rewrite", async (_event, options: RewriteParagraphOptions) => postService.rewriteParagraph(options.paragraph));
+  ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => webTaskService.listTasks());
+  ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => webTaskService.getTaskById(taskId));
+  ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => webTaskService.createTask(title));
+  ipcMain.handle("web-task:start-crawl", async (_event, taskId: string, options: WebCrawlStartOptions): Promise<WebCrawlTask> => {
+    const sendProgress = (progress: WebTaskProgress): void => {
+      mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
+    };
+
+    return webTaskService.startCrawl(taskId, options, sendProgress);
+  });
+  ipcMain.handle("web-task:save-record-body", async (_event, taskId: string, options: ConfirmWebRecordBodyOptions): Promise<WebCrawlTask> =>
+    webTaskService.saveRecordBody(taskId, options)
+  );
+  ipcMain.handle("web-task:retry-record-extract", async (_event, taskId: string, options: { recordId: string; prompt: string }): Promise<WebCrawlTask> =>
+    webTaskService.retryRecordExtract(taskId, options)
+  );
+  ipcMain.handle("web-task:collect-images", async (_event, taskId: string, recordId: string): Promise<WebCrawlTask> => {
+    const sendProgress = (progress: WebTaskProgress): void => {
+      mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
+    };
+
+    return webTaskService.collectRecordImages(taskId, recordId, sendProgress);
+  });
+  ipcMain.handle("web-task:rewrite", async (_event, taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> => {
+    const sendProgress = (progress: WebTaskProgress): void => {
+      mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
+    };
+
+    return webTaskService.rewriteTask(taskId, options, sendProgress);
+  });
+  ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
+    webTaskService.toggleImageSelection(taskId, assetId, selected)
+  );
+  ipcMain.handle("web-task:export-word", async (_event, taskId: string) => {
+    const task = await webTaskService.getTaskById(taskId);
+    const defaultFileName = `${sanitizeFileName(task.rewriteResult?.title || task.title || "网页原创草稿")}.docx`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 Word 文档",
+      defaultPath: defaultFileName,
+      filters: [
+        {
+          name: "Word Document",
+          extensions: ["docx"]
+        }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return webTaskService.exportTaskToWord(taskId, result.filePath);
+  });
   ipcMain.handle("draft:preview-frame", async (_event, draftId: string, options: ReplaceFrameAssetOptions) =>
     postService.previewDraftFrame(draftId, options)
   );

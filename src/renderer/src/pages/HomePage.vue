@@ -10,6 +10,12 @@ const router = useRouter();
 
 const tools = [
   {
+    title: "网页转文章原创",
+    description: "输入网页链接，借助 bb-browser 抓取标题、正文和图片，再统一交给 LLM 做二次原创。",
+    status: "available" as const,
+    route: "/tools/web-to-post"
+  },
+  {
     title: "视频转图文",
     description: "导入本地视频，自动识别字幕、生成图文段落，并从关键时间点抽取配图。",
     status: "available" as const,
@@ -79,10 +85,10 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
         <span class="eyebrow">Toolbox</span>
         <button class="settings-btn" @click="openSettings">全局设置</button>
       </div>
-      <h1>从一段视频，跑通一份可预览、可编辑、可导出的图文草稿。</h1>
-      <p>第一阶段先把“视频 -> 音频 -> ASR -> LLM -> 抽图 -> 图文混排”完整打通。</p>
+      <h1>把抓取、清洗、二创和导出，收进一个桌面工作台。</h1>
+      <p>先把“网页转文章原创”和“视频转图文”两条链路跑通，后续再继续扩展内容加工工具箱。</p>
       <div v-if="appSettings" class="workspace-card">
-        <span>当前空间目录</span>
+        <span>当前工作空间目录</span>
         <strong>{{ appSettings.workspaceDir }}</strong>
       </div>
     </div>

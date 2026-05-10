@@ -1,17 +1,26 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AppSettings,
+  ConfirmWebRecordBodyOptions,
   DesktopApi,
   DraftSummary,
   FramePreviewResult,
   GeneratePostOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
+  RewriteWebTaskOptions,
   RewriteParagraphOptions,
   TaskProgress,
   VideoToPostConfigStatus,
-  VideoToPostSettings
+  VideoToPostSettings,
+  WebCrawlStartOptions,
+  WebCrawlTask,
+  WebTaskProgress,
+  WebTaskSummary,
+  WebToPostConfigStatus,
+  WebToPostSettings
 } from "../main/types/app.types";
+import { TASK_PROGRESS_CHANNEL, WEB_TASK_PROGRESS_CHANNEL } from "../main/ipc";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
@@ -30,6 +39,10 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("video-to-post-settings:save", settings),
   getVideoToPostConfigStatus: async (): Promise<VideoToPostConfigStatus> =>
     ipcRenderer.invoke("video-to-post-settings:status"),
+  getWebToPostSettings: async (): Promise<WebToPostSettings> => ipcRenderer.invoke("web-to-post-settings:get"),
+  saveWebToPostSettings: async (settings: WebToPostSettings): Promise<WebToPostSettings> =>
+    ipcRenderer.invoke("web-to-post-settings:save", settings),
+  getWebToPostConfigStatus: async (): Promise<WebToPostConfigStatus> => ipcRenderer.invoke("web-to-post-settings:status"),
   replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
   previewDraftFrame: async (draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> =>
@@ -40,15 +53,41 @@ const desktopApi: DesktopApi = {
     options: ReplaceFrameAssetOptions
   ): Promise<PostDraft> => ipcRenderer.invoke("draft:replace-image-from-frame", draftId, blockId, options),
   rewriteParagraph: async (options: RewriteParagraphOptions): Promise<string> => ipcRenderer.invoke("paragraph:rewrite", options),
+  listWebTasks: async (): Promise<WebTaskSummary[]> => ipcRenderer.invoke("web-task:list"),
+  getWebTaskById: async (taskId: string): Promise<WebCrawlTask> => ipcRenderer.invoke("web-task:get", taskId),
+  createWebTask: async (title?: string): Promise<WebCrawlTask> => ipcRenderer.invoke("web-task:create", title),
+  startWebCrawl: async (taskId: string, options: WebCrawlStartOptions): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:start-crawl", taskId, options),
+  saveWebRecordBody: async (taskId: string, options: ConfirmWebRecordBodyOptions): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:save-record-body", taskId, options),
+  retryWebRecordExtract: async (taskId: string, options: { recordId: string; prompt: string }): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:retry-record-extract", taskId, options),
+  collectWebRecordImages: async (taskId: string, recordId: string): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:collect-images", taskId, recordId),
+  rewriteWebTask: async (taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:rewrite", taskId, options),
+  toggleWebImageSelection: async (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:toggle-image", taskId, assetId, selected),
+  exportWebTaskToWord: async (taskId: string): Promise<string | null> => ipcRenderer.invoke("web-task:export-word", taskId),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {
       callback(progress);
     };
 
-    ipcRenderer.on("task:progress", listener);
+    ipcRenderer.on(TASK_PROGRESS_CHANNEL, listener);
     return () => {
-      ipcRenderer.removeListener("task:progress", listener);
+      ipcRenderer.removeListener(TASK_PROGRESS_CHANNEL, listener);
+    };
+  },
+  onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: WebTaskProgress): void => {
+      callback(progress);
+    };
+
+    ipcRenderer.on(WEB_TASK_PROGRESS_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(WEB_TASK_PROGRESS_CHANNEL, listener);
     };
   }
 };

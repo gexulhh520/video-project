@@ -53,6 +53,13 @@ const progress = ref<WebTaskProgress>({
   message: "等待创建任务"
 });
 
+const historyRecordsOpen = ref(false);
+const editingRecordId = ref<string | null>(null);
+const editingRecordTitle = ref("");
+const editingRecordBody = ref("");
+const viewingRecordImagePool = ref<string | null>(null);
+const selectedImageAssetIds = ref<string[]>([]);
+
 let unsubscribe: (() => void) | null = null;
 
 const historyRecords = computed(() => activeTask.value?.records ?? []);
@@ -81,6 +88,20 @@ const currentRecordImageAssets = computed(() => {
 
   const assetMap = new Map(activeTask.value.imageAssets.map((asset) => [asset.assetId, asset]));
   return currentRecord.value.imageAssetIds
+    .map((assetId) => assetMap.get(assetId))
+    .filter((asset): asset is WebImageAsset => Boolean(asset));
+});
+
+const viewingRecordImageAssets = computed(() => {
+  if (!activeTask.value || !viewingRecordImagePool.value) {
+    return [] as WebImageAsset[];
+  }
+  const record = activeTask.value.records.find((r) => r.recordId === viewingRecordImagePool.value);
+  if (!record) {
+    return [] as WebImageAsset[];
+  }
+  const assetMap = new Map(activeTask.value.imageAssets.map((asset) => [asset.assetId, asset]));
+  return record.imageAssetIds
     .map((assetId) => assetMap.get(assetId))
     .filter((asset): asset is WebImageAsset => Boolean(asset));
 });
@@ -199,7 +220,7 @@ watch(
 );
 
 watch(
-  [currentRecordImageAssets, rewriteSourceImageAssets, rewriteDraft],
+  [currentRecordImageAssets, rewriteSourceImageAssets, rewriteDraft, viewingRecordImageAssets],
   async () => {
     const imagePaths = new Set<string>();
 
@@ -218,6 +239,12 @@ watch(
     rewriteDraft.value?.contentBlocks.forEach((block) => {
       if (block.type === "image" && block.imagePath) {
         imagePaths.add(block.imagePath);
+      }
+    });
+
+    viewingRecordImageAssets.value.forEach((asset) => {
+      if (asset.localPath) {
+        imagePaths.add(asset.localPath);
       }
     });
 
@@ -396,6 +423,95 @@ async function deleteRecord(recordId: string): Promise<void> {
     await refreshTaskList();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "删除记录失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openHistoryRecords(): void {
+  historyRecordsOpen.value = true;
+}
+
+function closeHistoryRecords(): void {
+  historyRecordsOpen.value = false;
+  editingRecordId.value = null;
+  viewingRecordImagePool.value = null;
+  selectedImageAssetIds.value = [];
+}
+
+function startEditingRecord(record: WebCrawlRecord): void {
+  editingRecordId.value = record.recordId;
+  editingRecordTitle.value = record.title;
+  editingRecordBody.value = record.userEditedBody || record.extractedBody;
+}
+
+function cancelEditingRecord(): void {
+  editingRecordId.value = null;
+  editingRecordTitle.value = "";
+  editingRecordBody.value = "";
+}
+
+async function saveEditingRecord(recordId: string): Promise<void> {
+  if (!activeTask.value) {
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    activeTask.value = await desktopApi.saveWebRecordBody(activeTask.value.taskId, {
+      recordId,
+      body: editingRecordBody.value
+    });
+    await refreshTaskList();
+    editingRecordId.value = null;
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "保存记录失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+function openRecordImagePool(recordId: string): void {
+  viewingRecordImagePool.value = recordId;
+  selectedImageAssetIds.value = [];
+}
+
+function closeRecordImagePool(): void {
+  viewingRecordImagePool.value = null;
+  selectedImageAssetIds.value = [];
+}
+
+function toggleImageAssetSelection(assetId: string, checked: boolean): void {
+  if (checked) {
+    selectedImageAssetIds.value = Array.from(new Set([...selectedImageAssetIds.value, assetId]));
+  } else {
+    selectedImageAssetIds.value = selectedImageAssetIds.value.filter((id) => id !== assetId);
+  }
+}
+
+async function deleteSelectedImages(): Promise<void> {
+  if (!activeTask.value || !viewingRecordImagePool.value || selectedImageAssetIds.value.length === 0) {
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    let task = activeTask.value;
+    const record = task.records.find((r) => r.recordId === viewingRecordImagePool.value);
+    if (record) {
+      record.imageAssetIds = record.imageAssetIds.filter((id) => !selectedImageAssetIds.value.includes(id));
+    }
+    task.imageAssets = task.imageAssets.filter((asset) => !selectedImageAssetIds.value.includes(asset.assetId));
+    task.updatedAt = new Date().toISOString();
+    activeTask.value = task;
+    selectedImageAssetIds.value = [];
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除图片失败";
   } finally {
     busy.value = false;
   }
@@ -827,34 +943,24 @@ function formatDateTime(value?: string): string {
         <div v-if="taskLoading" class="empty-state">正在读取任务...</div>
         <div v-else-if="!activeTask" class="empty-state">先创建一个任务，再开始抓取链接。</div>
         <div v-else class="editor-shell">
-          <div class="history-shell">
+          <div class="history-shell compact">
             <div class="history-header">
               <strong>当前任务历史正文</strong>
               <span>{{ historyRecords.length }} 条</span>
             </div>
+            <button class="primary-btn" @click="openHistoryRecords">查看历史正文列表</button>
             <div v-if="!historyRecords.length" class="empty-note">开始爬取后，这里会累积当前任务下的历史链接正文。</div>
-            <div v-else class="record-list">
+            <div v-else class="record-list-preview">
               <div
-                v-for="record in historyRecords"
+                v-for="record in historyRecords.slice(0, 3)"
                 :key="record.recordId"
-                class="record-card"
+                class="record-preview-item"
                 :class="{ active: currentRecord?.recordId === record.recordId }"
+                @click="selectedRecordId = record.recordId"
               >
-                <button class="record-card-main" @click="selectedRecordId = record.recordId">
-                  <div class="record-card-top">
-                    <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
-                    <span>{{ formatDateTime(record.lastRunAt) }}</span>
-                  </div>
-                  <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
-                  <p>{{ summarizeBody(record.userEditedBody || record.extractedBody) }}</p>
-                  <div class="record-card-meta">
-                    <span>{{ record.status }}</span>
-                    <span>重跑 {{ record.rerunCount }} 次</span>
-                    <span>{{ record.imageAssetIds.length }} 张图</span>
-                  </div>
-                </button>
-                <button class="ghost-btn small-btn delete-record-btn" :disabled="busy" @click.stop="deleteRecord(record.recordId)">删除</button>
+                <span>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</span>
               </div>
+              <div v-if="historyRecords.length > 3" class="more-records-hint">还有 {{ historyRecords.length - 3 }} 条...</div>
             </div>
           </div>
 
@@ -968,6 +1074,107 @@ function formatDateTime(value?: string): string {
     </main>
 
     <div v-if="errorMessage" class="error-toast">{{ errorMessage }}</div>
+
+    <div v-if="historyRecordsOpen" class="modal-backdrop history-records-backdrop" @click.self="closeHistoryRecords">
+      <section class="history-records-modal">
+        <div class="panel-header history-records-header">
+          <div>
+            <span class="eyebrow">History</span>
+            <h2>当前任务历史正文</h2>
+          </div>
+          <div class="header-meta">
+            <span>{{ historyRecords.length }} 条记录</span>
+          </div>
+        </div>
+
+        <button class="ghost-btn modal-close-btn" @click="closeHistoryRecords">关闭</button>
+
+        <div v-if="viewingRecordImagePool" class="image-pool-view">
+          <div class="image-pool-toolbar">
+            <button class="ghost-btn" @click="closeRecordImagePool">返回列表</button>
+            <button
+              class="ghost-btn delete-images-btn"
+              :disabled="selectedImageAssetIds.length === 0 || busy"
+              @click="deleteSelectedImages"
+            >
+              删除选中 ({{ selectedImageAssetIds.length }})
+            </button>
+          </div>
+          <div v-if="!viewingRecordImageAssets.length" class="empty-note">该记录暂无图片</div>
+          <div v-else class="asset-grid image-pool-grid">
+            <article
+              v-for="asset in viewingRecordImageAssets"
+              :key="asset.assetId"
+              class="asset-card selectable-card"
+              :class="{ selected: selectedImageAssetIds.includes(asset.assetId) }"
+              @click="toggleImageAssetSelection(asset.assetId, !selectedImageAssetIds.includes(asset.assetId))"
+            >
+              <div class="selection-indicator">
+                <input
+                  type="checkbox"
+                  :checked="selectedImageAssetIds.includes(asset.assetId)"
+                  @click.stop
+                  @change="toggleImageAssetSelection(asset.assetId, ($event.target as HTMLInputElement).checked)"
+                />
+              </div>
+              <img v-if="asset.localPath && imageUrlsByPath[asset.localPath]" :src="imageUrlsByPath[asset.localPath]" :alt="asset.sourceUrl" />
+              <div v-else class="asset-placeholder">图片预览不可用</div>
+              <div class="asset-meta">
+                <strong>{{ asset.failedReason ? "下载失败" : summarizeUrl(asset.sourceUrl, 42) }}</strong>
+                <span>{{ asset.failedReason ? asset.failedReason : summarizeUrl(asset.sourceUrl, 72) }}</span>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div v-else class="history-records-list">
+          <div v-if="!historyRecords.length" class="empty-note">暂无历史正文记录</div>
+          <div v-else class="record-list">
+            <div
+              v-for="record in historyRecords"
+              :key="record.recordId"
+              class="record-card"
+              :class="{ active: currentRecord?.recordId === record.recordId, editing: editingRecordId === record.recordId }"
+            >
+              <div v-if="editingRecordId === record.recordId" class="record-edit-form">
+                <label class="field">
+                  <span>标题</span>
+                  <input v-model="editingRecordTitle" type="text" placeholder="输入标题" />
+                </label>
+                <label class="field">
+                  <span>正文内容</span>
+                  <textarea v-model="editingRecordBody" rows="6" placeholder="输入正文内容" />
+                </label>
+                <div class="record-edit-actions">
+                  <button class="primary-btn small-btn" :disabled="busy" @click="saveEditingRecord(record.recordId)">保存</button>
+                  <button class="ghost-btn small-btn" @click="cancelEditingRecord">取消</button>
+                </div>
+              </div>
+              <template v-else>
+                <button class="record-card-main" @click="selectedRecordId = record.recordId; closeHistoryRecords()">
+                  <div class="record-card-top">
+                    <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
+                    <span>{{ formatDateTime(record.lastRunAt) }}</span>
+                  </div>
+                  <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
+                  <p>{{ summarizeBody(record.userEditedBody || record.extractedBody) }}</p>
+                  <div class="record-card-meta">
+                    <span>{{ record.status }}</span>
+                    <span>重跑 {{ record.rerunCount }} 次</span>
+                    <span>{{ record.imageAssetIds.length }} 张图</span>
+                  </div>
+                </button>
+                <div class="record-card-actions">
+                  <button class="ghost-btn small-btn" @click.stop="startEditingRecord(record)">编辑</button>
+                  <button class="ghost-btn small-btn" @click.stop="openRecordImagePool(record.recordId)">图片池</button>
+                  <button class="ghost-btn small-btn delete-record-btn" :disabled="busy" @click.stop="deleteRecord(record.recordId)">删除</button>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
 
     <div v-if="confirmImagePoolOpen" class="modal-backdrop" @click.self="closeConfirmImagePool">
       <section class="image-pool-modal">
@@ -1377,6 +1584,147 @@ textarea {
   justify-self: end;
   color: #ff8a8a;
   border-color: rgba(255, 106, 106, 0.22);
+}
+
+.history-shell.compact {
+  padding: 12px;
+}
+
+.record-list-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.record-preview-item {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: 13px;
+  color: #edf5ff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.record-preview-item:hover {
+  border-color: rgba(108, 174, 255, 0.46);
+}
+
+.record-preview-item.active {
+  border-color: rgba(108, 174, 255, 0.46);
+  background: rgba(108, 174, 255, 0.08);
+}
+
+.more-records-hint {
+  color: #9cb3d7;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px;
+}
+
+.history-records-modal {
+  width: min(900px, 100%);
+  max-height: min(88vh, 800px);
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid rgba(140, 173, 247, 0.2);
+  background: linear-gradient(180deg, rgba(11, 17, 32, 0.96), rgba(8, 14, 28, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.history-records-header {
+  margin-bottom: 0;
+}
+
+.history-records-list {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.record-card-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.record-card-actions .small-btn {
+  width: auto;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+.record-edit-form {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(149, 181, 255, 0.12);
+}
+
+.record-edit-form .field {
+  margin-bottom: 0;
+}
+
+.record-edit-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.image-pool-view {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 16px;
+}
+
+.image-pool-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.delete-images-btn {
+  color: #ff8a8a;
+  border-color: rgba(255, 106, 106, 0.22);
+}
+
+.selectable-card {
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.selectable-card:hover {
+  border-color: rgba(108, 174, 255, 0.3);
+}
+
+.selectable-card.selected {
+  border-color: rgba(108, 174, 255, 0.6);
+  background: rgba(108, 174, 255, 0.08);
+}
+
+.selection-indicator {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+}
+
+.selection-indicator input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
 }
 
 .record-card strong,

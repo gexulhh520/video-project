@@ -971,31 +971,18 @@ function formatDateTime(value?: string): string {
               <input :value="currentRecord.title" type="text" disabled />
             </label>
 
-            <label class="field">
-              <span>补充提示词后重新提取</span>
-              <textarea
-                v-model="extractPromptInput"
-                rows="3"
-                placeholder="例如：只保留新闻正文，不要评论区和相关推荐。"
-              />
-            </label>
-
-            <label class="field field-grow">
-              <span>提取正文</span>
+            <div class="body-content-card">
+              <span class="field-label">正文内容</span>
               <textarea
                 v-model="editableBody"
                 rows="16"
                 placeholder="抓取后，这里会出现 LLM 提取的正文。"
               />
-            </label>
-
-            <div class="action-row">
-              <button class="primary-btn" :disabled="busy" @click="saveConfirmedBody">保存正文修改</button>
-              <button class="ghost-btn" :disabled="busy" @click="retryExtract">基于提示词重新提取</button>
-              <button class="ghost-btn" :disabled="busy" @click="collectImages">确认正文并抓取图片</button>
+              <div class="field-actions">
+                <button class="primary-btn" :disabled="busy" @click="saveConfirmedBody">保存正文修改</button>
+                <button class="ghost-btn" :disabled="busy" @click="collectImages">确认正文并抓取图片</button>
+              </div>
             </div>
-
-            <p class="hint">页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击“重新执行当前正文”。</p>
 
             <div class="inline-media-entry">
               <div>
@@ -1007,6 +994,19 @@ function formatDateTime(value?: string): string {
               <button class="ghost-btn media-entry-btn" :disabled="!currentRecordImageAssets.length" @click="openConfirmImagePool">
                 查看这次正文的图片池
               </button>
+            </div>
+
+            <div class="retry-extract-section">
+              <label class="field">
+                <span>补充提示词后重新提取</span>
+                <textarea
+                  v-model="extractPromptInput"
+                  rows="3"
+                  placeholder="例如：只保留新闻正文，不要评论区和相关推荐。"
+                />
+              </label>
+              <button class="ghost-btn" :disabled="busy" @click="retryExtract">基于提示词重新提取</button>
+              <p class="hint">页面未登录、未加载完整或抓到空白内容时，请先手动处理页面，再点击"重新执行当前正文"。</p>
             </div>
           </template>
         </div>
@@ -1475,15 +1475,6 @@ small,
   margin-bottom: 14px;
 }
 
-.field-grow {
-  min-height: 0;
-}
-
-.field-grow textarea {
-  min-height: 0;
-  height: 100%;
-}
-
 .field span {
   color: #9db4d8;
   font-size: 12px;
@@ -1622,6 +1613,62 @@ textarea {
   font-size: 12px;
   text-align: center;
   padding: 4px;
+}
+
+.field-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.field-actions .primary-btn,
+.field-actions .ghost-btn {
+  width: auto;
+}
+
+.body-content-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.body-content-card .field-label {
+  color: #9db4d8;
+  font-size: 12px;
+}
+
+.body-content-card textarea {
+  min-height: 200px;
+  resize: vertical;
+  width: 100%;
+  border: 1px solid rgba(149, 181, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #edf5ff;
+  padding: 14px 16px;
+  outline: none;
+  line-height: 1.7;
+}
+
+.retry-extract-section {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.retry-extract-section .ghost-btn {
+  width: auto;
+}
+
+.retry-extract-section .field {
+  margin-bottom: 0;
+  width: 100%;
 }
 
 .history-records-modal {

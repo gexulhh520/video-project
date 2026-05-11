@@ -37,6 +37,8 @@ export const desktopApi = {
   getDraftById: (draftId: string): Promise<PostDraft> => window.desktopApi.getDraftById(draftId),
   saveDraft: (draft: PostDraft): Promise<PostDraft> => window.desktopApi.saveDraft(toPlainObject(draft)),
   exportDraftToWord: (draft: PostDraft): Promise<string | null> => window.desktopApi.exportDraftToWord(toPlainObject(draft)),
+  exportDraftImagesArchive: (draft: PostDraft): Promise<string | null> =>
+    window.desktopApi.exportDraftImagesArchive(toPlainObject(draft)),
   getAppSettings: (): Promise<AppSettings> => window.desktopApi.getAppSettings(),
   saveAppSettings: (settings: AppSettings): Promise<AppSettings> => window.desktopApi.saveAppSettings(toPlainObject(settings)),
   getVideoToPostSettings: (): Promise<VideoToPostSettings> => window.desktopApi.getVideoToPostSettings(),

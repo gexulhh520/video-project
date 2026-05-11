@@ -36,6 +36,8 @@ const desktopApi: DesktopApi = {
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
   saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
   exportDraftToWord: async (draft: PostDraft): Promise<string | null> => ipcRenderer.invoke("draft:export-word", draft),
+  exportDraftImagesArchive: async (draft: PostDraft): Promise<string | null> =>
+    ipcRenderer.invoke("draft:export-images-archive", draft),
   getAppSettings: async (): Promise<AppSettings> => ipcRenderer.invoke("settings:get"),
   saveAppSettings: async (settings: AppSettings): Promise<AppSettings> => ipcRenderer.invoke("settings:save", settings),
   getVideoToPostSettings: async (): Promise<VideoToPostSettings> => ipcRenderer.invoke("video-to-post-settings:get"),

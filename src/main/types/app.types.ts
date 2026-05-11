@@ -309,6 +309,7 @@ export type DesktopApi = {
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
   exportDraftToWord: (draft: PostDraft) => Promise<string | null>;
+  exportDraftImagesArchive: (draft: PostDraft) => Promise<string | null>;
   getAppSettings: () => Promise<AppSettings>;
   saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   getVideoToPostSettings: () => Promise<VideoToPostSettings>;

@@ -136,6 +136,25 @@ export function registerIpcHandlers(
 
     return postService.exportDraftToWord(draft, result.filePath);
   });
+  ipcMain.handle("draft:export-images-archive", async (_event, draft: PostDraft) => {
+    const defaultFileName = `${sanitizeFileName(draft.title || "鍥炬枃鑽夌")}_配图.zip`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出文章配图压缩包",
+      defaultPath: defaultFileName,
+      filters: [
+        {
+          name: "ZIP Archive",
+          extensions: ["zip"]
+        }
+      ]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+
+    return postService.exportDraftImagesArchive(draft, result.filePath);
+  });
   ipcMain.handle("draft:replace-image", async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
     postService.replaceDraftImage(draftId, blockId, sourceImagePath)
   );

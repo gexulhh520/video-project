@@ -40,6 +40,7 @@ const videoToPostConfigStatus = ref<VideoToPostConfigStatus | null>(null);
 const busy = ref(false);
 const savingDraft = ref(false);
 const exportingWord = ref(false);
+const exportingImagesArchive = ref(false);
 const replacingImageBlockId = ref<string | null>(null);
 const editorOpen = ref(false);
 const immersiveEditor = ref(false);
@@ -254,6 +255,31 @@ async function handleExportWord(): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : "导出 Word 失败";
   } finally {
     exportingWord.value = false;
+  }
+}
+
+async function handleExportImagesArchive(): Promise<void> {
+  if (!draft.value || exportingImagesArchive.value) {
+    return;
+  }
+
+  exportingImagesArchive.value = true;
+  errorMessage.value = "";
+
+  try {
+    const exportedPath = await desktopApi.exportDraftImagesArchive(draft.value);
+    if (exportedPath) {
+      progress.value = {
+        taskId: draft.value.draftId,
+        status: "completed",
+        progress: 100,
+        message: `文章配图压缩包已导出到 ${exportedPath}`
+      };
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "导出文章配图失败";
+  } finally {
+    exportingImagesArchive.value = false;
   }
 }
 
@@ -606,6 +632,9 @@ function toggleImmersiveEditor(): void {
         <button class="draft-trigger-btn" @click="openSettings">全局设置</button>
         <button class="export-btn" :disabled="!draft || exportingWord" @click="handleExportWord">
           {{ exportingWord ? "正在导出 Word..." : "导出到 Word" }}
+        </button>
+        <button class="draft-trigger-btn" :disabled="!draft || exportingImagesArchive" @click="handleExportImagesArchive">
+          {{ exportingImagesArchive ? "正在导出文章配图..." : "导出文章的配图" }}
         </button>
       </div>
 

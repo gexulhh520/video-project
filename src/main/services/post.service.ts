@@ -241,6 +241,35 @@ export class PostService {
     }
   }
 
+  async exportDraftImagesArchive(draft: PostDraft, outputPath: string): Promise<string> {
+    const normalizedDraft = await this.normalizeDraft(draft, true);
+    const workspaceDir = await this.getWorkspaceDir();
+    const exportTempDir = join(workspaceDir, "exports", "tmp", `${normalizedDraft.draftId}-images`);
+    const stagingDir = join(exportTempDir, "images");
+    const imageBlocks = normalizedDraft.contentBlocks.filter(
+      (block): block is Extract<ContentBlock, { type: "image" }> => block.type === "image"
+    );
+
+    if (imageBlocks.length === 0) {
+      throw new Error("当前草稿没有可导出的配图");
+    }
+
+    await mkdir(stagingDir, { recursive: true });
+
+    try {
+      for (const [index, block] of imageBlocks.entries()) {
+        const extension = extname(block.imagePath) || ".jpg";
+        const exportName = `${String(index + 1).padStart(2, "0")}_${this.sanitizeFileName(block.sectionId)}${extension}`;
+        await copyFile(block.imagePath, join(stagingDir, exportName));
+      }
+
+      await this.runZipArchiveScript(stagingDir, outputPath);
+      return outputPath;
+    } finally {
+      await rm(exportTempDir, { recursive: true, force: true });
+    }
+  }
+
   async replaceDraftImage(draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> {
     const draft = await this.getDraftById(draftId);
     const targetBlock = draft.contentBlocks.find(
@@ -408,6 +437,44 @@ export class PostService {
     });
   }
 
+  private async runZipArchiveScript(sourceDir: string, outputPath: string): Promise<void> {
+    await mkdir(dirname(outputPath), { recursive: true });
+
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const child = spawn(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          "& { param([string]$SourceDir,[string]$OutputPath) if (Test-Path -LiteralPath $OutputPath) { Remove-Item -LiteralPath $OutputPath -Force } Compress-Archive -Path (Join-Path $SourceDir '*') -DestinationPath $OutputPath -Force }",
+          sourceDir,
+          outputPath
+        ],
+        {
+          stdio: ["ignore", "pipe", "pipe"]
+        }
+      );
+
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      child.on("error", (error) => {
+        rejectPromise(error);
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolvePromise();
+          return;
+        }
+
+        rejectPromise(new Error(`Images archive export failed with code ${code}: ${stderr}`));
+      });
+    });
+  }
+
   private async resolvePythonExecutablePath(): Promise<string> {
     const bundledPythonPath = join(
       homedir(),
@@ -499,5 +566,8 @@ export class PostService {
     }
 
     return `用户从视频 ${timeSeconds.toFixed(1)}s 重新选帧`;
+  }
+  private sanitizeFileName(value: string): string {
+    return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_").trim() || "image";
   }
 }

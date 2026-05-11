@@ -202,27 +202,34 @@ export class WebTaskService {
     try {
       urls = await this.bbBrowserService.collectImageUrls(record.tabId);
     } catch (error) {
-      if (!this.isRuntimeDisconnectedError(error)) {
+      if (this.isTabNotFoundError(error)) {
+        this.emitProgress(task, record.recordId, "opening_page", 48, "页面标签已关闭，正在重新打开页面后继续抓图", onProgress);
+        await this.reopenRecordPage(record);
+        task.currentRecordId = record.recordId;
+        await this.saveTask(task);
+        this.emitProgress(task, record.recordId, "collecting_images", 55, "页面已重新打开，正在重试抓图", onProgress);
+        urls = await this.bbBrowserService.collectImageUrls(record.tabId);
+      } else if (!this.isRuntimeDisconnectedError(error)) {
         throw error;
+      } else {
+        task.status = "resetting_runtime";
+        task.updatedAt = new Date().toISOString();
+        await this.saveTask(task);
+        this.emitProgress(task, record.recordId, "resetting_runtime", 40, "浏览器连接中断，正在自动恢复", onProgress);
+        task.runtimeHealth = await this.browserRuntimeService.ensureHealthy();
+        await this.saveTask(task);
+
+        this.emitProgress(task, record.recordId, "opening_page", 48, "浏览器已恢复，重新打开页面后继续抓图", onProgress);
+        await this.reopenRecordPage(record);
+        task.currentRecordId = record.recordId;
+        await this.saveTask(task);
+
+        task.status = "collecting_images";
+        task.updatedAt = new Date().toISOString();
+        await this.saveTask(task);
+        this.emitProgress(task, record.recordId, "collecting_images", 55, "浏览器已恢复，正在重试抓图", onProgress);
+        urls = await this.bbBrowserService.collectImageUrls(record.tabId);
       }
-
-      task.status = "resetting_runtime";
-      task.updatedAt = new Date().toISOString();
-      await this.saveTask(task);
-      this.emitProgress(task, record.recordId, "resetting_runtime", 40, "浏览器连接中断，正在自动恢复", onProgress);
-      task.runtimeHealth = await this.browserRuntimeService.ensureHealthy();
-      await this.saveTask(task);
-
-      this.emitProgress(task, record.recordId, "opening_page", 48, "浏览器已恢复，重新打开页面后继续抓图", onProgress);
-      await this.reopenRecordPage(record);
-      task.currentRecordId = record.recordId;
-      await this.saveTask(task);
-
-      task.status = "collecting_images";
-      task.updatedAt = new Date().toISOString();
-      await this.saveTask(task);
-      this.emitProgress(task, record.recordId, "collecting_images", 55, "浏览器已恢复，正在重试抓图", onProgress);
-      urls = await this.bbBrowserService.collectImageUrls(record.tabId);
     }
 
     const downloads = await this.bbBrowserService.downloadImages(urls, await this.getTaskImagesDir(taskId));
@@ -461,6 +468,14 @@ export class WebTaskService {
     }
 
     return /Chrome not connected|CDP WebSocket closed|Daemon HTTP 503|ECONNREFUSED/i.test(error.message);
+  }
+
+  private isTabNotFoundError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    return /Tab not found/i.test(error.message);
   }
 
   private async saveTask(task: WebCrawlTask): Promise<void> {

@@ -129,7 +129,7 @@ export class LlmService {
       throw new Error("LLM returned an empty response.");
     }
 
-    const parsed = JSON.parse(this.extractJson(content)) as LlmSectionsResult;
+    const parsed = this.parseJsonResponse<LlmSectionsResult>(content, "生成图文分段");
     if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
       throw new Error("LLM response JSON is missing title or sections.");
     }
@@ -262,10 +262,7 @@ export class LlmService {
       "web"
     );
 
-    const parsed = JSON.parse(this.extractJson(content)) as {
-      title?: string;
-      paragraphs?: string[];
-    };
+    const parsed = this.parseWebRewritePayload(content);
 
     const paragraphs = (parsed.paragraphs ?? []).map((item) => item.trim()).filter(Boolean);
     if (!parsed.title?.trim() || paragraphs.length === 0) {
@@ -314,7 +311,7 @@ export class LlmService {
       }
     );
 
-    const parsed = JSON.parse(this.extractJson(content)) as RewriteDraftResult;
+    const parsed = this.parseJsonResponse<RewriteDraftResult>(content, "整篇洗稿");
     if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
       throw new Error("LLM returned an invalid rewrite result.");
     }
@@ -380,6 +377,131 @@ export class LlmService {
   private extractJson(content: string): string {
     const fencedMatch = content.match(/```json\s*([\s\S]*?)```/i) ?? content.match(/```([\s\S]*?)```/i);
     return fencedMatch?.[1]?.trim() ?? content.trim();
+  }
+
+  private parseJsonResponse<T>(content: string, scene: string): T {
+    const rawJson = this.extractJson(content);
+    const normalizedJson = this.normalizeJsonLikeContent(rawJson);
+
+    try {
+      return JSON.parse(normalizedJson) as T;
+    } catch (error) {
+      const snippet = normalizedJson.slice(0, 200).replace(/\s+/g, " ");
+      const reason = error instanceof Error ? error.message : "Unknown JSON parse error.";
+      throw new Error(`${scene}返回了无法解析的 JSON：${reason}。片段：${snippet}`);
+    }
+  }
+
+  private parseWebRewritePayload(content: string): { title?: string; paragraphs?: string[] } {
+    try {
+      return this.parseJsonResponse<{ title?: string; paragraphs?: string[] }>(content, "网页二次原创");
+    } catch (error) {
+      const rawJson = this.normalizeJsonLikeContent(this.extractJson(content));
+      const fallback = this.salvageWebRewritePayload(rawJson);
+      if (fallback.title && fallback.paragraphs.length > 0) {
+        return fallback;
+      }
+
+      throw error;
+    }
+  }
+
+  private salvageWebRewritePayload(content: string): { title?: string; paragraphs: string[] } {
+    const titleMatch = content.match(/"title"\s*:\s*"([\s\S]*?)"\s*,\s*"paragraphs"/i);
+    const paragraphsMatch = content.match(/"paragraphs"\s*:\s*\[([\s\S]*?)\]\s*}?$/i);
+
+    return {
+      title: titleMatch ? this.cleanLooseJsonString(titleMatch[1]) : undefined,
+      paragraphs: paragraphsMatch ? this.parseLooseStringArray(paragraphsMatch[1]) : []
+    };
+  }
+
+  private parseLooseStringArray(content: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inString = false;
+    let escaped = false;
+
+    for (let index = 0; index < content.length; index += 1) {
+      const char = content[index];
+      const next = content[index + 1] ?? "";
+      const ahead = content.slice(index + 1);
+
+      if (!inString) {
+        if (char === "\"") {
+          inString = true;
+          current = "";
+        }
+        continue;
+      }
+
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === "\\") {
+        current += char;
+        escaped = true;
+        continue;
+      }
+
+      if (char === "\"" && (/^\s*(,|\])/.test(ahead) || (!next && !ahead))) {
+        const cleaned = this.cleanLooseJsonString(current);
+        if (cleaned) {
+          result.push(cleaned);
+        }
+        current = "";
+        inString = false;
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (inString) {
+      const cleaned = this.cleanLooseJsonString(current);
+      if (cleaned) {
+        result.push(cleaned);
+      }
+    }
+
+    return result;
+  }
+
+  private cleanLooseJsonString(value: string): string {
+    return value
+      .replace(/\\"/g, "\"")
+      .replace(/\\n/g, "\n")
+      .replace(/\\r/g, "")
+      .replace(/\\t/g, "\t")
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n\s+/g, "\n")
+      .trim();
+  }
+
+  private normalizeJsonLikeContent(content: string): string {
+    const trimmed = content.trim().replace(/^\uFEFF/, "");
+    const jsonBody = this.extractBracketedJson(trimmed) ?? trimmed;
+
+    return jsonBody
+      .replace(/[“”]/g, "\"")
+      .replace(/[‘’]/g, "'")
+      .replace(/：/g, ":")
+      .replace(/，/g, ",")
+      .replace(/([{,]\s*)([A-Za-z0-9_\u4e00-\u9fa5-]+)\s*:/g, "$1\"$2\":")
+      .replace(/,(\s*[}\]])/g, "$1");
+  }
+
+  private extractBracketedJson(content: string): string | null {
+    const firstBraceIndex = content.indexOf("{");
+    const lastBraceIndex = content.lastIndexOf("}");
+    if (firstBraceIndex === -1 || lastBraceIndex === -1 || lastBraceIndex <= firstBraceIndex) {
+      return null;
+    }
+
+    return content.slice(firstBraceIndex, lastBraceIndex + 1);
   }
 
   private async requestChatCompletion(

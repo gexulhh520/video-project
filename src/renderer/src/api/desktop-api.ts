@@ -17,6 +17,7 @@ import type {
   VideoToPostSettings,
   WebCrawlStartOptions,
   WebCrawlTask,
+  WebTaskAutoExportResult,
   WebTaskProgress,
   WebTaskSummary,
   WebToPostConfigStatus,
@@ -84,6 +85,7 @@ export const desktopApi = {
   renameWebTask: (taskId: string, title: string): Promise<WebCrawlTask> =>
     window.desktopApi.renameWebTask(taskId, title),
   exportWebTaskToWord: (taskId: string): Promise<string | null> => window.desktopApi.exportWebTaskToWord(taskId),
+  autoExportWebTaskBundle: (taskId: string): Promise<WebTaskAutoExportResult> => window.desktopApi.autoExportWebTaskBundle(taskId),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback),

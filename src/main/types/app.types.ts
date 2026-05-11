@@ -295,6 +295,12 @@ export type DeleteWebRecordOptions = {
   recordId: string;
 };
 
+export type WebTaskAutoExportResult = {
+  outputDir: string;
+  wordPath: string;
+  imagesDirPath: string;
+};
+
 export type LlmSectionsResult = {
   title: string;
   sections: ArticleSection[];
@@ -338,6 +344,7 @@ export type DesktopApi = {
   deleteWebTask: (taskId: string) => Promise<void>;
   renameWebTask: (taskId: string, title: string) => Promise<WebCrawlTask>;
   exportWebTaskToWord: (taskId: string) => Promise<string | null>;
+  autoExportWebTaskBundle: (taskId: string) => Promise<WebTaskAutoExportResult>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;

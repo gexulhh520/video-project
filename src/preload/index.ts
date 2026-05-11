@@ -84,6 +84,7 @@ const desktopApi: DesktopApi = {
   renameWebTask: async (taskId: string, title: string): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:rename-task", taskId, title),
   exportWebTaskToWord: async (taskId: string): Promise<string | null> => ipcRenderer.invoke("web-task:export-word", taskId),
+  autoExportWebTaskBundle: async (taskId: string) => ipcRenderer.invoke("web-task:auto-export-bundle", taskId),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {

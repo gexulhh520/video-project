@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import type {
   BrowserRuntimeHealthStatus,
@@ -13,6 +13,7 @@ import type {
   WebCrawlStartOptions,
   WebCrawlTask,
   WebImageAsset,
+  WebTaskAutoExportResult,
   WebTaskProgress,
   WebTaskSummary
 } from "../types/app.types";
@@ -384,6 +385,54 @@ export class WebTaskService {
     }
   }
 
+  async exportTaskImagesToDirectory(taskId: string, outputDir: string): Promise<string> {
+    const task = await this.getTaskById(taskId);
+    await mkdir(outputDir, { recursive: true });
+    const sourceRecordIdSet = new Set(task.rewriteResult?.sourceRecordIds ?? []);
+    const imageAssets = task.imageAssets.filter(
+      (asset) =>
+        Boolean(asset.localPath) &&
+        asset.selected &&
+        (sourceRecordIdSet.size === 0 || sourceRecordIdSet.has(asset.originRecordId))
+    );
+
+    if (imageAssets.length === 0) {
+      throw new Error("当前图片池没有可导出的图片。");
+    }
+
+    for (const [index, asset] of imageAssets.entries()) {
+      const extension = extname(asset.localPath || "") || ".jpg";
+      const exportName = `${String(index + 1).padStart(2, "0")}_${this.sanitizeFileName(asset.originRecordId)}${extension}`;
+      await copyFile(asset.localPath as string, join(outputDir, exportName));
+    }
+
+    return outputDir;
+  }
+
+  async autoExportTaskBundle(taskId: string): Promise<WebTaskAutoExportResult> {
+    const task = await this.getTaskById(taskId);
+    const workspaceDir = await this.getWorkspaceDir();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const bundleDir = join(
+      workspaceDir,
+      "exports",
+      "web-auto",
+      `${timestamp}_${this.sanitizeFileName(task.rewriteResult?.title || task.title || task.taskId)}`
+    );
+    await mkdir(bundleDir, { recursive: true });
+
+    const wordPath = join(bundleDir, "result.docx");
+    const imagesDirPath = join(bundleDir, "images");
+    await this.exportTaskToWord(taskId, wordPath);
+    await this.exportTaskImagesToDirectory(taskId, imagesDirPath);
+
+    return {
+      outputDir: bundleDir,
+      wordPath,
+      imagesDirPath
+    };
+  }
+
   private prepareRecord(task: WebCrawlTask, options: WebCrawlStartOptions): WebCrawlRecord {
     const existing = options.recordId ? task.records.find((item) => item.recordId === options.recordId) : undefined;
     if (existing) {
@@ -543,6 +592,95 @@ export class WebTaskService {
         }
 
         rejectPromise(new Error(`Word export failed with code ${code}: ${stderr}`));
+      });
+    });
+  }
+
+  private async runZipArchiveScript(sourceDir: string, outputPath: string): Promise<void> {
+    await mkdir(dirname(outputPath), { recursive: true });
+    try {
+      await this.runZipWithPowerShell(sourceDir, outputPath);
+    } catch (primaryError) {
+      try {
+        await this.runZipWithTar(sourceDir, outputPath);
+      } catch (fallbackError) {
+        const primaryMessage = primaryError instanceof Error ? primaryError.message : String(primaryError);
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        throw new Error(`Images archive export failed. PowerShell: ${primaryMessage}; tar fallback: ${fallbackMessage}`);
+      }
+    }
+  }
+
+  private sanitizeFileName(value: string): string {
+    return value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_").trim() || "web-task";
+  }
+
+  private async runZipWithPowerShell(sourceDir: string, outputPath: string): Promise<void> {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const child = spawn(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-Command",
+          "& { param([string]$SourceDir,[string]$OutputPath) if (Test-Path -LiteralPath $OutputPath) { Remove-Item -LiteralPath $OutputPath -Force } Compress-Archive -Path (Join-Path $SourceDir '*') -DestinationPath $OutputPath -Force }",
+          sourceDir,
+          outputPath
+        ],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true
+        }
+      );
+
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      child.on("error", (error) => {
+        rejectPromise(error);
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolvePromise();
+          return;
+        }
+
+        rejectPromise(new Error(`code=${code}; stderr=${stderr}`));
+      });
+    });
+  }
+
+  private async runZipWithTar(sourceDir: string, outputPath: string): Promise<void> {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const child = spawn(
+        "tar.exe",
+        ["-a", "-c", "-f", outputPath, "-C", sourceDir, "."],
+        {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true
+        }
+      );
+
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+      });
+
+      child.on("error", (error) => {
+        rejectPromise(error);
+      });
+
+      child.on("close", (code) => {
+        if (code === 0) {
+          resolvePromise();
+          return;
+        }
+
+        rejectPromise(new Error(`code=${code}; stderr=${stderr}`));
       });
     });
   }

@@ -223,6 +223,9 @@ export function registerIpcHandlers(
 
     return webTaskService.exportTaskToWord(taskId, result.filePath);
   });
+  ipcMain.handle("web-task:auto-export-bundle", async (_event, taskId: string) =>
+    webTaskService.autoExportTaskBundle(taskId)
+  );
   ipcMain.handle("draft:preview-frame", async (_event, draftId: string, options: ReplaceFrameAssetOptions) =>
     postService.previewDraftFrame(draftId, options)
   );

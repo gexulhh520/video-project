@@ -41,6 +41,7 @@ const rewritePromptInput = ref("");
 const editableBody = ref("");
 const selectedRecordId = ref("");
 const rewriteSelectedRecordIds = ref<string[]>([]);
+const autoCrawlEnabled = ref(false);
 const confirmImagePoolOpen = ref(false);
 const rewriteResultOpen = ref(false);
 const imagePickerSectionId = ref<string | null>(null);
@@ -205,7 +206,14 @@ watch(
 
     const candidateIds = new Set(candidates.map((record) => record.recordId));
     const nextSelectedIds = rewriteSelectedRecordIds.value.filter((recordId) => candidateIds.has(recordId));
-    rewriteSelectedRecordIds.value = nextSelectedIds.length > 0 ? nextSelectedIds : candidates.map((record) => record.recordId);
+    if (nextSelectedIds.length > 0) {
+      rewriteSelectedRecordIds.value = nextSelectedIds;
+      return;
+    }
+
+    const defaultRecordId =
+      candidates.find((record) => record.recordId === activeTask.value?.currentRecordId)?.recordId ?? candidates[0]?.recordId ?? "";
+    rewriteSelectedRecordIds.value = defaultRecordId ? [defaultRecordId] : [];
   },
   { immediate: true }
 );
@@ -344,16 +352,91 @@ async function runCrawl(recordId?: string): Promise<void> {
   errorMessage.value = "";
 
   try {
-    activeTask.value = await desktopApi.startWebCrawl(activeTask.value.taskId, {
+    const crawledTask = await desktopApi.startWebCrawl(activeTask.value.taskId, {
       url: urlInput.value.trim(),
       recordId
     });
+    activeTask.value = crawledTask;
+
+    if (autoCrawlEnabled.value) {
+      const currentRecordId = crawledTask.currentRecordId;
+      if (!currentRecordId) {
+        throw new Error("未找到本次爬取记录，无法执行全自动流程。");
+      }
+      if (crawledTask.status !== "awaiting_user_confirmation") {
+        throw new Error(`本次爬取未完成正文提取（当前状态：${crawledTask.status}），已停止全自动流程。`);
+      }
+      const currentRecord = crawledTask.records.find((item) => item.recordId === currentRecordId);
+      if (!currentRecord?.tabId) {
+        throw new Error("本次爬取记录未拿到页面标签（tabId），已停止全自动流程，请先重试爬取。");
+      }
+      activeTask.value = await runAutoCrawlPipeline(crawledTask, currentRecordId);
+    }
+
     await refreshTaskList();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "执行抓取失败";
   } finally {
     busy.value = false;
   }
+}
+
+async function runAutoCrawlPipeline(task: WebCrawlTask, recordId: string): Promise<WebCrawlTask> {
+  const record = task.records.find((item) => item.recordId === recordId);
+  if (!record) {
+    throw new Error("未找到本次爬取记录。");
+  }
+
+  progress.value = {
+    taskId: task.taskId,
+    recordId,
+    status: "awaiting_user_confirmation",
+    progress: 86,
+    message: "全自动：正在自动确认正文"
+  };
+
+  let nextTask = await desktopApi.saveWebRecordBody(task.taskId, {
+    recordId,
+    body: record.userEditedBody || record.extractedBody
+  });
+
+  progress.value = {
+    taskId: task.taskId,
+    recordId,
+    status: "collecting_images",
+    progress: 90,
+    message: "全自动：正在抓取图片"
+  };
+
+  nextTask = await desktopApi.collectWebRecordImages(task.taskId, recordId);
+  rewriteSelectedRecordIds.value = [recordId];
+
+  progress.value = {
+    taskId: task.taskId,
+    recordId,
+    status: "rewriting",
+    progress: 94,
+    message: "全自动：正在二次原创"
+  };
+
+  nextTask = await desktopApi.rewriteWebTask(task.taskId, {
+    prompt: rewritePromptInput.value,
+    recordIds: [recordId]
+  });
+
+  rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
+  rewriteResultOpen.value = Boolean(rewriteDraft.value);
+  imagePickerSectionId.value = null;
+
+  const exportResult = await desktopApi.autoExportWebTaskBundle(task.taskId);
+  progress.value = {
+    taskId: task.taskId,
+    status: "completed",
+    progress: 100,
+    message: `全自动完成，已导出到 ${exportResult.outputDir}`
+  };
+
+  return nextTask;
 }
 
 async function saveConfirmedBody(): Promise<void> {
@@ -952,6 +1035,10 @@ function formatDateTime(value?: string): string {
       <div class="panel">
         <span class="label">抓取入口</span>
         <input v-model="urlInput" type="text" placeholder="输入网页链接" />
+        <label class="toggle-row">
+          <input v-model="autoCrawlEnabled" type="checkbox" />
+          <span>全自动爬取（自动确认正文、抓图、二次原创并导出）</span>
+        </label>
         <div class="stack-actions">
           <button class="primary-btn" :disabled="busy || !activeTask" @click="runCrawl()">开始爬取</button>
           <button class="ghost-btn" :disabled="busy || !currentRecord" @click="runCrawl(currentRecord?.recordId)">
@@ -1567,6 +1654,19 @@ small,
 .field span {
   color: #9db4d8;
   font-size: 12px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9cb3d7;
+  font-size: 12px;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
 }
 
 input,

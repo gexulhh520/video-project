@@ -518,13 +518,20 @@ export class LlmService {
       scope === "web" ? await this.settingsService.getWebToPostSettings() : await this.settingsService.getVideoToPostSettings();
     const apiKey = toolSettings.llmApiKey || process.env.LLM_API_KEY;
     const model = toolSettings.llmModel || process.env.LLM_MODEL || "deepseek-v4-flash";
+    const requestUrl = `${this.baseUrl?.replace(/\/$/, "")}/chat/completions`;
 
     if (!this.baseUrl || !apiKey) {
       throw new Error("Missing LLM_BASE_URL or LLM_API_KEY.");
     }
 
+    console.info("[LLM] Sending chat completion request", {
+      scope,
+      model,
+      url: requestUrl
+    });
+
     const response = await axios.post<OpenAiLikeResponse>(
-      `${this.baseUrl.replace(/\/$/, "")}/chat/completions`,
+      requestUrl,
       {
         model,
         temperature: options?.temperature ?? 0.7,

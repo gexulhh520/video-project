@@ -3,6 +3,7 @@ const props = defineProps<{
   selectedVideoPath: string | null;
   busy: boolean;
   frameOffsetSeconds: number;
+  userPrompt: string;
   configReady: boolean;
   missingConfigItems: string[];
 }>();
@@ -11,8 +12,41 @@ const emit = defineEmits<{
   select: [];
   generate: [];
   updateFrameOffset: [value: number];
+  updateUserPrompt: [value: string];
   openToolConfig: [];
 }>();
+
+const promptExamples = [
+  {
+    label: "微头条",
+    value:
+      "请改成适合微头条发布的风格，开头要更有冲突感，语言更口语化，每段不要太长，整体控制在 600 字以内，不要像新闻稿。"
+  },
+  {
+    label: "公众号文章",
+    value:
+      "请改成适合公众号文章发布的风格，逻辑更完整，段落衔接更自然，开头要有吸引力，中间要有分析，结尾要有总结。"
+  },
+  {
+    label: "小红书",
+    value:
+      "请改成适合小红书图文笔记的风格，表达更有分享感和情绪感，语言自然一点，不要太官方，适合配图阅读。"
+  },
+  {
+    label: "深度分析",
+    value:
+      "请把内容改成偏深度分析的风格，减少口水话，增强观点判断、逻辑递进和信息密度，适合对行业趋势感兴趣的人阅读。"
+  },
+  {
+    label: "短内容",
+    value:
+      "请把整篇压缩成短内容，保留最有冲突和信息量的部分，语言直接一点，整体不超过 400 字。"
+  }
+];
+
+function applyPromptExample(value: string): void {
+  emit("updateUserPrompt", value);
+}
 </script>
 
 <template>
@@ -54,6 +88,32 @@ const emit = defineEmits<{
         />
       </div>
       <small>生成配图时，会从段落时间范围的 start 往后偏移这么多秒再抽帧。</small>
+    </label>
+
+    <label class="prompt-field">
+      <span>生成个性化要求</span>
+      <textarea
+        :value="props.userPrompt"
+        rows="6"
+        placeholder="示例：请改成适合微头条发布的风格，开头要更有冲突感，语言更口语化，每段不要太长，整体控制在 600 字以内，不要像新闻稿。"
+        @input="emit('updateUserPrompt', ($event.target as HTMLTextAreaElement).value)"
+      />
+      <small>可填写发布平台、语气、字数、风格、结构要求。不填写则按默认图文风格生成。</small>
+
+      <div class="prompt-examples">
+        <p>参考示例：</p>
+        <div class="example-buttons">
+          <button
+            v-for="item in promptExamples"
+            :key="item.label"
+            type="button"
+            class="example-btn"
+            @click="applyPromptExample(item.value)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+      </div>
     </label>
 
     <div class="actions">
@@ -213,6 +273,79 @@ const emit = defineEmits<{
   margin-top: 10px;
   color: #9db4d8;
   line-height: 1.6;
+}
+
+.prompt-field {
+  margin-top: 22px;
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-field span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #86a8d5;
+}
+
+.prompt-field textarea {
+  width: 100%;
+  min-height: 132px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 181, 255, 0.16);
+  background: rgba(124, 178, 255, 0.08);
+  color: #edf5ff;
+  outline: none;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.prompt-field textarea::placeholder {
+  color: rgba(157, 180, 216, 0.72);
+}
+
+.prompt-field small {
+  display: block;
+  color: #9db4d8;
+  line-height: 1.6;
+}
+
+.prompt-examples {
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.prompt-examples p {
+  margin: 0 0 10px;
+  color: #9db4d8;
+  font-size: 12px;
+}
+
+.example-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.example-btn {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(145, 200, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: #91c8ff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.example-btn:hover {
+  background: rgba(91, 163, 255, 0.16);
+  border-color: rgba(145, 200, 255, 0.32);
 }
 
 .actions {

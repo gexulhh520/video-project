@@ -80,7 +80,7 @@ export class PostService {
       progress: 68,
       message: "正在生成图文段落与标题"
     });
-    const llmResult = await this.llmService.generateSectionsByLlm(transcript.segments);
+    const llmResult = await this.llmService.generateSectionsByLlm(transcript.segments, options?.userPrompt);
 
     onProgress?.({
       taskId: draftId,

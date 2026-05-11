@@ -97,6 +97,7 @@ export type SaveEditedFrameOptions = {
 
 export type GeneratePostOptions = {
   frameOffsetSeconds: number;
+  userPrompt?: string;
 };
 
 export type RewriteParagraphOptions = {

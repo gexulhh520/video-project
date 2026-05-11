@@ -44,6 +44,7 @@ const replacingImageBlockId = ref<string | null>(null);
 const editorOpen = ref(false);
 const immersiveEditor = ref(false);
 const frameOffsetSeconds = ref(2);
+const generationUserPrompt = ref("");
 const framePickerOpen = ref(false);
 const framePickerBlockId = ref<string | null>(null);
 const framePickerSectionLabel = ref("");
@@ -182,6 +183,10 @@ function updateFrameOffset(value: number): void {
   frameOffsetSeconds.value = Math.max(value, 0);
 }
 
+function updateGenerationUserPrompt(value: string): void {
+  generationUserPrompt.value = value;
+}
+
 async function handleGenerate(): Promise<void> {
   if (!selectedVideoPath.value || busy.value) {
     return;
@@ -194,7 +199,8 @@ async function handleGenerate(): Promise<void> {
 
   const safeFrameOffset = Number.isFinite(frameOffsetSeconds.value) ? Math.max(frameOffsetSeconds.value, 0) : 0;
   const generateOptions: GeneratePostOptions = {
-    frameOffsetSeconds: safeFrameOffset
+    frameOffsetSeconds: safeFrameOffset,
+    userPrompt: generationUserPrompt.value.trim()
   };
 
   busy.value = true;
@@ -580,11 +586,13 @@ function toggleImmersiveEditor(): void {
         :selected-video-path="selectedVideoPath"
         :busy="busy"
         :frame-offset-seconds="frameOffsetSeconds"
+        :user-prompt="generationUserPrompt"
         :config-ready="videoToPostConfigStatus?.ready ?? false"
         :missing-config-items="videoToPostConfigStatus?.missingItems ?? []"
         @select="handleSelectVideo"
         @generate="handleGenerate"
         @update-frame-offset="updateFrameOffset"
+        @update-user-prompt="updateGenerationUserPrompt"
         @open-tool-config="openToolConfig"
       />
 

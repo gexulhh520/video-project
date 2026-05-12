@@ -5,6 +5,7 @@ import type {
   DraftSummary,
   FramePreviewResult,
   GeneratePostOptions,
+  LicenseStatus,
   PostDraft,
   ReplaceFrameAssetOptions,
   RewriteDraftOptions,
@@ -86,6 +87,9 @@ export const desktopApi = {
     window.desktopApi.renameWebTask(taskId, title),
   exportWebTaskToWord: (taskId: string): Promise<string | null> => window.desktopApi.exportWebTaskToWord(taskId),
   autoExportWebTaskBundle: (taskId: string): Promise<WebTaskAutoExportResult> => window.desktopApi.autoExportWebTaskBundle(taskId),
+  getMachineId: (): Promise<string> => window.desktopApi.getMachineId(),
+  checkLicense: (): Promise<LicenseStatus> => window.desktopApi.checkLicense(),
+  activateLicense: (licenseKey: string): Promise<LicenseStatus> => window.desktopApi.activateLicense(licenseKey),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback),

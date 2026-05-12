@@ -15,6 +15,7 @@ import type {
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TaskProgress,
+  LicenseStatus,
   VideoToPostConfigStatus,
   VideoToPostSettings,
   WebCrawlStartOptions,
@@ -85,6 +86,9 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("web-task:rename-task", taskId, title),
   exportWebTaskToWord: async (taskId: string): Promise<string | null> => ipcRenderer.invoke("web-task:export-word", taskId),
   autoExportWebTaskBundle: async (taskId: string) => ipcRenderer.invoke("web-task:auto-export-bundle", taskId),
+  getMachineId: async (): Promise<string> => ipcRenderer.invoke("license:get-machine-id"),
+  checkLicense: async (): Promise<LicenseStatus> => ipcRenderer.invoke("license:check"),
+  activateLicense: async (licenseKey: string): Promise<LicenseStatus> => ipcRenderer.invoke("license:activate", licenseKey),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {

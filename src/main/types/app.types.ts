@@ -309,6 +309,24 @@ export type WebTaskAutoExportResult = {
   imagesDirPath: string;
 };
 
+export type LicensePayload = {
+  licenseId: string;
+  machineId: string;
+  customer?: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  durationDays?: number;
+  features?: string[];
+};
+
+export type LicenseStatus = {
+  authorized: boolean;
+  machineId: string;
+  enabled: boolean;
+  reason?: string;
+  license?: LicensePayload;
+};
+
 export type LlmSectionsResult = {
   title: string;
   sections: ArticleSection[];
@@ -353,6 +371,9 @@ export type DesktopApi = {
   renameWebTask: (taskId: string, title: string) => Promise<WebCrawlTask>;
   exportWebTaskToWord: (taskId: string) => Promise<string | null>;
   autoExportWebTaskBundle: (taskId: string) => Promise<WebTaskAutoExportResult>;
+  getMachineId: () => Promise<string>;
+  checkLicense: () => Promise<LicenseStatus>;
+  activateLicense: (licenseKey: string) => Promise<LicenseStatus>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;

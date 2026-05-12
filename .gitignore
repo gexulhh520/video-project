@@ -20,3 +20,5 @@ app-data/drafts/**
 !app-data/drafts/.gitkeep
 resources/ffmpeg/win/**
 !resources/ffmpeg/win/.gitkeep
+scripts/keys/private-key.pem
+scripts/keys/*.pem

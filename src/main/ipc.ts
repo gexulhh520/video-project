@@ -27,6 +27,7 @@ import { PostService } from "./services/post.service";
 import { SettingsService } from "./services/settings.service";
 import { WebTaskService } from "./services/web-task.service";
 import { ImageEditService } from "./services/image-edit.service";
+import { LicenseService } from "./services/license.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -38,6 +39,12 @@ export function registerIpcHandlers(
   webTaskService: WebTaskService,
   imageEditService: ImageEditService
 ): void {
+  const licenseService = new LicenseService();
+
+  ipcMain.handle("license:get-machine-id", async () => licenseService.getMachineId());
+  ipcMain.handle("license:check", async () => licenseService.checkLocalLicense());
+  ipcMain.handle("license:activate", async (_event, licenseKey: string) => licenseService.activate(licenseKey));
+
   ipcMain.handle("video:select", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "选择视频文件",

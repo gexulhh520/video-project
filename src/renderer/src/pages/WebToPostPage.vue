@@ -1,8 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type {
-  AppSettings,
   ContentBlock,
   PostDraft,
   WebCrawlRecord,
@@ -11,21 +10,12 @@ import type {
   WebRewriteResult,
   WebTaskProgress,
   WebTaskSummary,
-  WebToPostConfigStatus,
-  WebToPostSettings
+  WebToPostConfigStatus
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
-import AppSettingsModal from "../components/AppSettingsModal.vue";
-import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
 
 const router = useRouter();
 
-const appSettings = ref<AppSettings | null>(null);
-const settingsOpen = ref(false);
-const settingsSaving = ref(false);
-const toolSettingsOpen = ref(false);
-const toolSettingsSaving = ref(false);
-const toolSettings = ref<WebToPostSettings | null>(null);
 const toolConfigStatus = ref<WebToPostConfigStatus | null>(null);
 const taskList = ref<WebTaskSummary[]>([]);
 const activeTask = ref<WebCrawlTask | null>(null);
@@ -313,15 +303,7 @@ onBeforeUnmount(() => {
 });
 
 async function bootstrap(): Promise<void> {
-  await Promise.all([loadSettings(), loadToolConfigStatus(), refreshTaskList(), loadToolSettings()]);
-}
-
-async function loadSettings(): Promise<void> {
-  appSettings.value = await desktopApi.getAppSettings();
-}
-
-async function loadToolSettings(): Promise<void> {
-  toolSettings.value = await desktopApi.getWebToPostSettings();
+  await Promise.all([loadToolConfigStatus(), refreshTaskList()]);
 }
 
 async function loadToolConfigStatus(): Promise<void> {
@@ -944,52 +926,6 @@ async function exportRewriteResult(): Promise<void> {
   }
 }
 
-async function openSettings(): Promise<void> {
-  await loadSettings();
-  settingsOpen.value = true;
-}
-
-async function browseWorkspaceDir(): Promise<void> {
-  const nextDirectory = await desktopApi.selectDirectory();
-  if (!nextDirectory) {
-    return;
-  }
-
-  appSettings.value = {
-    ...(appSettings.value ?? {}),
-    workspaceDir: nextDirectory
-  };
-}
-
-async function saveSettings(nextSettings: AppSettings): Promise<void> {
-  settingsSaving.value = true;
-
-  try {
-    appSettings.value = await desktopApi.saveAppSettings(nextSettings);
-    settingsOpen.value = false;
-    await refreshTaskList();
-  } finally {
-    settingsSaving.value = false;
-  }
-}
-
-async function openToolSettings(): Promise<void> {
-  await loadToolSettings();
-  toolSettingsOpen.value = true;
-}
-
-async function saveToolSettings(nextSettings: WebToPostSettings): Promise<void> {
-  toolSettingsSaving.value = true;
-
-  try {
-    toolSettings.value = await desktopApi.saveWebToPostSettings(nextSettings);
-    toolSettingsOpen.value = false;
-    await loadToolConfigStatus();
-  } finally {
-    toolSettingsSaving.value = false;
-  }
-}
-
 function cloneRewriteResult(result: WebRewriteResult): WebRewriteResult {
   return JSON.parse(JSON.stringify(result)) as WebRewriteResult;
 }
@@ -1108,15 +1044,6 @@ function formatDateTime(value?: string): string {
         <small>开始爬取会新增一条正文记录；重新执行只会更新当前这条正文。</small>
       </div>
 
-      <div class="panel">
-        <span class="label">工具配置</span>
-        <strong>LLM: {{ toolConfigStatus?.resolvedLlmModel ?? "-" }}</strong>
-        <span class="subtle">缺失项：{{ toolConfigStatus?.missingItems.join("、") || "无" }}</span>
-        <div class="stack-actions">
-          <button class="ghost-btn" @click="openToolSettings">网页工具配置</button>
-          <button class="ghost-btn" @click="openSettings">全局设置</button>
-        </div>
-      </div>
     </aside>
 
     <main class="main-grid">
@@ -1553,24 +1480,8 @@ function formatDateTime(value?: string): string {
           </aside>
         </div>
       </section>
-    </div>
+    </div>
 
-    <AppSettingsModal
-      :open="settingsOpen"
-      :settings="appSettings"
-      :saving="settingsSaving"
-      @close="settingsOpen = false"
-      @browse="browseWorkspaceDir"
-      @save="saveSettings"
-    />
-
-    <WebToPostSettingsModal
-      :open="toolSettingsOpen"
-      :settings="toolSettings"
-      :saving="toolSettingsSaving"
-      @close="toolSettingsOpen = false"
-      @save="saveToolSettings"
-    />
   </section>
 </template>
 
@@ -2503,3 +2414,4 @@ textarea {
   }
 }
 </style>
+

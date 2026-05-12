@@ -1,20 +1,48 @@
-<script setup lang="ts">
-defineProps<{
+﻿<script setup lang="ts">
+const props = defineProps<{
   title: string;
   description: string;
   status: "available" | "coming-soon";
+  blocked?: boolean;
+  blockedReason?: string;
+  actionLabel?: string;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   click: [];
+  action: [];
 }>();
+
+function handleCardClick(): void {
+  if (props.status !== "available" || props.blocked) {
+    return;
+  }
+  emit("click");
+}
 </script>
 
 <template>
-  <button class="tool-card" :class="status" :disabled="status !== 'available'" @click="$emit('click')">
-    <span class="badge">{{ status === "available" ? "可用" : "即将上线" }}</span>
+  <button
+    class="tool-card"
+    :class="[status, { blocked: Boolean(blocked) }]"
+    :disabled="status !== 'available'"
+    @click="handleCardClick"
+  >
+    <div class="card-top">
+      <span class="badge">{{ status === "available" ? "可用" : "即将上线" }}</span>
+      <button
+        v-if="actionLabel"
+        class="action-btn"
+        type="button"
+        @click.stop="$emit('action')"
+      >
+        {{ actionLabel }}
+      </button>
+    </div>
+
     <h3>{{ title }}</h3>
     <p>{{ description }}</p>
+    <p v-if="blockedReason" class="blocked-tip">{{ blockedReason }}</p>
   </button>
 </template>
 
@@ -48,6 +76,17 @@ defineEmits<{
   cursor: not-allowed;
 }
 
+.tool-card.blocked {
+  border-color: rgba(255, 170, 142, 0.32);
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .badge {
   display: inline-flex;
   padding: 6px 10px;
@@ -59,6 +98,21 @@ defineEmits<{
   color: #80c2ff;
 }
 
+.action-btn {
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(143, 176, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eaf3ff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.action-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
 h3 {
   margin: 18px 0 12px;
   font-size: 24px;
@@ -68,5 +122,11 @@ p {
   margin: 0;
   color: #a7bbdc;
   line-height: 1.6;
+}
+
+.blocked-tip {
+  margin-top: 12px;
+  color: #ffc1a8;
+  font-size: 13px;
 }
 </style>

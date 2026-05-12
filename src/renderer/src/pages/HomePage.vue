@@ -1,19 +1,35 @@
-<script setup lang="ts">
-import { onMounted, ref } from "vue";
+﻿<script setup lang="ts">
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { AppSettings } from "../../../main/types/app.types";
+import type { AppSettings, WebToPostConfigStatus, WebToPostSettings } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import AppSettingsModal from "../components/AppSettingsModal.vue";
 import ToolCard from "../components/ToolCard.vue";
+import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
 
 const router = useRouter();
 
-const tools = [
+const settingsOpen = ref(false);
+const settingsSaving = ref(false);
+const appSettings = ref<AppSettings | null>(null);
+
+const webToolSettingsOpen = ref(false);
+const webToolSettingsSaving = ref(false);
+const webToolSettings = ref<WebToPostSettings | null>(null);
+const webToolConfigStatus = ref<WebToPostConfigStatus | null>(null);
+const homeNotice = ref("");
+
+const tools = computed(() => [
   {
     title: "网页转文章原创",
     description: "输入网页链接，借助 bb-browser 抓取标题、正文和图片，再统一交给 LLM 做二次原创。",
     status: "available" as const,
-    route: "/tools/web-to-post"
+    route: "/tools/web-to-post",
+    blocked: !(webToolConfigStatus.value?.ready ?? false),
+    blockedReason: (webToolConfigStatus.value?.ready ?? false)
+      ? ""
+      : `未完成工具配置，缺失：${webToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
+    actionLabel: "工具配置"
   },
   {
     title: "视频转图文",
@@ -36,18 +52,19 @@ const tools = [
     description: "输出封面主文案与副标题候选，方便直接用于封面图。",
     status: "coming-soon" as const
   }
-];
-
-const settingsOpen = ref(false);
-const settingsSaving = ref(false);
-const appSettings = ref<AppSettings | null>(null);
+]);
 
 onMounted(() => {
   void loadSettings();
+  void loadWebToolConfig();
 });
 
 async function loadSettings(): Promise<void> {
   appSettings.value = await desktopApi.getAppSettings();
+}
+
+async function loadWebToolConfig(): Promise<void> {
+  webToolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
 }
 
 async function openSettings(): Promise<void> {
@@ -55,11 +72,15 @@ async function openSettings(): Promise<void> {
   settingsOpen.value = true;
 }
 
+async function openWebToolSettings(): Promise<void> {
+  webToolSettings.value = await desktopApi.getWebToPostSettings();
+  webToolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
+  webToolSettingsOpen.value = true;
+}
+
 async function browseWorkspaceDir(): Promise<void> {
   const nextDirectory = await desktopApi.selectDirectory();
-  if (!nextDirectory) {
-    return;
-  }
+  if (!nextDirectory) return;
 
   appSettings.value = {
     ...(appSettings.value ?? {}),
@@ -69,13 +90,39 @@ async function browseWorkspaceDir(): Promise<void> {
 
 async function saveSettings(nextSettings: AppSettings): Promise<void> {
   settingsSaving.value = true;
-
   try {
     appSettings.value = await desktopApi.saveAppSettings(nextSettings);
     settingsOpen.value = false;
   } finally {
     settingsSaving.value = false;
   }
+}
+
+async function saveWebToolSettings(nextSettings: WebToPostSettings): Promise<void> {
+  webToolSettingsSaving.value = true;
+  try {
+    webToolSettings.value = await desktopApi.saveWebToPostSettings(nextSettings);
+    webToolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
+    webToolSettingsOpen.value = false;
+    homeNotice.value = "网页工具配置已保存。";
+  } finally {
+    webToolSettingsSaving.value = false;
+  }
+}
+
+function handleToolClick(tool: (typeof tools.value)[number]): void {
+  homeNotice.value = "";
+
+  if (!tool.route) {
+    return;
+  }
+
+  if (tool.route === "/tools/web-to-post" && tool.blocked) {
+    homeNotice.value = tool.blockedReason || "请先完成网页工具配置后再进入。";
+    return;
+  }
+
+  void router.push(tool.route);
 }
 </script>
 
@@ -92,6 +139,7 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
         <span>当前工作空间目录</span>
         <strong>{{ appSettings.workspaceDir }}</strong>
       </div>
+      <p v-if="homeNotice" class="home-notice">{{ homeNotice }}</p>
     </div>
 
     <div class="tool-grid">
@@ -101,7 +149,11 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
         :title="tool.title"
         :description="tool.description"
         :status="tool.status"
-        @click="tool.route ? router.push(tool.route) : undefined"
+        :blocked="tool.blocked"
+        :blocked-reason="tool.blockedReason"
+        :action-label="tool.route === '/tools/web-to-post' ? tool.actionLabel : undefined"
+        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : undefined"
+        @click="handleToolClick(tool)"
       />
     </div>
 
@@ -112,6 +164,14 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
       @close="settingsOpen = false"
       @browse="browseWorkspaceDir"
       @save="saveSettings"
+    />
+
+    <WebToPostSettingsModal
+      :open="webToolSettingsOpen"
+      :settings="webToolSettings"
+      :saving="webToolSettingsSaving"
+      @close="webToolSettingsOpen = false"
+      @save="saveWebToolSettings"
     />
   </section>
 </template>
@@ -185,6 +245,12 @@ p {
   display: block;
   line-height: 1.6;
   word-break: break-all;
+}
+
+.home-notice {
+  margin-top: 14px;
+  color: #ffc1a8;
+  font-size: 14px;
 }
 
 .tool-grid {

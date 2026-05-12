@@ -21,12 +21,13 @@ const NOT_READY_PATTERNS = [
   "Daemon HTTP 503",
   "ECONNREFUSED"
 ];
+const STATUS_RETRY_DELAY_MS = 800;
 
 export class BrowserRuntimeService {
   constructor(private readonly settingsService: SettingsService) {}
 
   async checkHealth(): Promise<BrowserRuntimeHealthStatus> {
-    const output = await this.runBbBrowserCommand(["status"], 30000);
+    const output = await this.runStatusCommandWithRetry();
     const merged = `${output.stdout}\n${output.stderr}`.trim();
     const daemonRunning = /Daemon running:\s+yes/i.test(merged);
     const cdpConnected = /CDP connected:\s+yes/i.test(merged);
@@ -41,6 +42,19 @@ export class BrowserRuntimeService {
       message: healthy ? "bb-browser 运行时健康" : "bb-browser 运行时未就绪",
       rawOutput: merged
     };
+  }
+
+  private async runStatusCommandWithRetry(): Promise<CommandResult> {
+    try {
+      return await this.runBbBrowserCommand(["status"], 30000);
+    } catch (error) {
+      if (!this.shouldRetryStatusCommand(error)) {
+        throw error;
+      }
+
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, STATUS_RETRY_DELAY_MS));
+      return this.runBbBrowserCommand(["status"], 30000);
+    }
   }
 
   async resetRuntime(): Promise<void> {
@@ -182,5 +196,15 @@ export class BrowserRuntimeService {
     }
 
     return `"${value.replace(/"/g, '""')}"`;
+  }
+
+  private shouldRetryStatusCommand(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+
+    // Windows occasionally returns this crash code while running `bb-browser status`.
+    // Retry once to reduce transient failures during preflight checks.
+    return /Command failed \((3221226505|-1073740791)\):[\s\S]*\bstatus\b/i.test(error.message);
   }
 }

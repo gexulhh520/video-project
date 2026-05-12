@@ -32,6 +32,7 @@ const editableBody = ref("");
 const selectedRecordId = ref("");
 const rewriteSelectedRecordIds = ref<string[]>([]);
 const autoCrawlEnabled = ref(false);
+const autoCrawlMergeRewrite = ref(false);
 const autoExtraUrls = ref<string[]>([]);
 const confirmImagePoolOpen = ref(false);
 const rewriteResultOpen = ref(false);
@@ -434,29 +435,63 @@ async function runAutoCrawlPipeline(taskId: string, crawlUrls: string[]): Promis
 
   rewriteSelectedRecordIds.value = autoRecordIds;
 
-  progress.value = {
-    taskId,
-    status: "rewriting",
-    progress: 88,
-    message: "全自动：正在二次原创"
-  };
+  if (autoCrawlMergeRewrite.value) {
+    progress.value = {
+      taskId,
+      status: "rewriting",
+      progress: 88,
+      message: "全自动：正在汇总二次原创"
+    };
 
-  nextTask = await desktopApi.rewriteWebTask(taskId, {
-    prompt: rewritePromptInput.value,
-    recordIds: autoRecordIds
-  });
+    nextTask = await desktopApi.rewriteWebTask(taskId, {
+      prompt: rewritePromptInput.value,
+      recordIds: autoRecordIds
+    });
 
-  rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
-  rewriteResultOpen.value = Boolean(rewriteDraft.value);
-  imagePickerSectionId.value = null;
+    rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    imagePickerSectionId.value = null;
 
-  const exportResult = await desktopApi.autoExportWebTaskBundle(taskId);
-  progress.value = {
-    taskId,
-    status: "completed",
-    progress: 100,
-    message: `全自动完成，已导出到 ${exportResult.outputDir}`
-  };
+    const exportResult = await desktopApi.autoExportWebTaskBundle(taskId);
+    progress.value = {
+      taskId,
+      status: "completed",
+      progress: 100,
+      message: `全自动完成（汇总模式），已导出到 ${exportResult.outputDir}`
+    };
+  } else {
+    let lastExportDir = "";
+
+    for (let index = 0; index < autoRecordIds.length; index += 1) {
+      const recordId = autoRecordIds[index];
+      progress.value = {
+        taskId,
+        recordId,
+        status: "rewriting",
+        progress: Math.min(85 + Math.floor(((index + 1) / autoRecordIds.length) * 14), 99),
+        message: `全自动：正在独立二次原创第 ${index + 1}/${autoRecordIds.length} 条正文`
+      };
+
+      nextTask = await desktopApi.rewriteWebTask(taskId, {
+        prompt: rewritePromptInput.value,
+        recordIds: [recordId]
+      });
+
+      const exportResult = await desktopApi.autoExportWebTaskBundle(taskId);
+      lastExportDir = exportResult.outputDir;
+    }
+
+    rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    imagePickerSectionId.value = null;
+
+    progress.value = {
+      taskId,
+      status: "completed",
+      progress: 100,
+      message: `全自动完成（独立模式），共导出 ${autoRecordIds.length} 份，最后导出目录：${lastExportDir}`
+    };
+  }
 
   return nextTask;
 }
@@ -1027,6 +1062,10 @@ function formatDateTime(value?: string): string {
         <label class="toggle-row">
           <input v-model="autoCrawlEnabled" type="checkbox" />
           <span>全自动爬取（自动确认正文、抓图、二次原创并导出）</span>
+        </label>
+        <label v-if="autoCrawlEnabled" class="toggle-row">
+          <input v-model="autoCrawlMergeRewrite" type="checkbox" />
+          <span>汇总二次创作（开：多链接合并导出 1 份；关：每个链接独立导出）</span>
         </label>
         <div v-if="autoCrawlEnabled" class="auto-url-list">
           <div v-for="(item, index) in autoExtraUrls" :key="`auto-url-${index}`" class="auto-url-item">

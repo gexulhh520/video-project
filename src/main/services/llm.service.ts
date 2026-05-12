@@ -98,8 +98,6 @@ function buildUserPrompt(segments: TranscriptSegment[], userPrompt?: string): st
 }
 
 export class LlmService {
-  private readonly baseUrl = process.env.LLM_BASE_URL;
-
   constructor(private readonly settingsService: SettingsService) {}
 
   async generateSectionsByLlm(
@@ -537,12 +535,14 @@ export class LlmService {
   ): Promise<string> {
     const toolSettings =
       scope === "web" ? await this.settingsService.getWebToPostSettings() : await this.settingsService.getVideoToPostSettings();
+    const appSettings = await this.settingsService.getSettings();
+    const baseUrl = appSettings.globalRuntime?.llmBaseUrl || process.env.LLM_BASE_URL || "https://api.deepseek.com";
     const apiKey = toolSettings.llmApiKey || process.env.LLM_API_KEY;
     const model = toolSettings.llmModel || process.env.LLM_MODEL || "deepseek-v4-flash";
-    const requestUrl = `${this.baseUrl?.replace(/\/$/, "")}/chat/completions`;
+    const requestUrl = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 
-    if (!this.baseUrl || !apiKey) {
-      throw new Error("Missing LLM_BASE_URL or LLM_API_KEY.");
+    if (!apiKey) {
+      throw new Error("Missing LLM_API_KEY.");
     }
 
     console.info("[LLM] Sending chat completion request", {

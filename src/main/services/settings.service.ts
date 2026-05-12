@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { app } from "electron";
 import type {
   AppSettings,
+  GlobalRuntimeSettings,
   VideoToPostConfigStatus,
   VideoToPostSettings,
   WebToPostConfigStatus,
@@ -29,6 +30,13 @@ const DEFAULT_WEB_TO_POST_SETTINGS: WebToPostSettings = {
   bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp"
 };
 
+const DEFAULT_GLOBAL_RUNTIME_SETTINGS: GlobalRuntimeSettings = {
+  llmBaseUrl: "https://api.deepseek.com",
+  doubaoAsrBaseUrl: "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash",
+  doubaoAsrResourceId: "volc.bigasr.auc_turbo",
+  doubaoUid: "video-to-post-user"
+};
+
 export class SettingsService {
   private readonly settingsFilePath = join(app.getPath("userData"), "settings.json");
 
@@ -38,6 +46,7 @@ export class SettingsService {
     await mkdir(workspaceDir, { recursive: true });
     return {
       workspaceDir,
+      globalRuntime: this.normalizeGlobalRuntimeSettings(stored.globalRuntime),
       videoToPost: await this.getVideoToPostSettings(workspaceDir)
     };
   }
@@ -47,7 +56,8 @@ export class SettingsService {
     await mkdir(workspaceDir, { recursive: true });
 
     const normalizedSettings: AppSettings = {
-      workspaceDir
+      workspaceDir,
+      globalRuntime: this.normalizeGlobalRuntimeSettings(settings.globalRuntime)
     };
 
     await writeFile(this.settingsFilePath, JSON.stringify(normalizedSettings, null, 2), "utf8");
@@ -238,5 +248,14 @@ export class SettingsService {
     }
 
     return normalized;
+  }
+
+  private normalizeGlobalRuntimeSettings(settings?: Partial<GlobalRuntimeSettings>): GlobalRuntimeSettings {
+    return {
+      llmBaseUrl: settings?.llmBaseUrl?.trim() || DEFAULT_GLOBAL_RUNTIME_SETTINGS.llmBaseUrl,
+      doubaoAsrBaseUrl: settings?.doubaoAsrBaseUrl?.trim() || DEFAULT_GLOBAL_RUNTIME_SETTINGS.doubaoAsrBaseUrl,
+      doubaoAsrResourceId: settings?.doubaoAsrResourceId?.trim() || DEFAULT_GLOBAL_RUNTIME_SETTINGS.doubaoAsrResourceId,
+      doubaoUid: settings?.doubaoUid?.trim() || DEFAULT_GLOBAL_RUNTIME_SETTINGS.doubaoUid
+    };
   }
 }

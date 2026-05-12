@@ -62,6 +62,7 @@ async function browseWorkspaceDir(): Promise<void> {
   }
 
   appSettings.value = {
+    ...(appSettings.value ?? {}),
     workspaceDir: nextDirectory
   };
 }

@@ -15,18 +15,33 @@ const emit = defineEmits<{
 }>();
 
 const workspaceDir = ref("");
+const llmBaseUrl = ref("");
+const doubaoAsrBaseUrl = ref("");
+const doubaoAsrResourceId = ref("");
+const doubaoUid = ref("");
 
 watch(
   () => props.settings,
   (settings) => {
     workspaceDir.value = settings?.workspaceDir ?? "";
+    llmBaseUrl.value = settings?.globalRuntime?.llmBaseUrl ?? "https://api.deepseek.com";
+    doubaoAsrBaseUrl.value =
+      settings?.globalRuntime?.doubaoAsrBaseUrl ?? "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
+    doubaoAsrResourceId.value = settings?.globalRuntime?.doubaoAsrResourceId ?? "volc.bigasr.auc_turbo";
+    doubaoUid.value = settings?.globalRuntime?.doubaoUid ?? "video-to-post-user";
   },
   { immediate: true }
 );
 
 function handleSave(): void {
   emit("save", {
-    workspaceDir: workspaceDir.value.trim()
+    workspaceDir: workspaceDir.value.trim(),
+    globalRuntime: {
+      llmBaseUrl: llmBaseUrl.value.trim(),
+      doubaoAsrBaseUrl: doubaoAsrBaseUrl.value.trim(),
+      doubaoAsrResourceId: doubaoAsrResourceId.value.trim(),
+      doubaoUid: doubaoUid.value.trim()
+    }
   });
 }
 </script>
@@ -44,9 +59,33 @@ function handleSave(): void {
 
       <div class="content">
         <label class="field">
-          <span>空间目录</span>
+          <span>工作目录</span>
           <input v-model="workspaceDir" type="text" placeholder="请选择一个用于存放项目数据的目录" />
-          <small>上传的视频、抽出来的音频、切片、图片、草稿和导出临时文件，都会默认写到这个目录下面。</small>
+          <small>视频、音频、切片、图片、草稿和导出临时文件，都会默认写到该目录。</small>
+        </label>
+
+        <label class="field">
+          <span>LLM_BASE_URL</span>
+          <input v-model="llmBaseUrl" type="text" placeholder="https://api.deepseek.com" />
+        </label>
+
+        <label class="field">
+          <span>DOUBAO_ASR_BASE_URL</span>
+          <input
+            v-model="doubaoAsrBaseUrl"
+            type="text"
+            placeholder="https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash"
+          />
+        </label>
+
+        <label class="field">
+          <span>DOUBAO_ASR_RESOURCE_ID</span>
+          <input v-model="doubaoAsrResourceId" type="text" placeholder="volc.bigasr.auc_turbo" />
+        </label>
+
+        <label class="field">
+          <span>DOUBAO_UID</span>
+          <input v-model="doubaoUid" type="text" placeholder="video-to-post-user" />
         </label>
 
         <div class="actions">

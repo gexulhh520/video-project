@@ -20,14 +20,17 @@ type DoubaoResponse = {
 };
 
 export class DoubaoAsrService {
-  private readonly baseUrl =
-    process.env.DOUBAO_ASR_BASE_URL ?? "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
-  private readonly resourceId = process.env.DOUBAO_ASR_RESOURCE_ID ?? "volc.bigasr.auc_turbo";
-  private readonly uid = process.env.DOUBAO_UID ?? "video-to-post-user";
-
   constructor(private readonly settingsService: SettingsService) {}
 
   async recognizeMp3ByDoubao(audioPath: string): Promise<DoubaoUtterance[]> {
+    const appSettings = await this.settingsService.getSettings();
+    const baseUrl =
+      appSettings.globalRuntime?.doubaoAsrBaseUrl ||
+      process.env.DOUBAO_ASR_BASE_URL ||
+      "https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash";
+    const resourceId =
+      appSettings.globalRuntime?.doubaoAsrResourceId || process.env.DOUBAO_ASR_RESOURCE_ID || "volc.bigasr.auc_turbo";
+    const uid = appSettings.globalRuntime?.doubaoUid || process.env.DOUBAO_UID || "video-to-post-user";
     const toolSettings = await this.settingsService.getVideoToPostSettings();
     const apiKey = toolSettings.doubaoAsrApiKey || process.env.DOUBAO_ASR_API_KEY;
 
@@ -38,10 +41,10 @@ export class DoubaoAsrService {
     const buffer = await readFile(audioPath);
     const requestId = uuidv4();
     const response = await axios.post<DoubaoResponse>(
-      this.baseUrl,
+      baseUrl,
       {
         user: {
-          uid: this.uid
+          uid
         },
         audio: {
           data: buffer.toString("base64"),
@@ -57,7 +60,7 @@ export class DoubaoAsrService {
       {
         headers: {
           "X-Api-Key": apiKey,
-          "X-Api-Resource-Id": this.resourceId,
+          "X-Api-Resource-Id": resourceId,
           "X-Api-Request-Id": requestId,
           "X-Api-Sequence": "-1",
           "Content-Type": "application/json"

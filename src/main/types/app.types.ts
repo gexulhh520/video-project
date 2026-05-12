@@ -120,7 +120,15 @@ export type RewriteDraftResult = {
 
 export type AppSettings = {
   workspaceDir: string;
+  globalRuntime?: GlobalRuntimeSettings;
   videoToPost?: VideoToPostSettings;
+};
+
+export type GlobalRuntimeSettings = {
+  llmBaseUrl: string;
+  doubaoAsrBaseUrl: string;
+  doubaoAsrResourceId: string;
+  doubaoUid: string;
 };
 
 export type VideoToPostSettings = {

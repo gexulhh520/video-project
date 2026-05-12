@@ -26,7 +26,7 @@ export class BrowserRuntimeService {
   constructor(private readonly settingsService: SettingsService) {}
 
   async checkHealth(): Promise<BrowserRuntimeHealthStatus> {
-    const output = await this.runBbBrowserCommand(["status"], 10000);
+    const output = await this.runBbBrowserCommand(["status"], 30000);
     const merged = `${output.stdout}\n${output.stderr}`.trim();
     const daemonRunning = /Daemon running:\s+yes/i.test(merged);
     const cdpConnected = /CDP connected:\s+yes/i.test(merged);

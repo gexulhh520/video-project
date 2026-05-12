@@ -65,6 +65,29 @@ const taskListModalOpen = ref(false);
 const editingTaskId = ref<string | null>(null);
 const editingTaskTitle = ref("");
 
+const rewritePromptExamples = [
+  {
+    label: "微头条",
+    value:
+      "请改成适合微头条发布的风格，开头要更有冲突感，语言更口语化，每段不要太长，整体控制在 600 字以内，不要像新闻稿。"
+  },
+  {
+    label: "公众号文章",
+    value:
+      "请改成适合公众号文章发布的风格，逻辑更完整，段落衔接更自然，开头要有吸引力，中间要有分析，结尾要有总结。"
+  },
+  {
+    label: "小红书",
+    value:
+      "请改成适合小红书图文笔记的风格，表达更有分享感和情绪感，语言自然一点，不要太官方，适合配图阅读。"
+  },
+  {
+    label: "深度分析",
+    value:
+      "请把内容改成偏深度分析的风格，减少口水话，增强观点判断、逻辑递进和信息密度，适合对行业趋势感兴趣的人阅读。"
+  }
+];
+
 let unsubscribe: (() => void) | null = null;
 
 const historyRecords = computed(() => activeTask.value?.records ?? []);
@@ -696,6 +719,10 @@ async function rewriteTask(): Promise<void> {
   }
 }
 
+function applyRewritePromptExample(value: string): void {
+  rewritePromptInput.value = value;
+}
+
 function openConfirmImagePool(): void {
   if (!currentRecordImageAssets.value.length) {
     return;
@@ -1221,6 +1248,22 @@ function formatDateTime(value?: string): string {
               rows="4"
               placeholder="例如：用更强的信息差开头，控制在 800 字内。"
             />
+            <small>可填写发布平台、语气、篇幅、结构等要求；如果不填，就按默认图文风格生成。</small>
+
+            <div class="prompt-examples">
+              <p>参考示例：</p>
+              <div class="example-buttons">
+                <button
+                  v-for="item in rewritePromptExamples"
+                  :key="item.label"
+                  type="button"
+                  class="chip-btn"
+                  @click="applyRewritePromptExample(item.value)"
+                >
+                  {{ item.label }}
+                </button>
+              </div>
+            </div>
           </label>
 
           <div class="action-row">
@@ -1686,6 +1729,45 @@ small,
 .field span {
   color: #9db4d8;
   font-size: 12px;
+}
+
+.field small {
+  color: #8fa8cf;
+  line-height: 1.6;
+}
+
+.prompt-examples {
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-examples p {
+  margin: 0;
+  color: #9db4d8;
+  font-size: 12px;
+}
+
+.example-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-btn {
+  width: auto;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(145, 200, 255, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: #cfe6ff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.chip-btn:hover {
+  border-color: rgba(145, 200, 255, 0.3);
+  background: rgba(86, 144, 255, 0.12);
 }
 
 .toggle-row {

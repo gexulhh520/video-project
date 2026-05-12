@@ -232,25 +232,11 @@ export class LlmService {
       [
         {
           role: "system",
-          content: [
-            "你是一个中文平台爆款内容二创编辑。",
-            "你会基于多个来源正文，重新组织信息，写出新的标题和多段原创正文。",
-            "要保留事实边界，不虚构额外事实，不照抄原文句子。",
-            "语言要自然、紧凑、适合图文发布。",
-            "输出合法 JSON，不要附加解释。",
-            "JSON 格式必须为 {\"title\":\"...\",\"paragraphs\":[\"...\" ]}。"
-          ].join("")
+          content: this.buildWebRewriteSystemPrompt()
         },
         {
           role: "user",
-          content: [
-            `任务标题：${title || "未命名任务"}`,
-            prompt.trim() ? `额外要求：${prompt.trim()}` : "",
-            "来源正文：",
-            JSON.stringify(articles, null, 2)
-          ]
-            .filter(Boolean)
-            .join("\n\n")
+          content: this.buildWebRewriteUserPrompt(title, articles, prompt)
         }
       ],
       {
@@ -317,6 +303,41 @@ export class LlmService {
     }
 
     return parsed;
+  }
+
+  private buildWebRewriteSystemPrompt(): string {
+    return [
+      "你是一个中文内容平台的资深图文二创编辑，擅长把多个网页来源整合成一篇适合发布的原创文章。",
+      "你的任务不是拼接原文，也不是简单改写，而是先理解核心信息，再重新组织结构、重写标题、重写正文，产出一篇独立成文的新稿。",
+      "你要优先遵守用户额外填写的风格要求；如果用户明确提到发布平台、篇幅、语气、结构、受众或表达方向，必须优先按这些要求生成。",
+      "如果用户没有额外要求，就默认写成适合中文内容平台发布的通顺图文稿，标题有吸引力，正文有节奏感。",
+      "支持的风格参考包括但不限于：微头条、公众号文章、小红书图文笔记、深度分析稿。",
+      "其中，微头条更强调开头冲突感、信息差、短句和传播感；公众号文章更强调完整结构、自然过渡和总结收束；小红书图文更强调分享感、情绪感、口语化和适合配图阅读；深度分析更强调观点判断、逻辑递进和信息密度。",
+      "核心要求如下：",
+      "1. 必须深度重构内容。禁止逐段拼接、逐句改写、同义词替换式洗稿。",
+      "2. 必须保持事实边界。不能编造原文没有的事实、数据、人物关系或结论。",
+      "3. 可以整合多个来源的共同信息，但不要把彼此矛盾的信息强行揉在一起；如信息不足，就围绕已知信息写清楚，不要硬补。",
+      "4. 标题要具体、有信息量、有吸引力，但不能夸张失真。",
+      "5. 正文要适合直接发布，段落之间要有自然衔接，避免像资料摘抄或机器总结。",
+      "6. 除了必要的人名、品牌名、术语和关键数据外，不要照搬原文表达。",
+      "输出合法 JSON，不要附加解释。",
+      "JSON 格式必须为 {\"title\":\"...\",\"paragraphs\":[\"...\"]}。"
+    ].join("");
+  }
+
+  private buildWebRewriteUserPrompt(
+    title: string,
+    articles: Array<{ title: string; body: string }>,
+    prompt: string
+  ): string {
+    return [
+      `任务标题：${title || "未命名任务"}`,
+      prompt.trim() ? `额外要求：${prompt.trim()}` : "",
+      "来源正文：",
+      JSON.stringify(articles, null, 2)
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   private buildRewriteDraftPrompt(options: RewriteDraftOptions): string {

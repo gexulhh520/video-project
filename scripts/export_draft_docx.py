@@ -33,13 +33,8 @@ def add_title(document: Document, draft: dict) -> None:
     run.font.name = "Calibri"
     run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
 
-    meta = document.add_paragraph()
-    meta.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    meta.paragraph_format.space_after = Pt(18)
-    created_at = draft.get("createdAt") or ""
-    updated_at = draft.get("updatedAt") or created_at
-    meta_run = meta.add_run(f"导出时间: {updated_at}")
-    meta_run.font.size = Pt(9)
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(18)
 
 
 def add_paragraph_block(document: Document, block: dict) -> None:
@@ -60,7 +55,6 @@ def normalize_image_for_docx(image_path: Path, temp_dir: Path) -> Path:
 
 def add_image_block(document: Document, block: dict, temp_dir: Path) -> None:
     image_path = Path(block.get("imagePath") or "")
-    caption_text = block.get("caption") or ""
     picture_added = False
 
     if image_path.exists():
@@ -82,16 +76,8 @@ def add_image_block(document: Document, block: dict, temp_dir: Path) -> None:
         placeholder_run.italic = True
         placeholder_run.font.size = Pt(9)
 
-    if caption_text:
-        caption = document.add_paragraph()
-        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        caption.paragraph_format.space_after = Pt(12)
-        caption_run = caption.add_run(caption_text)
-        caption_run.italic = True
-        caption_run.font.size = Pt(9)
-    else:
-        spacer = document.add_paragraph()
-        spacer.paragraph_format.space_after = Pt(10)
+    spacer = document.add_paragraph()
+    spacer.paragraph_format.space_after = Pt(10)
 
 
 def export_docx(draft_path: Path, output_path: Path) -> None:

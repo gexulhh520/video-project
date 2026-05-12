@@ -43,8 +43,7 @@ export class BbBrowserService {
   }
 
   async collectImageUrls(tabId: string): Promise<string[]> {
-    const script =
-      "JSON.stringify([...new Set([...document.querySelectorAll('img')].map(img => img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src')).filter(Boolean).map(u => new URL(u, location.href).href))], null, 2)";
+    const script = this.buildCollectImageEvalScript();
     const response = await this.sendDaemonCommand({
       id: uuidv4(),
       action: "eval",
@@ -63,20 +62,18 @@ export class BbBrowserService {
     await this.runRawCommand(["--tab", tabId, "close"], 15000, true);
   }
 
-  async downloadImages(urls: string[], outputDir: string): Promise<Array<{ sourceUrl: string; localPath?: string; failedReason?: string }>> {
+  async downloadImages(
+    urls: string[],
+    outputDir: string,
+    referer?: string
+  ): Promise<Array<{ sourceUrl: string; localPath?: string; failedReason?: string }>> {
     await mkdir(outputDir, { recursive: true });
     const uniqueUrls = [...new Set(urls)].filter((url) => /^https?:\/\//i.test(url));
     const results: Array<{ sourceUrl: string; localPath?: string; failedReason?: string }> = [];
 
     for (const sourceUrl of uniqueUrls) {
       try {
-        const response = await axios.get<ArrayBuffer>(sourceUrl, {
-          responseType: "arraybuffer",
-          timeout: 30000,
-          headers: {
-            "User-Agent": "Mozilla/5.0"
-          }
-        });
+        const response = await this.fetchImageWithRetry(sourceUrl, referer);
         const pathname = new URL(sourceUrl).pathname;
         const ext = extname(pathname) || ".jpg";
         const filename = `${Date.now()}_${uuidv4()}_${basename(pathname || "image").replace(/[^\w.-]+/g, "_") || "image"}${
@@ -94,6 +91,125 @@ export class BbBrowserService {
     }
 
     return results;
+  }
+
+  private buildCollectImageEvalScript(): string {
+    return `
+(() => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const resolveUrl = (value) => {
+    if (!value || typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return null;
+    try {
+      return new URL(trimmed, location.href).href;
+    } catch (_error) {
+      return null;
+    }
+  };
+  const parseSrcset = (value) => {
+    if (!value || typeof value !== "string") return [];
+    return value
+      .split(",")
+      .map((item) => item.trim().split(/\\s+/)[0])
+      .map((item) => resolveUrl(item))
+      .filter(Boolean);
+  };
+  const parseBackgroundImage = (value) => {
+    if (!value || typeof value !== "string") return [];
+    const matches = [...value.matchAll(/url\\((['"]?)(.*?)\\1\\)/g)];
+    return matches.map((item) => resolveUrl(item[2])).filter(Boolean);
+  };
+  const pullFromDocument = (doc) => {
+    const urls = new Set();
+    const add = (value) => {
+      const normalized = resolveUrl(value);
+      if (normalized) urls.add(normalized);
+    };
+
+    const imageLikeAttrs = [
+      "src",
+      "currentSrc",
+      "data-src",
+      "data-original",
+      "data-lazy-src",
+      "data-lazyload",
+      "data-url",
+      "data-echo"
+    ];
+
+    doc.querySelectorAll("img").forEach((img) => {
+      imageLikeAttrs.forEach((attr) => add(attr === "currentSrc" ? img.currentSrc : img.getAttribute(attr)));
+      parseSrcset(img.getAttribute("srcset")).forEach(add);
+      parseSrcset(img.getAttribute("data-srcset")).forEach(add);
+    });
+
+    doc.querySelectorAll("picture source").forEach((source) => {
+      parseSrcset(source.getAttribute("srcset")).forEach(add);
+      parseSrcset(source.getAttribute("data-srcset")).forEach(add);
+      add(source.getAttribute("src"));
+    });
+
+    doc.querySelectorAll("[style]").forEach((node) => {
+      parseBackgroundImage(node.getAttribute("style")).forEach(add);
+    });
+
+    doc.querySelectorAll("*").forEach((node) => {
+      const cssText = getComputedStyle(node).backgroundImage;
+      parseBackgroundImage(cssText).forEach(add);
+    });
+
+    return urls;
+  };
+
+  return (async () => {
+    for (let i = 0; i < 4; i += 1) {
+      window.scrollTo(0, Math.floor((document.documentElement.scrollHeight - 1) * ((i + 1) / 4)));
+      await sleep(350);
+    }
+    window.scrollTo(0, 0);
+    await sleep(300);
+
+    const allUrls = pullFromDocument(document);
+    document.querySelectorAll("iframe").forEach((frame) => {
+      try {
+        const childDoc = frame.contentDocument;
+        if (!childDoc) return;
+        pullFromDocument(childDoc).forEach((value) => allUrls.add(value));
+      } catch (_error) {
+        // Cross-origin iframe can't be read.
+      }
+    });
+
+    return JSON.stringify([...allUrls], null, 2);
+  })();
+})()
+`.trim();
+  }
+
+  private async fetchImageWithRetry(sourceUrl: string, referer?: string): Promise<{ data: ArrayBuffer }> {
+    const baseHeaders: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0",
+      Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
+    };
+
+    if (referer?.trim()) {
+      baseHeaders.Referer = referer.trim();
+    }
+
+    const attempt = async (timeout: number): Promise<{ data: ArrayBuffer }> =>
+      axios.get<ArrayBuffer>(sourceUrl, {
+        responseType: "arraybuffer",
+        timeout,
+        headers: baseHeaders
+      });
+
+    try {
+      return await attempt(30000);
+    } catch (_error) {
+      return await attempt(45000);
+    }
   }
 
   private async runJsonCommand<T>(args: string[]): Promise<T> {

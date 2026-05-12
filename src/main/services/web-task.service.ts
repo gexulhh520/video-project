@@ -233,7 +233,7 @@ export class WebTaskService {
       }
     }
 
-    const downloads = await this.bbBrowserService.downloadImages(urls, await this.getTaskImagesDir(taskId));
+    const downloads = await this.bbBrowserService.downloadImages(urls, await this.getTaskImagesDir(taskId), record.sourceUrl);
     const assets: WebImageAsset[] = downloads.map((download) => ({
       assetId: uuidv4(),
       sourceUrl: download.sourceUrl,

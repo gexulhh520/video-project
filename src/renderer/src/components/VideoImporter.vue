@@ -1,11 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 const props = defineProps<{
   selectedVideoPath: string | null;
   busy: boolean;
   frameOffsetSeconds: number;
   userPrompt: string;
   configReady: boolean;
-  missingConfigItems: string[];
 }>();
 
 const emit = defineEmits<{
@@ -13,7 +12,6 @@ const emit = defineEmits<{
   generate: [];
   updateFrameOffset: [value: number];
   updateUserPrompt: [value: string];
-  openToolConfig: [];
 }>();
 
 const promptExamples = [
@@ -57,18 +55,6 @@ function applyPromptExample(value: string): void {
         <h2>视频转图文</h2>
         <p>导入一个本地视频，自动抽音频、识别语音、生成段落并抽取配图。</p>
       </div>
-      <button class="config-link" @click="emit('openToolConfig')">
-        配置
-        <span v-if="!props.configReady" class="config-badge">未完成</span>
-      </button>
-    </div>
-
-    <div v-if="!props.configReady" class="config-alert">
-      <div>
-        <strong>先补全工具配置，才能开始生成</strong>
-        <p>当前还缺少：{{ props.missingConfigItems.join("、") }}</p>
-      </div>
-      <button class="alert-btn" @click="emit('openToolConfig')">去配置</button>
     </div>
 
     <div class="video-path">
@@ -157,68 +143,6 @@ function applyPromptExample(value: string): void {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: #78c0ff;
-}
-
-.config-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(145, 200, 255, 0.14);
-  background: rgba(255, 255, 255, 0.04);
-  color: #91c8ff;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.config-badge {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 120, 120, 0.16);
-  color: #ffd3d3;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.config-alert {
-  margin-top: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 16px 18px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 139, 93, 0.18);
-  background:
-    radial-gradient(circle at top right, rgba(255, 171, 106, 0.12), transparent 35%),
-    linear-gradient(180deg, rgba(255, 129, 87, 0.08), rgba(255, 255, 255, 0.02));
-}
-
-.config-alert strong {
-  display: block;
-  color: #fff2e8;
-  margin-bottom: 4px;
-  font-size: 14px;
-}
-
-.config-alert p {
-  margin: 0;
-  color: #ffc9ae;
-  line-height: 1.6;
-  font-size: 13px;
-}
-
-.alert-btn {
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 194, 149, 0.24);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff1e5;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .video-path,

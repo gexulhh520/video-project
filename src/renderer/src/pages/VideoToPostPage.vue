@@ -9,8 +9,7 @@ import type {
   GeneratePostOptions,
   PostDraft,
   TaskProgress,
-  VideoToPostConfigStatus,
-  VideoToPostSettings
+  VideoToPostConfigStatus
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import AppSettingsModal from "../components/AppSettingsModal.vue";
@@ -21,7 +20,6 @@ import MosaicEditorDialog from "../components/MosaicEditorDialog.vue";
 import PostPreview from "../components/PostPreview.vue";
 import TaskProgressBar from "../components/TaskProgress.vue";
 import VideoImporter from "../components/VideoImporter.vue";
-import VideoToPostSettingsModal from "../components/VideoToPostSettingsModal.vue";
 
 const router = useRouter();
 const selectedVideoPath = ref<string | null>(null);
@@ -33,9 +31,6 @@ const draftModalOpen = ref(false);
 const settingsOpen = ref(false);
 const settingsSaving = ref(false);
 const appSettings = ref<AppSettings | null>(null);
-const toolSettingsOpen = ref(false);
-const toolSettingsSaving = ref(false);
-const videoToPostSettings = ref<VideoToPostSettings | null>(null);
 const videoToPostConfigStatus = ref<VideoToPostConfigStatus | null>(null);
 const busy = ref(false);
 const savingDraft = ref(false);
@@ -94,10 +89,6 @@ async function loadSettings(): Promise<void> {
   appSettings.value = await desktopApi.getAppSettings();
 }
 
-async function loadVideoToPostSettings(): Promise<void> {
-  videoToPostSettings.value = await desktopApi.getVideoToPostSettings();
-}
-
 async function loadVideoToPostConfigStatus(): Promise<void> {
   videoToPostConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
 }
@@ -141,33 +132,6 @@ async function saveSettings(nextSettings: AppSettings): Promise<void> {
     errorMessage.value = error instanceof Error ? error.message : "保存设置失败";
   } finally {
     settingsSaving.value = false;
-  }
-}
-
-async function openToolConfig(): Promise<void> {
-  errorMessage.value = "";
-  await loadVideoToPostSettings();
-  toolSettingsOpen.value = true;
-}
-
-async function saveToolSettings(nextSettings: VideoToPostSettings): Promise<void> {
-  toolSettingsSaving.value = true;
-  errorMessage.value = "";
-
-  try {
-    videoToPostSettings.value = await desktopApi.saveVideoToPostSettings(nextSettings);
-    toolSettingsOpen.value = false;
-    await loadVideoToPostConfigStatus();
-    progress.value = {
-      taskId: progress.value.taskId,
-      status: progress.value.status,
-      progress: progress.value.progress,
-      message: "视频转图文配置已保存"
-    };
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "保存工具配置失败";
-  } finally {
-    toolSettingsSaving.value = false;
   }
 }
 
@@ -615,12 +579,10 @@ function toggleImmersiveEditor(): void {
         :frame-offset-seconds="frameOffsetSeconds"
         :user-prompt="generationUserPrompt"
         :config-ready="videoToPostConfigStatus?.ready ?? false"
-        :missing-config-items="videoToPostConfigStatus?.missingItems ?? []"
         @select="handleSelectVideo"
         @generate="handleGenerate"
         @update-frame-offset="updateFrameOffset"
         @update-user-prompt="updateGenerationUserPrompt"
-        @open-tool-config="openToolConfig"
       />
 
       <div v-if="appSettings" class="workspace-card">
@@ -730,13 +692,6 @@ function toggleImmersiveEditor(): void {
       @save="saveSettings"
     />
 
-    <VideoToPostSettingsModal
-      :open="toolSettingsOpen"
-      :settings="videoToPostSettings"
-      :saving="toolSettingsSaving"
-      @close="toolSettingsOpen = false"
-      @save="saveToolSettings"
-    />
   </section>
 </template>
 

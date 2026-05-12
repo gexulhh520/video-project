@@ -449,7 +449,7 @@ async function runAutoCrawlPipeline(taskId: string, crawlUrls: string[]): Promis
     });
 
     rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
-    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    rewriteResultOpen.value = false;
     imagePickerSectionId.value = null;
 
     const exportResult = await desktopApi.autoExportWebTaskBundle(taskId);
@@ -482,7 +482,7 @@ async function runAutoCrawlPipeline(taskId: string, crawlUrls: string[]): Promis
     }
 
     rewriteDraft.value = nextTask.rewriteResult ? cloneRewriteResult(nextTask.rewriteResult) : null;
-    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    rewriteResultOpen.value = false;
     imagePickerSectionId.value = null;
 
     progress.value = {

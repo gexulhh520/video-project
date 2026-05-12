@@ -1,10 +1,17 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import type { AppSettings, WebToPostConfigStatus, WebToPostSettings } from "../../../main/types/app.types";
+import type {
+  AppSettings,
+  VideoToPostConfigStatus,
+  VideoToPostSettings,
+  WebToPostConfigStatus,
+  WebToPostSettings
+} from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import AppSettingsModal from "../components/AppSettingsModal.vue";
 import ToolCard from "../components/ToolCard.vue";
+import VideoToPostSettingsModal from "../components/VideoToPostSettingsModal.vue";
 import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
 
 const router = useRouter();
@@ -17,6 +24,10 @@ const webToolSettingsOpen = ref(false);
 const webToolSettingsSaving = ref(false);
 const webToolSettings = ref<WebToPostSettings | null>(null);
 const webToolConfigStatus = ref<WebToPostConfigStatus | null>(null);
+const videoToolSettingsOpen = ref(false);
+const videoToolSettingsSaving = ref(false);
+const videoToolSettings = ref<VideoToPostSettings | null>(null);
+const videoToolConfigStatus = ref<VideoToPostConfigStatus | null>(null);
 const homeNotice = ref("");
 
 const tools = computed(() => [
@@ -35,7 +46,12 @@ const tools = computed(() => [
     title: "视频转图文",
     description: "导入本地视频，自动识别字幕、生成图文段落，并从关键时间点抽取配图。",
     status: "available" as const,
-    route: "/tools/video-to-post"
+    route: "/tools/video-to-post",
+    blocked: !(videoToolConfigStatus.value?.ready ?? false),
+    blockedReason: (videoToolConfigStatus.value?.ready ?? false)
+      ? ""
+      : `未完成工具配置，缺失：${videoToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
+    actionLabel: "工具配置"
   },
   {
     title: "图文改写",
@@ -57,6 +73,7 @@ const tools = computed(() => [
 onMounted(() => {
   void loadSettings();
   void loadWebToolConfig();
+  void loadVideoToolConfig();
 });
 
 async function loadSettings(): Promise<void> {
@@ -65,6 +82,10 @@ async function loadSettings(): Promise<void> {
 
 async function loadWebToolConfig(): Promise<void> {
   webToolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
+}
+
+async function loadVideoToolConfig(): Promise<void> {
+  videoToolConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
 }
 
 async function openSettings(): Promise<void> {
@@ -76,6 +97,12 @@ async function openWebToolSettings(): Promise<void> {
   webToolSettings.value = await desktopApi.getWebToPostSettings();
   webToolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
   webToolSettingsOpen.value = true;
+}
+
+async function openVideoToolSettings(): Promise<void> {
+  videoToolSettings.value = await desktopApi.getVideoToPostSettings();
+  videoToolConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
+  videoToolSettingsOpen.value = true;
 }
 
 async function browseWorkspaceDir(): Promise<void> {
@@ -110,6 +137,18 @@ async function saveWebToolSettings(nextSettings: WebToPostSettings): Promise<voi
   }
 }
 
+async function saveVideoToolSettings(nextSettings: VideoToPostSettings): Promise<void> {
+  videoToolSettingsSaving.value = true;
+  try {
+    videoToolSettings.value = await desktopApi.saveVideoToPostSettings(nextSettings);
+    videoToolConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
+    videoToolSettingsOpen.value = false;
+    homeNotice.value = "视频工具配置已保存。";
+  } finally {
+    videoToolSettingsSaving.value = false;
+  }
+}
+
 function handleToolClick(tool: (typeof tools.value)[number]): void {
   homeNotice.value = "";
 
@@ -119,6 +158,10 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
 
   if (tool.route === "/tools/web-to-post" && tool.blocked) {
     homeNotice.value = tool.blockedReason || "请先完成网页工具配置后再进入。";
+    return;
+  }
+  if (tool.route === "/tools/video-to-post" && tool.blocked) {
+    homeNotice.value = tool.blockedReason || "请先完成视频工具配置后再进入。";
     return;
   }
 
@@ -151,8 +194,8 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
         :status="tool.status"
         :blocked="tool.blocked"
         :blocked-reason="tool.blockedReason"
-        :action-label="tool.route === '/tools/web-to-post' ? tool.actionLabel : undefined"
-        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : undefined"
+        :action-label="tool.route === '/tools/web-to-post' || tool.route === '/tools/video-to-post' ? tool.actionLabel : undefined"
+        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : tool.route === '/tools/video-to-post' ? openVideoToolSettings() : undefined"
         @click="handleToolClick(tool)"
       />
     </div>
@@ -172,6 +215,14 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
       :saving="webToolSettingsSaving"
       @close="webToolSettingsOpen = false"
       @save="saveWebToolSettings"
+    />
+
+    <VideoToPostSettingsModal
+      :open="videoToolSettingsOpen"
+      :settings="videoToolSettings"
+      :saving="videoToolSettingsSaving"
+      @close="videoToolSettingsOpen = false"
+      @save="saveVideoToolSettings"
     />
   </section>
 </template>

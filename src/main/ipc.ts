@@ -8,8 +8,10 @@ import type {
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
   GeneratePostOptions,
+  IterativeRewriteWebTaskOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
+  RewriteDraftIterativeOptions,
   RewriteDraftOptions,
   RewriteWebTaskOptions,
   RewriteParagraphOptions,
@@ -190,6 +192,9 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("paragraph:rewrite", async (_event, options: RewriteParagraphOptions) => postService.rewriteParagraph(options.paragraph));
   ipcMain.handle("draft:rewrite", async (_event, options: RewriteDraftOptions) => postService.rewriteDraft(options));
+  ipcMain.handle("draft:rewrite-iterative", async (_event, options: RewriteDraftIterativeOptions) =>
+    postService.rewriteDraftIterative(options)
+  );
   ipcMain.handle("article-draft:import-word", async (_event, wordPath: string): Promise<PostDraft> =>
     articleRewriteService.importWordDraft(wordPath)
   );
@@ -227,6 +232,9 @@ export function registerIpcHandlers(
   ipcMain.handle("article-draft:rewrite", async (_event, options: RewriteDraftOptions) =>
     articleRewriteService.rewriteDraft(options)
   );
+  ipcMain.handle("article-draft:rewrite-iterative", async (_event, options: RewriteDraftIterativeOptions) =>
+    articleRewriteService.rewriteDraftIterative(options)
+  );
   ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => webTaskService.listTasks());
   ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => webTaskService.getTaskById(taskId));
   ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => webTaskService.createTask(title));
@@ -257,6 +265,16 @@ export function registerIpcHandlers(
 
     return webTaskService.rewriteTask(taskId, options, sendProgress);
   });
+  ipcMain.handle(
+    "web-task:rewrite-iterative",
+    async (_event, taskId: string, options: IterativeRewriteWebTaskOptions): Promise<WebCrawlTask> => {
+      const sendProgress = (progress: WebTaskProgress): void => {
+        mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
+      };
+
+      return webTaskService.rewriteTaskIterative(taskId, options, sendProgress);
+    }
+  );
   ipcMain.handle("web-task:save-rewrite-result", async (_event, taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
     webTaskService.saveRewriteResult(taskId, options)
   );

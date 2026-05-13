@@ -11,7 +11,9 @@ import type {
   PostDraft,
   ReplaceFrameAssetOptions,
   RewriteDraftOptions,
+  RewriteDraftIterativeOptions,
   RewriteWebTaskOptions,
+  IterativeRewriteWebTaskOptions,
   RewriteParagraphOptions,
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
@@ -52,6 +54,8 @@ export const desktopApi = {
     window.desktopApi.rewriteArticleRewriteParagraph(toPlainObject(options)),
   rewriteArticleRewriteDraft: (options: RewriteDraftOptions): Promise<PostDraft> =>
     window.desktopApi.rewriteArticleRewriteDraft(toPlainObject(options)),
+  rewriteArticleRewriteDraftIterative: (options: RewriteDraftIterativeOptions): Promise<PostDraft> =>
+    window.desktopApi.rewriteArticleRewriteDraftIterative(toPlainObject(options)),
   listDrafts: (): Promise<DraftSummary[]> => window.desktopApi.listDrafts(),
   getDraftById: (draftId: string): Promise<PostDraft> => window.desktopApi.getDraftById(draftId),
   saveDraft: (draft: PostDraft): Promise<PostDraft> => window.desktopApi.saveDraft(toPlainObject(draft)),
@@ -84,6 +88,8 @@ export const desktopApi = {
   saveEditedFrame: (options: SaveEditedFrameOptions) => window.desktopApi.saveEditedFrame(toPlainObject(options)),
   rewriteParagraph: (options: RewriteParagraphOptions): Promise<string> => window.desktopApi.rewriteParagraph(toPlainObject(options)),
   rewriteDraft: (options: RewriteDraftOptions): Promise<PostDraft> => window.desktopApi.rewriteDraft(toPlainObject(options)),
+  rewriteDraftIterative: (options: RewriteDraftIterativeOptions): Promise<PostDraft> =>
+    window.desktopApi.rewriteDraftIterative(toPlainObject(options)),
   listWebTasks: (): Promise<WebTaskSummary[]> => window.desktopApi.listWebTasks(),
   getWebTaskById: (taskId: string): Promise<WebCrawlTask> => window.desktopApi.getWebTaskById(taskId),
   createWebTask: (title?: string): Promise<WebCrawlTask> => window.desktopApi.createWebTask(title),
@@ -97,6 +103,8 @@ export const desktopApi = {
     window.desktopApi.collectWebRecordImages(taskId, recordId),
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> =>
     window.desktopApi.rewriteWebTask(taskId, toPlainObject(options)),
+  rewriteWebTaskIterative: (taskId: string, options: IterativeRewriteWebTaskOptions): Promise<WebCrawlTask> =>
+    window.desktopApi.rewriteWebTaskIterative(taskId, toPlainObject(options)),
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
     window.desktopApi.saveWebRewriteResult(taskId, toPlainObject(options)),
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>

@@ -736,6 +736,60 @@ async function rewriteTask(): Promise<void> {
   }
 }
 
+async function rewriteWholeResult(): Promise<void> {
+  if (!activeTask.value || !rewriteDraft.value || busy.value) {
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    activeTask.value = await desktopApi.rewriteWebTaskIterative(activeTask.value.taskId, {
+      prompt: rewritePromptInput.value
+    });
+    rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    imagePickerSectionId.value = null;
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "整体洗稿失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function rewriteFromSourceAgain(): Promise<void> {
+  if (!activeTask.value || !rewriteDraft.value || busy.value) {
+    return;
+  }
+
+  const sourceRecordIds =
+    rewriteDraft.value.sourceRecordIds.length > 0 ? rewriteDraft.value.sourceRecordIds : rewriteSelectedRecordIds.value;
+  if (!sourceRecordIds.length) {
+    errorMessage.value = "当前结果缺少来源正文，无法重新洗稿。";
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+
+  try {
+    activeTask.value = await desktopApi.rewriteWebTask(activeTask.value.taskId, {
+      prompt: rewritePromptInput.value,
+      recordIds: sourceRecordIds
+    });
+    rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    imagePickerSectionId.value = null;
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "重新洗稿失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
 function applyRewritePromptExample(value: string): void {
   rewritePromptInput.value = value;
 }
@@ -1436,6 +1490,12 @@ function formatDateTime(value?: string): string {
         </div>
 
         <div class="result-toolbar">
+          <button class="ghost-btn toolbar-btn" :disabled="busy || !activeTask" @click="rewriteWholeResult">
+            {{ busy ? "迭代洗稿中..." : "迭代洗稿" }}
+          </button>
+          <button class="ghost-btn toolbar-btn" :disabled="busy || !activeTask" @click="rewriteFromSourceAgain">
+            {{ busy ? "重新洗稿中..." : "重新洗稿" }}
+          </button>
           <button class="primary-btn toolbar-btn" :disabled="rewriteSaveBusy" @click="saveRewriteResult">
             {{ rewriteSaveBusy ? "保存中..." : "保存" }}
           </button>
@@ -1447,6 +1507,7 @@ function formatDateTime(value?: string): string {
 
         <div class="result-body">
           <div class="result-editor">
+            <p class="hint">整体洗稿会重新生成标题和正文，段落数量可能变化。</p>
             <label class="field">
               <span>标题</span>
               <input :value="rewriteDraft.title" type="text" @input="updateRewriteTitle(($event.target as HTMLInputElement).value)" />

@@ -156,6 +156,31 @@ async function rewriteWholeDraft(): Promise<void> {
     rewritingDraft.value = false;
   }
 }
+
+async function rewriteIterativeDraft(): Promise<void> {
+  if (!editableDraft.value || rewritingDraft.value) {
+    return;
+  }
+
+  rewritingDraft.value = true;
+  rewriteDraftError.value = "";
+
+  try {
+    const updatedDraft = await desktopApi.rewriteDraftIterative({
+      draft: editableDraft.value,
+      userPrompt: rewriteUserPrompt.value,
+      rewriteTitle: rewriteTitle.value
+    });
+
+    editableDraft.value = JSON.parse(JSON.stringify(updatedDraft)) as PostDraft;
+    emit("change", JSON.parse(JSON.stringify(updatedDraft)) as PostDraft);
+    showRewriteDraftDialog.value = false;
+  } catch (error) {
+    rewriteDraftError.value = error instanceof Error ? error.message : "迭代洗稿失败";
+  } finally {
+    rewritingDraft.value = false;
+  }
+}
 </script>
 
 <template>
@@ -297,8 +322,11 @@ async function rewriteWholeDraft(): Promise<void> {
           <button class="ghost-btn" :disabled="rewritingDraft" @click="showRewriteDraftDialog = false">
             取消
           </button>
-          <button class="action-btn" :disabled="rewritingDraft" @click="rewriteWholeDraft">
-            {{ rewritingDraft ? "整体洗稿中..." : "开始整体洗稿" }}
+          <button class="ghost-btn" :disabled="rewritingDraft" @click="rewriteWholeDraft">
+            {{ rewritingDraft ? "重新洗稿中..." : "重新洗稿" }}
+          </button>
+          <button class="action-btn" :disabled="rewritingDraft" @click="rewriteIterativeDraft">
+            {{ rewritingDraft ? "迭代洗稿中..." : "迭代洗稿" }}
           </button>
         </div>
       </div>

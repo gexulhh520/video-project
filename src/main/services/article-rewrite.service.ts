@@ -4,7 +4,7 @@ import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:
 import { homedir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { v4 as uuidv4 } from "uuid";
-import type { ContentBlock, DraftSummary, PostDraft, RewriteDraftOptions } from "../types/app.types";
+import type { ContentBlock, DraftSummary, PostDraft, RewriteDraftIterativeOptions, RewriteDraftOptions } from "../types/app.types";
 import { LlmService } from "./llm.service";
 import { SettingsService } from "./settings.service";
 
@@ -133,6 +133,61 @@ export class ArticleRewriteService {
   async rewriteDraft(options: RewriteDraftOptions): Promise<PostDraft> {
     const result = await this.llmService.rewriteArticleDraft(options);
     const draft = await this.getDraftById(options.draft.draftId);
+
+    const normalizedSections = result.sections
+      .map((section, index) => ({
+        sectionId: section.sectionId?.trim() || `s${index + 1}`,
+        paragraph: section.paragraph?.trim() || "",
+        sourceSegmentIds: [],
+        sourceTimeRanges: [{ start: 0, end: 0, reason: "图文改写重组" }]
+      }))
+      .filter((section) => section.paragraph.length > 0);
+
+    const finalSections = normalizedSections.length > 0
+      ? normalizedSections
+      : [
+          {
+            sectionId: "s1",
+            paragraph: draft.fullText || "暂无正文",
+            sourceSegmentIds: [],
+            sourceTimeRanges: [{ start: 0, end: 0, reason: "兜底保留" }]
+          }
+        ];
+
+    const existingImages = draft.contentBlocks.filter(
+      (block): block is Extract<ContentBlock, { type: "image" }> => block.type === "image"
+    );
+
+    const rebuiltBlocks: ContentBlock[] = [];
+    finalSections.forEach((section, index) => {
+      rebuiltBlocks.push({
+        type: "paragraph",
+        blockId: `${section.sectionId}_p_${index + 1}`,
+        sectionId: section.sectionId,
+        text: section.paragraph,
+        edited: true
+      });
+
+      const bucketImages = existingImages.filter((_, imageIndex) => imageIndex % finalSections.length === index);
+      for (const image of bucketImages) {
+        rebuiltBlocks.push({
+          ...image,
+          sectionId: section.sectionId
+        });
+      }
+    });
+
+    draft.title = result.title?.trim() || draft.title;
+    draft.sections = finalSections;
+    draft.fullText = finalSections.map((section) => section.paragraph).join("\n\n");
+    draft.contentBlocks = rebuiltBlocks;
+
+    return this.saveDraft(draft);
+  }
+
+  async rewriteDraftIterative(options: RewriteDraftIterativeOptions): Promise<PostDraft> {
+    const result = await this.llmService.rewriteArticleDraft(options);
+    const draft = this.normalizeDraft(options.draft, true);
 
     const normalizedSections = result.sections
       .map((section, index) => ({

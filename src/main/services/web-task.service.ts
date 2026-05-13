@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid";
 import type {
   BrowserRuntimeHealthStatus,
   ConfirmWebRecordBodyOptions,
+  IterativeRewriteWebTaskOptions,
   RewriteWebTaskOptions,
   SaveWebRewriteResultOptions,
   WebCrawlRecord,
@@ -327,6 +328,44 @@ export class WebTaskService {
     task.updatedAt = new Date().toISOString();
     await this.saveTask(task);
     this.emitProgress(task, undefined, "completed", 100, "原创内容已生成完成", onProgress);
+    return task;
+  }
+
+  async rewriteTaskIterative(
+    taskId: string,
+    options: IterativeRewriteWebTaskOptions,
+    onProgress?: (progress: WebTaskProgress) => void
+  ): Promise<WebCrawlTask> {
+    const task = await this.getTaskById(taskId);
+    const existingResult = task.rewriteResult;
+    if (!existingResult || !existingResult.fullText.trim()) {
+      throw new Error("当前任务还没有可迭代洗稿的结果，请先完成一次二次原创。");
+    }
+
+    task.status = "rewriting";
+    task.rewritePrompt = options.prompt.trim();
+    task.updatedAt = new Date().toISOString();
+    await this.saveTask(task);
+    this.emitProgress(task, undefined, "rewriting", 25, "正在基于当前结果进行迭代洗稿", onProgress);
+
+    const rewriteResult = await this.llmService.rewriteWebContent(
+      task.title,
+      [
+        {
+          title: existingResult.title,
+          body: existingResult.fullText
+        }
+      ],
+      task.rewritePrompt,
+      existingResult.sourceRecordIds
+    );
+
+    rewriteResult.updatedAt = new Date().toISOString();
+    task.rewriteResult = rewriteResult;
+    task.status = "completed";
+    task.updatedAt = new Date().toISOString();
+    await this.saveTask(task);
+    this.emitProgress(task, undefined, "completed", 100, "迭代洗稿完成", onProgress);
     return task;
   }
 

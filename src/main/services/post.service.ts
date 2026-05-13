@@ -12,6 +12,7 @@ import type {
   GeneratePostOptions,
   PostDraft,
   ReplaceFrameAssetOptions,
+  RewriteDraftIterativeOptions,
   RewriteDraftOptions,
   TaskProgress
 } from "../types/app.types";
@@ -200,6 +201,33 @@ export class PostService {
     const result = await this.llmService.rewriteDraft(options);
 
     const draft = await this.getDraftById(options.draft.draftId);
+    const sectionMap = new Map(result.sections.map((s) => [s.sectionId, s.paragraph]));
+
+    draft.title = result.title;
+    draft.sections = draft.sections.map((section) => ({
+      ...section,
+      paragraph: sectionMap.get(section.sectionId) ?? section.paragraph
+    }));
+    draft.fullText = draft.sections.map((s) => s.paragraph).join("\n\n");
+
+    draft.contentBlocks = draft.contentBlocks.map((block) => {
+      if (block.type === "paragraph") {
+        const updatedSection = draft.sections.find((s) => s.sectionId === block.sectionId);
+        return {
+          ...block,
+          text: updatedSection?.paragraph ?? block.text,
+          edited: true
+        };
+      }
+      return block;
+    });
+
+    return this.saveDraft(draft);
+  }
+
+  async rewriteDraftIterative(options: RewriteDraftIterativeOptions): Promise<PostDraft> {
+    const result = await this.llmService.rewriteDraft(options);
+    const draft = await this.normalizeDraft(options.draft, true);
     const sectionMap = new Map(result.sections.map((s) => [s.sectionId, s.paragraph]));
 
     draft.title = result.title;

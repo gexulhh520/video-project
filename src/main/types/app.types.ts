@@ -110,6 +110,8 @@ export type RewriteDraftOptions = {
   rewriteTitle?: boolean;
 };
 
+export type RewriteDraftIterativeOptions = RewriteDraftOptions;
+
 export type RewriteDraftResult = {
   title: string;
   sections: Array<{
@@ -307,6 +309,10 @@ export type RewriteWebTaskOptions = {
   recordIds: string[];
 };
 
+export type IterativeRewriteWebTaskOptions = {
+  prompt: string;
+};
+
 export type SaveWebRewriteResultOptions = {
   rewriteResult: WebRewriteResult;
 };
@@ -359,6 +365,7 @@ export type DesktopApi = {
   replaceArticleRewriteDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   rewriteArticleRewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
   rewriteArticleRewriteDraft: (options: RewriteDraftOptions) => Promise<PostDraft>;
+  rewriteArticleRewriteDraftIterative: (options: RewriteDraftIterativeOptions) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
@@ -381,6 +388,7 @@ export type DesktopApi = {
   saveEditedFrame: (options: SaveEditedFrameOptions) => Promise<{ imagePath: string; updatedDraft: PostDraft }>;
   rewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
   rewriteDraft: (options: RewriteDraftOptions) => Promise<PostDraft>;
+  rewriteDraftIterative: (options: RewriteDraftIterativeOptions) => Promise<PostDraft>;
   listWebTasks: () => Promise<WebTaskSummary[]>;
   getWebTaskById: (taskId: string) => Promise<WebCrawlTask>;
   createWebTask: (title?: string) => Promise<WebCrawlTask>;
@@ -389,6 +397,7 @@ export type DesktopApi = {
   retryWebRecordExtract: (taskId: string, options: RetryExtractWebRecordOptions) => Promise<WebCrawlTask>;
   collectWebRecordImages: (taskId: string, recordId: string) => Promise<WebCrawlTask>;
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions) => Promise<WebCrawlTask>;
+  rewriteWebTaskIterative: (taskId: string, options: IterativeRewriteWebTaskOptions) => Promise<WebCrawlTask>;
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions) => Promise<WebCrawlTask>;
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
   deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions) => Promise<WebCrawlTask>;

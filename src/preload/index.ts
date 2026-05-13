@@ -12,7 +12,9 @@ import type {
   PostDraft,
   ReplaceFrameAssetOptions,
   RewriteDraftOptions,
+  RewriteDraftIterativeOptions,
   RewriteWebTaskOptions,
+  IterativeRewriteWebTaskOptions,
   RewriteParagraphOptions,
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
@@ -53,6 +55,8 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("article-draft:rewrite-paragraph", options),
   rewriteArticleRewriteDraft: async (options: RewriteDraftOptions): Promise<PostDraft> =>
     ipcRenderer.invoke("article-draft:rewrite", options),
+  rewriteArticleRewriteDraftIterative: async (options: RewriteDraftIterativeOptions): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:rewrite-iterative", options),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
   saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
@@ -88,6 +92,8 @@ const desktopApi: DesktopApi = {
   saveEditedFrame: async (options: SaveEditedFrameOptions) => ipcRenderer.invoke("image:save-edited-frame", options),
   rewriteParagraph: async (options: RewriteParagraphOptions): Promise<string> => ipcRenderer.invoke("paragraph:rewrite", options),
   rewriteDraft: async (options: RewriteDraftOptions): Promise<PostDraft> => ipcRenderer.invoke("draft:rewrite", options),
+  rewriteDraftIterative: async (options: RewriteDraftIterativeOptions): Promise<PostDraft> =>
+    ipcRenderer.invoke("draft:rewrite-iterative", options),
   listWebTasks: async (): Promise<WebTaskSummary[]> => ipcRenderer.invoke("web-task:list"),
   getWebTaskById: async (taskId: string): Promise<WebCrawlTask> => ipcRenderer.invoke("web-task:get", taskId),
   createWebTask: async (title?: string): Promise<WebCrawlTask> => ipcRenderer.invoke("web-task:create", title),
@@ -101,6 +107,8 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("web-task:collect-images", taskId, recordId),
   rewriteWebTask: async (taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:rewrite", taskId, options),
+  rewriteWebTaskIterative: async (taskId: string, options: IterativeRewriteWebTaskOptions): Promise<WebCrawlTask> =>
+    ipcRenderer.invoke("web-task:rewrite-iterative", taskId, options),
   saveWebRewriteResult: async (taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
     ipcRenderer.invoke("web-task:save-rewrite-result", taskId, options),
   toggleWebImageSelection: async (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>

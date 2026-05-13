@@ -1,4 +1,6 @@
 import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
   AppSettings,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
@@ -31,10 +33,25 @@ function toPlainObject<T>(value: T): T {
 
 export const desktopApi = {
   selectVideo: (): Promise<string | null> => window.desktopApi.selectVideo(),
+  selectWord: (): Promise<string | null> => window.desktopApi.selectWord(),
   selectImage: (): Promise<string | null> => window.desktopApi.selectImage(),
   selectDirectory: (): Promise<string | null> => window.desktopApi.selectDirectory(),
   generatePost: (videoPath: string, options: GeneratePostOptions): Promise<PostDraft> =>
     window.desktopApi.generatePost(videoPath, options),
+  importArticleRewriteWordDraft: (wordPath: string): Promise<PostDraft> => window.desktopApi.importArticleRewriteWordDraft(wordPath),
+  listArticleRewriteDrafts: (): Promise<DraftSummary[]> => window.desktopApi.listArticleRewriteDrafts(),
+  getArticleRewriteDraftById: (draftId: string): Promise<PostDraft> => window.desktopApi.getArticleRewriteDraftById(draftId),
+  saveArticleRewriteDraft: (draft: PostDraft): Promise<PostDraft> => window.desktopApi.saveArticleRewriteDraft(toPlainObject(draft)),
+  exportArticleRewriteDraftToWord: (draft: PostDraft): Promise<string | null> =>
+    window.desktopApi.exportArticleRewriteDraftToWord(toPlainObject(draft)),
+  exportArticleRewriteDraftImagesArchive: (draft: PostDraft): Promise<string | null> =>
+    window.desktopApi.exportArticleRewriteDraftImagesArchive(toPlainObject(draft)),
+  replaceArticleRewriteDraftImage: (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
+    window.desktopApi.replaceArticleRewriteDraftImage(draftId, blockId, sourceImagePath),
+  rewriteArticleRewriteParagraph: (options: RewriteParagraphOptions): Promise<string> =>
+    window.desktopApi.rewriteArticleRewriteParagraph(toPlainObject(options)),
+  rewriteArticleRewriteDraft: (options: RewriteDraftOptions): Promise<PostDraft> =>
+    window.desktopApi.rewriteArticleRewriteDraft(toPlainObject(options)),
   listDrafts: (): Promise<DraftSummary[]> => window.desktopApi.listDrafts(),
   getDraftById: (draftId: string): Promise<PostDraft> => window.desktopApi.getDraftById(draftId),
   saveDraft: (draft: PostDraft): Promise<PostDraft> => window.desktopApi.saveDraft(toPlainObject(draft)),
@@ -47,6 +64,10 @@ export const desktopApi = {
   saveVideoToPostSettings: (settings: VideoToPostSettings): Promise<VideoToPostSettings> =>
     window.desktopApi.saveVideoToPostSettings(toPlainObject(settings)),
   getVideoToPostConfigStatus: (): Promise<VideoToPostConfigStatus> => window.desktopApi.getVideoToPostConfigStatus(),
+  getArticleRewriteSettings: (): Promise<ArticleRewriteSettings> => window.desktopApi.getArticleRewriteSettings(),
+  saveArticleRewriteSettings: (settings: ArticleRewriteSettings): Promise<ArticleRewriteSettings> =>
+    window.desktopApi.saveArticleRewriteSettings(toPlainObject(settings)),
+  getArticleRewriteConfigStatus: (): Promise<ArticleRewriteConfigStatus> => window.desktopApi.getArticleRewriteConfigStatus(),
   getWebToPostSettings: (): Promise<WebToPostSettings> => window.desktopApi.getWebToPostSettings(),
   saveWebToPostSettings: (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     window.desktopApi.saveWebToPostSettings(toPlainObject(settings)),

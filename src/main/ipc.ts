@@ -2,6 +2,8 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
   AppSettings,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
@@ -28,6 +30,7 @@ import { SettingsService } from "./services/settings.service";
 import { WebTaskService } from "./services/web-task.service";
 import { ImageEditService } from "./services/image-edit.service";
 import { LicenseService } from "./services/license.service";
+import { ArticleRewriteService } from "./services/article-rewrite.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -37,7 +40,8 @@ export function registerIpcHandlers(
   postService: PostService,
   settingsService: SettingsService,
   webTaskService: WebTaskService,
-  imageEditService: ImageEditService
+  imageEditService: ImageEditService,
+  articleRewriteService: ArticleRewriteService
 ): void {
   const licenseService = new LicenseService();
 
@@ -57,6 +61,14 @@ export function registerIpcHandlers(
       ]
     });
 
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+  ipcMain.handle("word:select", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "选择 Word 文档",
+      properties: ["openFile"],
+      filters: [{ name: "Word", extensions: ["docx"] }]
+    });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
 
@@ -94,6 +106,17 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("video-to-post-settings:status", async (): Promise<VideoToPostConfigStatus> =>
     settingsService.getVideoToPostConfigStatus()
+  );
+  ipcMain.handle("article-rewrite-settings:get", async (): Promise<ArticleRewriteSettings> =>
+    settingsService.getArticleRewriteSettings()
+  );
+  ipcMain.handle(
+    "article-rewrite-settings:save",
+    async (_event, settings: ArticleRewriteSettings): Promise<ArticleRewriteSettings> =>
+      settingsService.saveArticleRewriteSettings(settings)
+  );
+  ipcMain.handle("article-rewrite-settings:status", async (): Promise<ArticleRewriteConfigStatus> =>
+    settingsService.getArticleRewriteConfigStatus()
   );
   ipcMain.handle("web-to-post-settings:get", async (): Promise<WebToPostSettings> => settingsService.getWebToPostSettings());
   ipcMain.handle("web-to-post-settings:save", async (_event, settings: WebToPostSettings): Promise<WebToPostSettings> =>
@@ -167,6 +190,43 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("paragraph:rewrite", async (_event, options: RewriteParagraphOptions) => postService.rewriteParagraph(options.paragraph));
   ipcMain.handle("draft:rewrite", async (_event, options: RewriteDraftOptions) => postService.rewriteDraft(options));
+  ipcMain.handle("article-draft:import-word", async (_event, wordPath: string): Promise<PostDraft> =>
+    articleRewriteService.importWordDraft(wordPath)
+  );
+  ipcMain.handle("article-draft:list", async () => articleRewriteService.listDrafts());
+  ipcMain.handle("article-draft:get", async (_event, draftId: string) => articleRewriteService.getDraftById(draftId));
+  ipcMain.handle("article-draft:save", async (_event, draft: PostDraft) => articleRewriteService.saveDraft(draft));
+  ipcMain.handle("article-draft:export-word", async (_event, draft: PostDraft) => {
+    const defaultFileName = `${sanitizeFileName(draft.title || "图文改写草稿")}.docx`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 Word 文档",
+      defaultPath: defaultFileName,
+      filters: [{ name: "Word Document", extensions: ["docx"] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+    return articleRewriteService.exportDraftToWord(draft, result.filePath);
+  });
+  ipcMain.handle("article-draft:export-images-archive", async (_event, draft: PostDraft) => {
+    const defaultFileName = `${sanitizeFileName(draft.title || "图文改写草稿")}_配图.zip`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出文章配图压缩包",
+      defaultPath: defaultFileName,
+      filters: [{ name: "ZIP Archive", extensions: ["zip"] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+    return articleRewriteService.exportDraftImagesArchive(draft, result.filePath);
+  });
+  ipcMain.handle(
+    "article-draft:replace-image",
+    async (_event, draftId: string, blockId: string, sourceImagePath: string) =>
+      articleRewriteService.replaceDraftImage(draftId, blockId, sourceImagePath)
+  );
+  ipcMain.handle("article-draft:rewrite-paragraph", async (_event, options: RewriteParagraphOptions) =>
+    articleRewriteService.rewriteParagraph(options.paragraph)
+  );
+  ipcMain.handle("article-draft:rewrite", async (_event, options: RewriteDraftOptions) =>
+    articleRewriteService.rewriteDraft(options)
+  );
   ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => webTaskService.listTasks());
   ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => webTaskService.getTaskById(taskId));
   ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => webTaskService.createTask(title));

@@ -1,5 +1,6 @@
-import { createRouter, createWebHashHistory } from "vue-router";
+﻿import { createRouter, createWebHashHistory } from "vue-router";
 import HomePage from "../pages/HomePage.vue";
+import ArticleRewritePage from "../pages/ArticleRewritePage.vue";
 import VideoToPostPage from "../pages/VideoToPostPage.vue";
 import WebToPostPage from "../pages/WebToPostPage.vue";
 
@@ -20,6 +21,11 @@ export const router = createRouter({
       path: "/tools/web-to-post",
       name: "web-to-post",
       component: WebToPostPage
+    },
+    {
+      path: "/tools/article-rewrite",
+      name: "article-rewrite",
+      component: ArticleRewritePage
     }
   ]
 });

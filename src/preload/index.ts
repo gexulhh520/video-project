@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
   AppSettings,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
@@ -29,10 +31,28 @@ import { TASK_PROGRESS_CHANNEL, WEB_TASK_PROGRESS_CHANNEL } from "../main/ipc";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
+  selectWord: async () => ipcRenderer.invoke("word:select"),
   selectImage: async () => ipcRenderer.invoke("image:select"),
   selectDirectory: async () => ipcRenderer.invoke("directory:select"),
   generatePost: async (videoPath: string, options: GeneratePostOptions): Promise<PostDraft> =>
     ipcRenderer.invoke("post:generate", videoPath, options),
+  importArticleRewriteWordDraft: async (wordPath: string): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:import-word", wordPath),
+  listArticleRewriteDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("article-draft:list"),
+  getArticleRewriteDraftById: async (draftId: string): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:get", draftId),
+  saveArticleRewriteDraft: async (draft: PostDraft): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:save", draft),
+  exportArticleRewriteDraftToWord: async (draft: PostDraft): Promise<string | null> =>
+    ipcRenderer.invoke("article-draft:export-word", draft),
+  exportArticleRewriteDraftImagesArchive: async (draft: PostDraft): Promise<string | null> =>
+    ipcRenderer.invoke("article-draft:export-images-archive", draft),
+  replaceArticleRewriteDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:replace-image", draftId, blockId, sourceImagePath),
+  rewriteArticleRewriteParagraph: async (options: RewriteParagraphOptions): Promise<string> =>
+    ipcRenderer.invoke("article-draft:rewrite-paragraph", options),
+  rewriteArticleRewriteDraft: async (options: RewriteDraftOptions): Promise<PostDraft> =>
+    ipcRenderer.invoke("article-draft:rewrite", options),
   listDrafts: async (): Promise<DraftSummary[]> => ipcRenderer.invoke("draft:list"),
   getDraftById: async (draftId: string): Promise<PostDraft> => ipcRenderer.invoke("draft:get", draftId),
   saveDraft: async (draft: PostDraft): Promise<PostDraft> => ipcRenderer.invoke("draft:save", draft),
@@ -46,6 +66,12 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("video-to-post-settings:save", settings),
   getVideoToPostConfigStatus: async (): Promise<VideoToPostConfigStatus> =>
     ipcRenderer.invoke("video-to-post-settings:status"),
+  getArticleRewriteSettings: async (): Promise<ArticleRewriteSettings> =>
+    ipcRenderer.invoke("article-rewrite-settings:get"),
+  saveArticleRewriteSettings: async (settings: ArticleRewriteSettings): Promise<ArticleRewriteSettings> =>
+    ipcRenderer.invoke("article-rewrite-settings:save", settings),
+  getArticleRewriteConfigStatus: async (): Promise<ArticleRewriteConfigStatus> =>
+    ipcRenderer.invoke("article-rewrite-settings:status"),
   getWebToPostSettings: async (): Promise<WebToPostSettings> => ipcRenderer.invoke("web-to-post-settings:get"),
   saveWebToPostSettings: async (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     ipcRenderer.invoke("web-to-post-settings:save", settings),

@@ -13,6 +13,7 @@ import { ImageEditService } from "./services/image-edit.service";
 import { BrowserRuntimeService } from "./services/browser-runtime.service";
 import { BbBrowserService } from "./services/bb-browser.service";
 import { WebTaskService } from "./services/web-task.service";
+import { ArticleRewriteService } from "./services/article-rewrite.service";
 
 dotenv.config();
 
@@ -48,7 +49,8 @@ function createWindow(): void {
   const browserRuntimeService = new BrowserRuntimeService(settingsService);
   const bbBrowserService = new BbBrowserService(settingsService);
   const webTaskService = new WebTaskService(settingsService, llmService, browserRuntimeService, bbBrowserService);
-  registerIpcHandlers(mainWindow, postService, settingsService, webTaskService, imageEditService);
+  const articleRewriteService = new ArticleRewriteService(settingsService, llmService);
+  registerIpcHandlers(mainWindow, postService, settingsService, webTaskService, imageEditService, articleRewriteService);
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);

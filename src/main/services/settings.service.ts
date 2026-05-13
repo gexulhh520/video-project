@@ -3,6 +3,8 @@ import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import { app } from "electron";
 import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
   AppSettings,
   GlobalRuntimeSettings,
   VideoToPostConfigStatus,
@@ -14,6 +16,7 @@ import type {
 type StoredSettings = Partial<AppSettings>;
 type StoredVideoToPostSettings = Partial<VideoToPostSettings>;
 type StoredWebToPostSettings = Partial<WebToPostSettings>;
+type StoredArticleRewriteSettings = Partial<ArticleRewriteSettings>;
 
 const DEFAULT_VIDEO_TO_POST_SETTINGS: VideoToPostSettings = {
   doubaoAsrApiKey: "",
@@ -28,6 +31,11 @@ const DEFAULT_WEB_TO_POST_SETTINGS: WebToPostSettings = {
   bbBrowserArgs: "-y -p bb-browser bb-browser",
   bbBrowserMcpCommand: "npx",
   bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp"
+};
+
+const DEFAULT_ARTICLE_REWRITE_SETTINGS: ArticleRewriteSettings = {
+  llmApiKey: "",
+  llmModel: "deepseek-v4-flash"
 };
 
 const DEFAULT_GLOBAL_RUNTIME_SETTINGS: GlobalRuntimeSettings = {
@@ -191,6 +199,56 @@ export class SettingsService {
     };
   }
 
+  async getArticleRewriteSettings(workspaceDir?: string): Promise<ArticleRewriteSettings> {
+    const resolvedWorkspaceDir = workspaceDir ? resolve(workspaceDir) : (await this.getSettings()).workspaceDir;
+    const configPath = this.getArticleRewriteConfigPath(resolvedWorkspaceDir);
+
+    try {
+      await access(configPath, constants.R_OK);
+      const content = await readFile(configPath, "utf8");
+      const stored = JSON.parse(content) as StoredArticleRewriteSettings;
+      return {
+        llmApiKey: stored.llmApiKey?.trim() ?? "",
+        llmModel: stored.llmModel?.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel
+      };
+    } catch {
+      return { ...DEFAULT_ARTICLE_REWRITE_SETTINGS };
+    }
+  }
+
+  async saveArticleRewriteSettings(settings: ArticleRewriteSettings): Promise<ArticleRewriteSettings> {
+    const appSettings = await this.getSettings();
+    const configPath = this.getArticleRewriteConfigPath(appSettings.workspaceDir);
+    await mkdir(join(appSettings.workspaceDir, "config"), { recursive: true });
+
+    const normalizedSettings: ArticleRewriteSettings = {
+      llmApiKey: settings.llmApiKey.trim(),
+      llmModel: settings.llmModel.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel
+    };
+
+    await writeFile(configPath, JSON.stringify(normalizedSettings, null, 2), "utf8");
+    return normalizedSettings;
+  }
+
+  async getArticleRewriteConfigStatus(): Promise<ArticleRewriteConfigStatus> {
+    const toolSettings = await this.getArticleRewriteSettings();
+    const hasLlmApiKey = Boolean(toolSettings.llmApiKey || process.env.LLM_API_KEY);
+    const resolvedLlmModel =
+      toolSettings.llmModel || process.env.LLM_MODEL || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel;
+    const missingItems: string[] = [];
+
+    if (!hasLlmApiKey) {
+      missingItems.push("LLM Key");
+    }
+
+    return {
+      ready: missingItems.length === 0,
+      hasLlmApiKey,
+      resolvedLlmModel,
+      missingItems
+    };
+  }
+
   private async readStoredSettings(): Promise<StoredSettings> {
     try {
       await access(this.settingsFilePath, constants.R_OK);
@@ -215,6 +273,10 @@ export class SettingsService {
 
   private getWebToPostConfigPath(workspaceDir: string): string {
     return join(workspaceDir, "config", "web-to-post.json");
+  }
+
+  private getArticleRewriteConfigPath(workspaceDir: string): string {
+    return join(workspaceDir, "config", "article-rewrite.json");
   }
 
   private normalizeWebToPostSettings(settings: WebToPostSettings): WebToPostSettings {

@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
   AppSettings,
   VideoToPostConfigStatus,
   VideoToPostSettings,
@@ -10,6 +12,7 @@ import type {
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import AppSettingsModal from "../components/AppSettingsModal.vue";
+import ArticleRewriteSettingsModal from "../components/ArticleRewriteSettingsModal.vue";
 import ToolCard from "../components/ToolCard.vue";
 import VideoToPostSettingsModal from "../components/VideoToPostSettingsModal.vue";
 import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
@@ -28,6 +31,10 @@ const videoToolSettingsOpen = ref(false);
 const videoToolSettingsSaving = ref(false);
 const videoToolSettings = ref<VideoToPostSettings | null>(null);
 const videoToolConfigStatus = ref<VideoToPostConfigStatus | null>(null);
+const articleToolSettingsOpen = ref(false);
+const articleToolSettingsSaving = ref(false);
+const articleToolSettings = ref<ArticleRewriteSettings | null>(null);
+const articleToolConfigStatus = ref<ArticleRewriteConfigStatus | null>(null);
 const homeNotice = ref("");
 
 const tools = computed(() => [
@@ -55,8 +62,14 @@ const tools = computed(() => [
   },
   {
     title: "图文改写",
-    description: "对现有图文内容做风格迁移、结构优化和平台适配。",
-    status: "coming-soon" as const
+    description: "上传 Word，解析段落和图片后按提示词整体或逐段洗稿并导出。",
+    status: "available" as const,
+    route: "/tools/article-rewrite",
+    blocked: !(articleToolConfigStatus.value?.ready ?? false),
+    blockedReason: (articleToolConfigStatus.value?.ready ?? false)
+      ? ""
+      : `未完成工具配置，缺失：${articleToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
+    actionLabel: "工具配置"
   },
   {
     title: "爆款标题生成",
@@ -74,6 +87,7 @@ onMounted(() => {
   void loadSettings();
   void loadWebToolConfig();
   void loadVideoToolConfig();
+  void loadArticleToolConfig();
 });
 
 async function loadSettings(): Promise<void> {
@@ -86,6 +100,10 @@ async function loadWebToolConfig(): Promise<void> {
 
 async function loadVideoToolConfig(): Promise<void> {
   videoToolConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
+}
+
+async function loadArticleToolConfig(): Promise<void> {
+  articleToolConfigStatus.value = await desktopApi.getArticleRewriteConfigStatus();
 }
 
 async function openSettings(): Promise<void> {
@@ -103,6 +121,12 @@ async function openVideoToolSettings(): Promise<void> {
   videoToolSettings.value = await desktopApi.getVideoToPostSettings();
   videoToolConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
   videoToolSettingsOpen.value = true;
+}
+
+async function openArticleToolSettings(): Promise<void> {
+  articleToolSettings.value = await desktopApi.getArticleRewriteSettings();
+  articleToolConfigStatus.value = await desktopApi.getArticleRewriteConfigStatus();
+  articleToolSettingsOpen.value = true;
 }
 
 async function browseWorkspaceDir(): Promise<void> {
@@ -149,6 +173,18 @@ async function saveVideoToolSettings(nextSettings: VideoToPostSettings): Promise
   }
 }
 
+async function saveArticleToolSettings(nextSettings: ArticleRewriteSettings): Promise<void> {
+  articleToolSettingsSaving.value = true;
+  try {
+    articleToolSettings.value = await desktopApi.saveArticleRewriteSettings(nextSettings);
+    articleToolConfigStatus.value = await desktopApi.getArticleRewriteConfigStatus();
+    articleToolSettingsOpen.value = false;
+    homeNotice.value = "图文改写配置已保存。";
+  } finally {
+    articleToolSettingsSaving.value = false;
+  }
+}
+
 function handleToolClick(tool: (typeof tools.value)[number]): void {
   homeNotice.value = "";
 
@@ -162,6 +198,10 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
   }
   if (tool.route === "/tools/video-to-post" && tool.blocked) {
     homeNotice.value = tool.blockedReason || "请先完成视频工具配置后再进入。";
+    return;
+  }
+  if (tool.route === "/tools/article-rewrite" && tool.blocked) {
+    homeNotice.value = tool.blockedReason || "请先完成图文改写工具配置后再进入。";
     return;
   }
 
@@ -194,8 +234,8 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
         :status="tool.status"
         :blocked="tool.blocked"
         :blocked-reason="tool.blockedReason"
-        :action-label="tool.route === '/tools/web-to-post' || tool.route === '/tools/video-to-post' ? tool.actionLabel : undefined"
-        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : tool.route === '/tools/video-to-post' ? openVideoToolSettings() : undefined"
+        :action-label="tool.route === '/tools/web-to-post' || tool.route === '/tools/video-to-post' || tool.route === '/tools/article-rewrite' ? tool.actionLabel : undefined"
+        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : tool.route === '/tools/video-to-post' ? openVideoToolSettings() : tool.route === '/tools/article-rewrite' ? openArticleToolSettings() : undefined"
         @click="handleToolClick(tool)"
       />
     </div>
@@ -223,6 +263,14 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
       :saving="videoToolSettingsSaving"
       @close="videoToolSettingsOpen = false"
       @save="saveVideoToolSettings"
+    />
+
+    <ArticleRewriteSettingsModal
+      :open="articleToolSettingsOpen"
+      :settings="articleToolSettings"
+      :saving="articleToolSettingsSaving"
+      @close="articleToolSettingsOpen = false"
+      @save="saveArticleToolSettings"
     />
   </section>
 </template>

@@ -1,4 +1,4 @@
-import axios from "axios";
+﻿import axios from "axios";
 import type { ArticleSection, ContentBlock, LlmSectionsResult, PostDraft, RewriteDraftOptions, RewriteDraftResult, TranscriptSegment, WebRewriteResult } from "../types/app.types";
 import { SettingsService } from "./settings.service";
 
@@ -136,7 +136,7 @@ export class LlmService {
     return parsed;
   }
 
-  async rewriteParagraph(paragraph: string): Promise<string> {
+  async rewriteParagraph(paragraph: string, scope: "video" | "article-rewrite" = "video"): Promise<string> {
     const normalizedParagraph = paragraph.trim();
     if (!normalizedParagraph) {
       throw new Error("Paragraph is empty.");
@@ -161,7 +161,8 @@ export class LlmService {
       ],
       {
         temperature: 0.9
-      }
+      },
+      scope
     );
 
     const rewrittenParagraph = content.trim().replace(/^["“”]+|["“”]+$/g, "");
@@ -303,6 +304,98 @@ export class LlmService {
     return parsed;
   }
 
+  async rewriteArticleDraft(options: RewriteDraftOptions): Promise<RewriteDraftResult> {
+    const prompt = this.buildRewriteDraftPrompt(options, "flexible-count");
+
+    const content = await this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content: "你是一个专业的中文内容改写助手。请严格按照用户要求输出合法 JSON，不要附加任何解释。"
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      {
+        temperature: 0.8,
+        response_format: {
+          type: "json_object"
+        }
+      },
+      "article-rewrite"
+    );
+
+    try {
+      const parsed = this.parseJsonResponse<RewriteDraftResult>(content, "整篇洗稿");
+      if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+        throw new Error("LLM returned an invalid rewrite result.");
+      }
+      return parsed;
+    } catch {
+      const repaired = await this.repairRewriteDraftJson(content);
+      try {
+        const parsed = this.parseJsonResponse<RewriteDraftResult>(repaired, "整篇洗稿");
+        if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
+          throw new Error("LLM returned an invalid rewrite result.");
+        }
+        return parsed;
+      } catch {
+        const salvaged = this.salvageRewriteDraftPayload(repaired) ?? this.salvageRewriteDraftPayload(content);
+        if (!salvaged) {
+          throw new Error("整篇洗稿返回内容无法修复为合法 JSON，请重试或缩短提示词。");
+        }
+        return salvaged;
+      }
+    }
+  }
+
+  private async repairRewriteDraftJson(brokenJsonLikeText: string): Promise<string> {
+    return this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content:
+            "你是 JSON 修复助手。请将输入修复为严格合法 JSON，仅输出 JSON，不要解释。保持字段为 title 和 sections；sections 每项只包含 sectionId 和 paragraph。"
+        },
+        {
+          role: "user",
+          content: brokenJsonLikeText
+        }
+      ],
+      {
+        temperature: 0,
+        response_format: {
+          type: "json_object"
+        }
+      },
+      "article-rewrite"
+    );
+  }
+
+  private salvageRewriteDraftPayload(content: string): RewriteDraftResult | null {
+    const normalized = this.normalizeJsonLikeContent(this.extractJson(content));
+    const titleMatch = normalized.match(/"title"\s*:\s*"([\s\S]*?)"\s*,\s*"sections"/i);
+    const sectionMatches = [...normalized.matchAll(/\{\s*"sectionId"\s*:\s*"([^"]+)"\s*,\s*"paragraph"\s*:\s*"([\s\S]*?)"\s*\}/gi)];
+
+    if (!titleMatch || sectionMatches.length === 0) {
+      return null;
+    }
+
+    const title = this.cleanLooseJsonString(titleMatch[1]);
+    const sections = sectionMatches.map((match) => ({
+      sectionId: this.cleanLooseJsonString(match[1]),
+      paragraph: this.cleanLooseJsonString(match[2])
+    }));
+
+    if (!title || sections.length === 0) {
+      return null;
+    }
+
+    return { title, sections };
+  }
+
   private buildWebRewriteSystemPrompt(): string {
     return [
       "你是一个中文内容平台的资深图文二创编辑，擅长把多个网页来源整合成一篇适合发布的原创文章。",
@@ -338,8 +431,15 @@ export class LlmService {
       .join("\n\n");
   }
 
-  private buildRewriteDraftPrompt(options: RewriteDraftOptions): string {
+  private buildRewriteDraftPrompt(
+    options: RewriteDraftOptions,
+    sectionRule: "keep-count" | "flexible-count" = "keep-count"
+  ): string {
     const { draft, userPrompt, rewriteTitle } = options;
+    const sectionRuleLine =
+      sectionRule === "keep-count"
+        ? "3. sections 数量必须和输入一致。"
+        : "3. sections 数量可以变化，可多于或少于输入，但要保持内容完整和逻辑连贯。";
 
     return [
       "请对下面这篇图文草稿进行整体洗稿重写。",
@@ -351,7 +451,7 @@ export class LlmService {
       "【硬性规则】",
       "1. 保留原文核心信息和事实边界，不要编造新事实。",
       "2. 保持 sectionId 不变。",
-      "3. sections 数量必须和输入一致。",
+      sectionRuleLine,
       "4. 不要改变图片、视频时间范围、section 顺序。",
       "5. 每个 section 只输出新的 paragraph。",
       "6. 输出必须是合法 JSON，不要 Markdown，不要解释。",
@@ -531,10 +631,14 @@ export class LlmService {
         type: "json_object";
       };
     },
-    scope: "video" | "web" = "video"
+    scope: "video" | "web" | "article-rewrite" = "video"
   ): Promise<string> {
     const toolSettings =
-      scope === "web" ? await this.settingsService.getWebToPostSettings() : await this.settingsService.getVideoToPostSettings();
+      scope === "web"
+        ? await this.settingsService.getWebToPostSettings()
+        : scope === "article-rewrite"
+          ? await this.settingsService.getArticleRewriteSettings()
+          : await this.settingsService.getVideoToPostSettings();
     const appSettings = await this.settingsService.getSettings();
     const baseUrl = appSettings.globalRuntime?.llmBaseUrl || process.env.LLM_BASE_URL || "https://api.deepseek.com";
     const apiKey = toolSettings.llmApiKey || process.env.LLM_API_KEY;

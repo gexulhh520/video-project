@@ -1,4 +1,4 @@
-export type TranscriptSegment = {
+﻿export type TranscriptSegment = {
   segmentId: string;
   start: number;
   end: number;
@@ -137,6 +137,11 @@ export type VideoToPostSettings = {
   llmModel: string;
 };
 
+export type ArticleRewriteSettings = {
+  llmApiKey: string;
+  llmModel: string;
+};
+
 export type WebToPostSettings = {
   llmApiKey: string;
   llmModel: string;
@@ -158,6 +163,13 @@ export type WebToPostConfigStatus = {
   ready: boolean;
   hasLlmApiKey: boolean;
   hasBbBrowserCommand: boolean;
+  resolvedLlmModel: string;
+  missingItems: string[];
+};
+
+export type ArticleRewriteConfigStatus = {
+  ready: boolean;
+  hasLlmApiKey: boolean;
   resolvedLlmModel: string;
   missingItems: string[];
 };
@@ -334,9 +346,19 @@ export type LlmSectionsResult = {
 
 export type DesktopApi = {
   selectVideo: () => Promise<string | null>;
+  selectWord: () => Promise<string | null>;
   selectImage: () => Promise<string | null>;
   selectDirectory: () => Promise<string | null>;
   generatePost: (videoPath: string, options: GeneratePostOptions) => Promise<PostDraft>;
+  importArticleRewriteWordDraft: (wordPath: string) => Promise<PostDraft>;
+  listArticleRewriteDrafts: () => Promise<DraftSummary[]>;
+  getArticleRewriteDraftById: (draftId: string) => Promise<PostDraft>;
+  saveArticleRewriteDraft: (draft: PostDraft) => Promise<PostDraft>;
+  exportArticleRewriteDraftToWord: (draft: PostDraft) => Promise<string | null>;
+  exportArticleRewriteDraftImagesArchive: (draft: PostDraft) => Promise<string | null>;
+  replaceArticleRewriteDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
+  rewriteArticleRewriteParagraph: (options: RewriteParagraphOptions) => Promise<string>;
+  rewriteArticleRewriteDraft: (options: RewriteDraftOptions) => Promise<PostDraft>;
   listDrafts: () => Promise<DraftSummary[]>;
   getDraftById: (draftId: string) => Promise<PostDraft>;
   saveDraft: (draft: PostDraft) => Promise<PostDraft>;
@@ -347,6 +369,9 @@ export type DesktopApi = {
   getVideoToPostSettings: () => Promise<VideoToPostSettings>;
   saveVideoToPostSettings: (settings: VideoToPostSettings) => Promise<VideoToPostSettings>;
   getVideoToPostConfigStatus: () => Promise<VideoToPostConfigStatus>;
+  getArticleRewriteSettings: () => Promise<ArticleRewriteSettings>;
+  saveArticleRewriteSettings: (settings: ArticleRewriteSettings) => Promise<ArticleRewriteSettings>;
+  getArticleRewriteConfigStatus: () => Promise<ArticleRewriteConfigStatus>;
   getWebToPostSettings: () => Promise<WebToPostSettings>;
   saveWebToPostSettings: (settings: WebToPostSettings) => Promise<WebToPostSettings>;
   getWebToPostConfigStatus: () => Promise<WebToPostConfigStatus>;

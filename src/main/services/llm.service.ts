@@ -127,13 +127,32 @@ export class LlmService {
       throw new Error("LLM returned an empty response.");
     }
 
-    const parsed = this.parseJsonResponse<LlmSectionsResult>(content, "生成图文分段");
+    const parsed = await this.parseSectionsPayload(content);
     if (!parsed.title || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
       throw new Error("LLM response JSON is missing title or sections.");
     }
 
     parsed.sections = parsed.sections.map(this.normalizeSection);
     return parsed;
+  }
+
+  private async parseSectionsPayload(content: string): Promise<LlmSectionsResult> {
+    try {
+      return this.parseJsonResponse<LlmSectionsResult>(content, "生成图文分段");
+    } catch {
+      const repaired = await this.repairSectionsJson(content);
+      try {
+        return this.parseJsonResponse<LlmSectionsResult>(repaired, "生成图文分段");
+      } catch {
+        const salvaged =
+          this.salvageSectionsPayload(this.normalizeJsonLikeContent(this.extractJson(repaired))) ??
+          this.salvageSectionsPayload(this.normalizeJsonLikeContent(this.extractJson(content)));
+        if (!salvaged) {
+          throw new Error("生成图文分段返回内容无法修复为合法 JSON，请重试或缩短提示词。");
+        }
+        return salvaged;
+      }
+    }
   }
 
   async rewriteParagraph(paragraph: string, scope: "video" | "article-rewrite" = "video"): Promise<string> {
@@ -374,6 +393,28 @@ export class LlmService {
     );
   }
 
+  private async repairSectionsJson(brokenJsonLikeText: string): Promise<string> {
+    return this.requestChatCompletion(
+      [
+        {
+          role: "system",
+          content:
+            "你是 JSON 修复助手。请将输入修复为严格合法 JSON，仅输出 JSON，不要解释。保持字段为 title 和 sections；sections 每项包含 sectionId、paragraph、sourceSegmentIds、sourceTimeRanges。sourceSegmentIds 是字符串数组；sourceTimeRanges 是数组，元素为 {start:number,end:number,reason:string}。"
+        },
+        {
+          role: "user",
+          content: brokenJsonLikeText
+        }
+      ],
+      {
+        temperature: 0,
+        response_format: {
+          type: "json_object"
+        }
+      }
+    );
+  }
+
   private salvageRewriteDraftPayload(content: string): RewriteDraftResult | null {
     const normalized = this.normalizeJsonLikeContent(this.extractJson(content));
     const titleMatch = normalized.match(/"title"\s*:\s*"([\s\S]*?)"\s*,\s*"sections"/i);
@@ -388,6 +429,48 @@ export class LlmService {
       sectionId: this.cleanLooseJsonString(match[1]),
       paragraph: this.cleanLooseJsonString(match[2])
     }));
+
+    if (!title || sections.length === 0) {
+      return null;
+    }
+
+    return { title, sections };
+  }
+
+  private salvageSectionsPayload(content: string): LlmSectionsResult | null {
+    const titleMatch = content.match(/"title"\s*:\s*"([\s\S]*?)"\s*,\s*"sections"/i);
+    const sectionsArrayMatch = content.match(/"sections"\s*:\s*\[([\s\S]*?)\]\s*}?$/i);
+
+    if (!titleMatch || !sectionsArrayMatch) {
+      return null;
+    }
+
+    const title = this.cleanLooseJsonString(titleMatch[1]);
+    const rawSections = sectionsArrayMatch[1];
+    const rawSectionObjects = rawSections.match(/\{[\s\S]*?\}(?=\s*,|\s*$)/g) ?? [];
+    const sections: ArticleSection[] = [];
+
+    rawSectionObjects.forEach((rawObject, index) => {
+      const sectionIdMatch = rawObject.match(/"sectionId"\s*:\s*"([\s\S]*?)"/i);
+      const paragraphMatch = rawObject.match(/"paragraph"\s*:\s*"([\s\S]*?)"\s*(,|$)/i);
+      if (!paragraphMatch) {
+        return;
+      }
+
+      const sourceSegmentIdsMatch = rawObject.match(/"sourceSegmentIds"\s*:\s*\[([\s\S]*?)\]/i);
+      const sourceTimeRangesMatch = rawObject.match(/"sourceTimeRanges"\s*:\s*\[([\s\S]*?)\]/i);
+      const sourceSegmentIds = sourceSegmentIdsMatch ? this.parseLooseStringArray(sourceSegmentIdsMatch[1]) : [];
+      const sourceTimeRanges = sourceTimeRangesMatch
+        ? this.parseLooseTimeRanges(sourceTimeRangesMatch[1])
+        : [];
+
+      sections.push({
+        sectionId: sectionIdMatch ? this.cleanLooseJsonString(sectionIdMatch[1]) : `s${index + 1}`,
+        paragraph: this.cleanLooseJsonString(paragraphMatch[1]),
+        sourceSegmentIds,
+        sourceTimeRanges
+      });
+    });
 
     if (!title || sections.length === 0) {
       return null;
@@ -587,6 +670,24 @@ export class LlmService {
     }
 
     return result;
+  }
+
+  private parseLooseTimeRanges(content: string): Array<{ start: number; end: number; reason?: string }> {
+    const ranges: Array<{ start: number; end: number; reason?: string }> = [];
+    const objectMatches = content.match(/\{[\s\S]*?\}(?=\s*,|\s*$)/g) ?? [];
+
+    objectMatches.forEach((raw) => {
+      const startMatch = raw.match(/"start"\s*:\s*(-?\d+(?:\.\d+)?)/i);
+      const endMatch = raw.match(/"end"\s*:\s*(-?\d+(?:\.\d+)?)/i);
+      const reasonMatch = raw.match(/"reason"\s*:\s*"([\s\S]*?)"\s*(,|$)/i);
+      const start = Number(startMatch?.[1] ?? 0);
+      const end = Number(endMatch?.[1] ?? start);
+      const reason = reasonMatch ? this.cleanLooseJsonString(reasonMatch[1]) : undefined;
+
+      ranges.push({ start, end, reason });
+    });
+
+    return ranges;
   }
 
   private cleanLooseJsonString(value: string): string {

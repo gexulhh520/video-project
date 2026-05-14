@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { runPythonTool } from "./python-tool-runner";

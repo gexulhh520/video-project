@@ -19,6 +19,8 @@ import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
 
 const router = useRouter();
 
+const taobaoImg = new URL("../../../../public/taobao.jpg", import.meta.url).href;
+
 const settingsOpen = ref(false);
 const settingsSaving = ref(false);
 const appSettings = ref<AppSettings | null>(null);
@@ -71,16 +73,21 @@ const tools = computed(() => [
       : `未完成工具配置，缺失：${articleToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
     actionLabel: "工具配置"
   },
+  // {
+  //   title: "爆款标题生成",
+  //   description: "基于内容主题自动生成更适合分发场景的标题方案。",
+  //   status: "coming-soon" as const
+  // },
   {
-    title: "爆款标题生成",
-    description: "基于内容主题自动生成更适合分发场景的标题方案。",
-    status: "coming-soon" as const
-  },
-  {
-    title: "封面文案生成",
+    title: "期待...",
     description: "输出封面主文案与副标题候选，方便直接用于封面图。",
     status: "coming-soon" as const
   }
+  // {
+  //   title: "封面文案生成",
+  //   description: "输出封面主文案与副标题候选，方便直接用于封面图。",
+  //   status: "coming-soon" as const
+  // }
 ]);
 
 onMounted(() => {
@@ -216,8 +223,9 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
         <span class="eyebrow">Toolbox</span>
         <button class="settings-btn" @click="openSettings">全局设置</button>
       </div>
-      <h1>把抓取、清洗、二创和导出，收进一个桌面工作台。</h1>
-      <p>先把“网页转文章原创”和“视频转图文”两条链路跑通，后续再继续扩展内容加工工具箱。</p>
+      <p>工具使用等问题可联系 微信：gexuxu520  备用qq:283282753</p>
+      <p>淘宝店铺：</p>
+      <img :src="taobaoImg" alt="淘宝店铺" class="taobao-image" />
       <div v-if="appSettings" class="workspace-card">
         <span>当前工作空间目录</span>
         <strong>{{ appSettings.workspaceDir }}</strong>
@@ -350,6 +358,14 @@ p {
   margin-top: 14px;
   color: #ffc1a8;
   font-size: 14px;
+}
+
+.taobao-image {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-top: 8px;
 }
 
 .tool-grid {

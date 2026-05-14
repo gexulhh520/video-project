@@ -47,6 +47,16 @@
       "scripts/**/*",
       "!scripts/keys/**/*"
     ],
+    "extraResources": [
+      {
+        "from": "resources/ffmpeg",
+        "to": "ffmpeg"
+      },
+      {
+        "from": "resources/python",
+        "to": "python"
+      }
+    ],
     "win": {
       "target": [
         "nsis"

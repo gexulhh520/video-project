@@ -367,6 +367,14 @@ async function runCrawl(recordId?: string): Promise<void> {
         url: urlInput.value.trim(),
         recordId
       });
+
+      const latestRecordId = activeTask.value.currentRecordId;
+      const latestRecord = latestRecordId
+        ? activeTask.value.records.find((item) => item.recordId === latestRecordId)
+        : undefined;
+      if (latestRecordId && latestRecord?.userEditedBody.trim()) {
+        rewriteSelectedRecordIds.value = [latestRecordId];
+      }
     }
 
     await refreshTaskList();

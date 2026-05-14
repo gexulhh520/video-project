@@ -1,8 +1,6 @@
-import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
+import { runPythonTool } from "./python-tool-runner";
 import { v4 as uuidv4 } from "uuid";
 import type {
   ContentBlock,
@@ -436,33 +434,18 @@ export class PostService {
   }
 
   private async runWordExportScript(draftJsonPath: string, outputPath: string): Promise<void> {
-    const pythonPath = await this.resolvePythonExecutablePath();
-    const scriptPath = resolve(process.cwd(), "scripts", "export_draft_docx.py");
     await mkdir(dirname(outputPath), { recursive: true });
 
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      const child = spawn(pythonPath, [scriptPath, draftJsonPath, outputPath], {
-        stdio: ["ignore", "pipe", "pipe"]
-      });
-
-      let stderr = "";
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-
-      child.on("error", (error) => {
-        rejectPromise(error);
-      });
-
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolvePromise();
-          return;
-        }
-
-        rejectPromise(new Error(`Word export failed with code ${code}: ${stderr}`));
-      });
-    });
+    await runPythonTool(
+      "export_draft_docx",
+      "export_draft_docx.py",
+      [draftJsonPath, outputPath],
+      {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1"
+      }
+    );
   }
 
   private async runZipArchiveScript(sourceDir: string, outputPath: string): Promise<void> {
@@ -501,25 +484,6 @@ export class PostService {
         rejectPromise(new Error(`Images archive export failed with code ${code}: ${stderr}`));
       });
     });
-  }
-
-  private async resolvePythonExecutablePath(): Promise<string> {
-    const bundledPythonPath = join(
-      homedir(),
-      ".cache",
-      "codex-runtimes",
-      "codex-primary-runtime",
-      "dependencies",
-      "python",
-      "python.exe"
-    );
-
-    try {
-      await access(bundledPythonPath, constants.X_OK);
-      return bundledPythonPath;
-    } catch {
-      return "python";
-    }
   }
 
   private async normalizeDraft(draft: PostDraft, touchUpdatedAt = false): Promise<PostDraft> {

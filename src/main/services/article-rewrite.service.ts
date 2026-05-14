@@ -1,8 +1,7 @@
 ﻿import { spawn } from "node:child_process";
-import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+import { runPythonTool } from "./python-tool-runner";
 import { v4 as uuidv4 } from "uuid";
 import type { ContentBlock, DraftSummary, PostDraft, RewriteDraftIterativeOptions, RewriteDraftOptions } from "../types/app.types";
 import { LlmService } from "./llm.service";
@@ -314,65 +313,37 @@ export class ArticleRewriteService {
   }
 
   private async runWordImportScript(sourceWordPath: string, outputImageDir: string): Promise<ImportedWordPayload> {
-    const pythonPath = await this.resolvePythonExecutablePath();
-    const scriptPath = resolve(process.cwd(), "scripts", "import_word_docx.py");
+    const { stdout } = await runPythonTool(
+      "import_word_docx",
+      "import_word_docx.py",
+      [sourceWordPath, outputImageDir],
+      {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1"
+      }
+    );
 
-    return new Promise((resolvePromise, rejectPromise) => {
-      const child = spawn(pythonPath, [scriptPath, sourceWordPath, outputImageDir], {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONIOENCODING: "utf-8",
-          PYTHONUTF8: "1"
-        }
-      });
-      let stdout = "";
-      let stderr = "";
-
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk.toString();
-      });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (error) => rejectPromise(error));
-      child.on("close", (code) => {
-        if (code !== 0) {
-          rejectPromise(new Error(`Word import failed with code ${code}: ${stderr}`));
-          return;
-        }
-
-        try {
-          resolvePromise(JSON.parse(stdout) as ImportedWordPayload);
-        } catch (error) {
-          rejectPromise(new Error(`Word import returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`));
-        }
-      });
-    });
+    try {
+      return JSON.parse(stdout) as ImportedWordPayload;
+    } catch (error) {
+      throw new Error(`Word import returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private async runWordExportScript(draftJsonPath: string, outputPath: string): Promise<void> {
-    const pythonPath = await this.resolvePythonExecutablePath();
-    const scriptPath = resolve(process.cwd(), "scripts", "export_draft_docx.py");
     await mkdir(dirname(outputPath), { recursive: true });
 
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      const child = spawn(pythonPath, [scriptPath, draftJsonPath, outputPath], {
-        stdio: ["ignore", "pipe", "pipe"]
-      });
-      let stderr = "";
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on("error", (error) => rejectPromise(error));
-      child.on("close", (code) => {
-        if (code === 0) {
-          resolvePromise();
-          return;
-        }
-        rejectPromise(new Error(`Word export failed with code ${code}: ${stderr}`));
-      });
-    });
+    await runPythonTool(
+      "export_draft_docx",
+      "export_draft_docx.py",
+      [draftJsonPath, outputPath],
+      {
+        ...process.env,
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1"
+      }
+    );
   }
 
   private async runZipArchiveScript(sourceDir: string, outputPath: string): Promise<void> {
@@ -403,25 +374,6 @@ export class ArticleRewriteService {
         rejectPromise(new Error(`Images archive export failed with code ${code}: ${stderr}`));
       });
     });
-  }
-
-  private async resolvePythonExecutablePath(): Promise<string> {
-    const bundledPythonPath = join(
-      homedir(),
-      ".cache",
-      "codex-runtimes",
-      "codex-primary-runtime",
-      "dependencies",
-      "python",
-      "python.exe"
-    );
-
-    try {
-      await access(bundledPythonPath, constants.X_OK);
-      return bundledPythonPath;
-    } catch {
-      return "python";
-    }
   }
 
   private sanitizeFileName(value: string): string {

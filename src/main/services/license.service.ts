@@ -15,9 +15,10 @@ type LicenseRuntimeState = {
   firstSeenAt: string;
   lastSeenAt: string;
 };
-
+//这里手动开启授权功能
 function isLicenseEnabled(): boolean {
-  return process.env.LICENSE_ENABLED === "true";
+  // return process.env.LICENSE_ENABLED === "true";
+  return true;
 }
 
 function getLicenseFilePath(): string {

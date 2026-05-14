@@ -6,12 +6,13 @@
   "author": "OpenAI Codex",
   "license": "MIT",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "vue-tsc --noEmit && electron-vite build",
-    "start": "electron-vite preview",
-    "typecheck": "vue-tsc --noEmit",
-    "dist:win": "npm run build && electron-builder --win nsis",
-    "license:generate": "tsx scripts/generate_license.ts"
+  "dev": "electron-vite dev",
+  "build": "vue-tsc --noEmit && electron-vite build",
+  "start": "electron-vite preview",
+  "typecheck": "vue-tsc --noEmit",
+  "build:python": "pyinstaller --onefile --name export_draft_docx scripts\\export_draft_docx.py && pyinstaller --onefile --name import_word_docx scripts\\import_word_docx.py && powershell -NoProfile -Command \"New-Item -ItemType Directory -Force -Path resources\\python | Out-Null; Copy-Item -Path dist\\export_draft_docx.exe -Destination resources\\python\\export_draft_docx.exe -Force; Copy-Item -Path dist\\import_word_docx.exe -Destination resources\\python\\import_word_docx.exe -Force\"",
+  "dist:win": "npm run build:python && npm run build && electron-builder --win nsis",
+  "license:generate": "tsx scripts/generate_license.ts"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",

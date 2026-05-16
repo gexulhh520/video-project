@@ -42,6 +42,10 @@ function getFingerprintSnapshotPath(): string {
   return path.join(getLicenseDirPath(), "device-fingerprint.json");
 }
 
+function getFingerprintHealthPath(): string {
+  return path.join(getLicenseDirPath(), "device-fingerprint-health.json");
+}
+
 function isValidMachineId(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value.trim());
 }
@@ -60,6 +64,15 @@ type FingerprintSnapshot = {
   createdAt: string;
   signals: HardwareSignals;
 };
+
+type FingerprintHealthState = {
+  status: "ok" | "mismatch";
+  lastCheckedAt: string;
+  score?: number;
+};
+
+const BACKGROUND_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+let backgroundVerifyRunning = false;
 
 function isDevLoggingEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
@@ -105,6 +118,20 @@ function readSnapshot(): FingerprintSnapshot | null {
   }
 }
 
+function readHealthState(): FingerprintHealthState | null {
+  const filePath = getFingerprintHealthPath();
+  if (!existsSync(filePath)) return null;
+
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const parsed = JSON.parse(raw) as FingerprintHealthState;
+    if (!parsed?.status || !parsed?.lastCheckedAt) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function persistSnapshot(snapshot: FingerprintSnapshot): void {
   try {
     const filePath = getFingerprintSnapshotPath();
@@ -112,6 +139,16 @@ function persistSnapshot(snapshot: FingerprintSnapshot): void {
     writeFileSync(filePath, JSON.stringify(snapshot, null, 2), "utf-8");
   } catch {
     // ignore write failures and continue using in-memory values
+  }
+}
+
+function persistHealthState(state: FingerprintHealthState): void {
+  try {
+    const filePath = getFingerprintHealthPath();
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, JSON.stringify(state, null, 2), "utf-8");
+  } catch {
+    // ignore write failures and continue runtime
   }
 }
 
@@ -230,6 +267,52 @@ function getMatchedFields(a: HardwareSignals, b: HardwareSignals): Array<keyof H
   });
 }
 
+function maybeScheduleBackgroundVerification(snapshot: FingerprintSnapshot): void {
+  if (backgroundVerifyRunning) return;
+
+  const health = readHealthState();
+  const lastCheckedAt = health ? new Date(health.lastCheckedAt).getTime() : 0;
+  const now = Date.now();
+  if (Number.isFinite(lastCheckedAt) && now - lastCheckedAt < BACKGROUND_RECHECK_INTERVAL_MS) {
+    return;
+  }
+
+  backgroundVerifyRunning = true;
+  setTimeout(() => {
+    try {
+      const currentSignals = collectHardwareSignals();
+      const score = matchScore(snapshot.signals, currentSignals);
+      const threshold = 8;
+      const matchedFields = getMatchedFields(snapshot.signals, currentSignals);
+
+      persistHealthState({
+        status: score >= threshold ? "ok" : "mismatch",
+        lastCheckedAt: new Date().toISOString(),
+        score
+      });
+
+      logFingerprintDebug("background-snapshot-compare", {
+        snapshotMachineId: maskSignal(snapshot.machineId),
+        score,
+        threshold,
+        matchedFields,
+        status: score >= threshold ? "ok" : "mismatch"
+      });
+    } catch (error) {
+      logFingerprintDebug("background-snapshot-compare-error", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    } finally {
+      backgroundVerifyRunning = false;
+    }
+  }, 0);
+}
+
+export function isFingerprintMismatch(): boolean {
+  const state = readHealthState();
+  return state?.status === "mismatch";
+}
+
 export function getPrimaryMacAddress(): string {
   const interfaces = os.networkInterfaces();
   const candidates: Array<{ name: string; mac: string }> = [];
@@ -262,6 +345,7 @@ export function getMachineId(): string {
   const persisted = readPersistedMachineId();
   const existingSnapshot = readSnapshot();
   if (persisted && existingSnapshot && existingSnapshot.machineId === persisted) {
+    maybeScheduleBackgroundVerification(existingSnapshot);
     logFingerprintDebug("machine-id-decision", {
       decision: "fast_path_use_persisted_machine_id",
       machineId: maskSignal(persisted)
@@ -312,6 +396,10 @@ export function getMachineId(): string {
     machineId,
     createdAt: new Date().toISOString(),
     signals: currentSignals
+  });
+  persistHealthState({
+    status: "ok",
+    lastCheckedAt: new Date().toISOString()
   });
   logFingerprintDebug("machine-id-decision", {
     decision: "use_current_computed_machine_id",

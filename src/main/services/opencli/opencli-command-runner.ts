@@ -13,6 +13,7 @@ export type RunOpenCliOptions = {
   timeoutMs?: number;
   ignoreError?: boolean;
   env?: NodeJS.ProcessEnv;
+  cwd?: string;
 };
 
 const STDERR_NOISE_PATTERNS = [
@@ -68,6 +69,7 @@ export class OpenCliCommandRunner {
       const child = spawn(spawnArgs.command, spawnArgs.args, {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        cwd: options.cwd || process.cwd(),
         env: {
           ...process.env,
           ...options.env,

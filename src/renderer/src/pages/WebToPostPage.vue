@@ -263,6 +263,10 @@ watch(
   { immediate: true }
 );
 
+watch(openCliProvider, () => {
+  void persistSelectedOpenCliProvider();
+});
+
 watch(
   [currentRecordImageAssets, rewriteSourceImageAssets, rewriteDraft, viewingRecordImageAssets],
   async () => {
@@ -463,6 +467,7 @@ async function runCrawl(recordId?: string): Promise<void> {
   errorMessage.value = "";
 
   try {
+    await persistSelectedOpenCliProvider();
     if (autoCrawlEnabled.value) {
       const crawlUrls = [urlInput.value.trim(), ...autoExtraUrls.value.map((item) => item.trim()).filter(Boolean)];
       activeTask.value = await runAutoCrawlPipeline(activeTask.value.taskId, crawlUrls);
@@ -846,6 +851,19 @@ async function rewriteTask(): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+async function persistSelectedOpenCliProvider(): Promise<void> {
+  const provider = openCliProvider.value;
+  const settings = await desktopApi.getWebToPostSettings();
+  if (settings.openCliProvider === provider) {
+    return;
+  }
+
+  await desktopApi.saveWebToPostSettings({
+    ...settings,
+    openCliProvider: provider
+  });
 }
 
 async function rewriteWholeResult(): Promise<void> {

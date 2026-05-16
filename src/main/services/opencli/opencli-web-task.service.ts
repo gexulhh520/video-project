@@ -107,25 +107,26 @@ export class OpenCliWebTaskService {
       await this.saveTask(task);
 
       const settings = await this.settingsService.getWebToPostSettings();
+      const workspaceDir = await this.getWorkspaceDir();
       const profile = await this.resolveProfile(settings, health.selectedProfile);
 
       const sessionName = this.ensureSessionName(record);
       this.emitProgress(task, record.recordId, "opening_page", 20, "正在通过 OpenCLI 打开页面", onProgress);
       record.status = "opening_page";
-      await this.openCliBrowserService.open(profile, sessionName, record.sourceUrl);
+      await this.openCliBrowserService.open(profile, sessionName, record.sourceUrl, workspaceDir);
       record.lastRunAt = new Date().toISOString();
 
       this.emitProgress(task, record.recordId, "waiting_page_ready", 32, "正在等待页面加载", onProgress);
       record.status = "waiting_page_ready";
-      await this.openCliBrowserService.wait(profile, sessionName, 3);
+      await this.openCliBrowserService.wait(profile, sessionName, 3, workspaceDir);
 
       this.emitProgress(task, record.recordId, "fetching_title", 46, "正在读取标题", onProgress);
       record.status = "fetching_title";
-      record.title = await this.openCliBrowserService.getTitle(profile, sessionName);
+      record.title = await this.openCliBrowserService.getTitle(profile, sessionName, workspaceDir);
 
       this.emitProgress(task, record.recordId, "capturing_snapshot", 60, "正在提取页面正文快照", onProgress);
       record.status = "capturing_snapshot";
-      record.snapshot = await this.openCliBrowserService.extract(profile, sessionName, record.sourceUrl, 8000);
+      record.snapshot = await this.openCliBrowserService.extract(profile, sessionName, record.sourceUrl, 8000, workspaceDir);
 
       this.emitProgress(task, record.recordId, "extracting_article", 80, "正在通过 OpenCLI Web 模型抽取正文", onProgress);
       record.status = "extracting_article";
@@ -136,18 +137,19 @@ export class OpenCliWebTaskService {
         body: record.snapshot,
         userPrompt: record.extractPrompt,
         timeoutMs: settings.openCliTimeoutMs || 180000,
-        intervalMs: settings.openCliPollIntervalMs || 3000
+        intervalMs: settings.openCliPollIntervalMs || 3000,
+        workingDir: workspaceDir
       });
 
       record.userEditedBody = record.extractedBody;
       this.emitProgress(task, record.recordId, "collecting_images", 90, "正文已提取，正在顺势抓取图片", onProgress);
       record.status = "collecting_images";
-      const candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName);
+      const candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName, workspaceDir);
       const assets = await this.buildImageAssetsFromCandidates(candidates, task.taskId, record.recordId);
       task.imageAssets = [...task.imageAssets.filter((item) => item.originRecordId !== record.recordId), ...assets];
       record.imageAssetIds = assets.map((asset) => asset.assetId);
       this.emitProgress(task, record.recordId, "closing_tab", 96, "正在关闭页面会话", onProgress);
-      await this.openCliBrowserService.close(profile, sessionName);
+      await this.openCliBrowserService.close(profile, sessionName, workspaceDir);
       record.status = "awaiting_user_confirmation";
       task.status = "awaiting_user_confirmation";
       task.updatedAt = new Date().toISOString();
@@ -182,6 +184,7 @@ export class OpenCliWebTaskService {
     record.extractPrompt = options.prompt.trim();
 
     const settings = await this.settingsService.getWebToPostSettings();
+    const workspaceDir = await this.getWorkspaceDir();
     const profile = await this.resolveProfile(settings);
     record.extractedBody = await this.openCliWebLlmService.extractArticleFromBody({
       provider: settings.openCliProvider || "chatgpt",
@@ -190,7 +193,8 @@ export class OpenCliWebTaskService {
       body: record.snapshot,
       userPrompt: record.extractPrompt,
       timeoutMs: settings.openCliTimeoutMs || 180000,
-      intervalMs: settings.openCliPollIntervalMs || 3000
+      intervalMs: settings.openCliPollIntervalMs || 3000,
+      workingDir: workspaceDir
     });
     record.userEditedBody = record.extractedBody;
     record.status = "awaiting_user_confirmation";
@@ -208,6 +212,7 @@ export class OpenCliWebTaskService {
     const task = await this.getTaskById(taskId);
     const record = this.getRecord(task, recordId);
     const settings = await this.settingsService.getWebToPostSettings();
+    const workspaceDir = await this.getWorkspaceDir();
     const profile = await this.resolveProfile(settings);
     const sessionName = this.ensureSessionName(record);
 
@@ -225,7 +230,7 @@ export class OpenCliWebTaskService {
 
     if (runtimeRecoveredBeforeCollect) {
       this.emitProgress(task, record.recordId, "opening_page", 18, "OpenCLI 已恢复，重新打开页面", onProgress);
-      await this.reopenRecordPage(profile, record, sessionName);
+      await this.reopenRecordPage(profile, record, sessionName, workspaceDir);
       task.currentRecordId = record.recordId;
       await this.saveTask(task);
     }
@@ -238,14 +243,14 @@ export class OpenCliWebTaskService {
 
     let candidates: Array<{ src: string }>;
     try {
-      candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName);
+      candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName, workspaceDir);
     } catch (error) {
       if (this.isSessionNotFoundError(error)) {
         this.emitProgress(task, record.recordId, "opening_page", 48, "页面会话已丢失，正在重新打开后重试", onProgress);
-        await this.reopenRecordPage(profile, record, sessionName);
+        await this.reopenRecordPage(profile, record, sessionName, workspaceDir);
         task.currentRecordId = record.recordId;
         await this.saveTask(task);
-        candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName);
+        candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName, workspaceDir);
       } else if (!this.isRuntimeDisconnectedError(error)) {
         throw error;
       } else {
@@ -257,7 +262,7 @@ export class OpenCliWebTaskService {
         await this.saveTask(task);
 
         this.emitProgress(task, record.recordId, "opening_page", 48, "OpenCLI 已恢复，重新打开页面后继续抓图", onProgress);
-        await this.reopenRecordPage(profile, record, sessionName);
+        await this.reopenRecordPage(profile, record, sessionName, workspaceDir);
         task.currentRecordId = record.recordId;
         await this.saveTask(task);
 
@@ -265,7 +270,7 @@ export class OpenCliWebTaskService {
         task.updatedAt = new Date().toISOString();
         await this.saveTask(task);
         this.emitProgress(task, record.recordId, "collecting_images", 55, "OpenCLI 已恢复，正在重试抓图", onProgress);
-        candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName);
+        candidates = await this.openCliBrowserService.collectImageUrls(profile, sessionName, workspaceDir);
       }
     }
 
@@ -274,7 +279,7 @@ export class OpenCliWebTaskService {
     task.imageAssets = [...task.imageAssets.filter((item) => item.originRecordId !== record.recordId), ...assets];
     record.imageAssetIds = assets.map((asset) => asset.assetId);
     this.emitProgress(task, record.recordId, "closing_tab", 80, "正在关闭页面会话", onProgress);
-    await this.openCliBrowserService.close(profile, sessionName);
+    await this.openCliBrowserService.close(profile, sessionName, workspaceDir);
     record.status = "ready_for_next_url";
     task.status = "ready_for_next_url";
     task.updatedAt = new Date().toISOString();
@@ -336,6 +341,7 @@ export class OpenCliWebTaskService {
     this.emitProgress(task, undefined, "rewriting", 25, "正在生成二次原创内容", onProgress);
 
     const settings = await this.settingsService.getWebToPostSettings();
+    const workspaceDir = await this.getWorkspaceDir();
     const profile = await this.resolveProfile(settings);
     const rewriteResult = await this.openCliWebLlmService.rewriteWebContent({
       provider: settings.openCliProvider || "chatgpt",
@@ -348,7 +354,8 @@ export class OpenCliWebTaskService {
       prompt: task.rewritePrompt,
       sourceRecordIds: confirmedRecords.map((record) => record.recordId),
       timeoutMs: settings.openCliTimeoutMs || 180000,
-      intervalMs: settings.openCliPollIntervalMs || 3000
+      intervalMs: settings.openCliPollIntervalMs || 3000,
+      workingDir: workspaceDir
     });
 
     rewriteResult.updatedAt = new Date().toISOString();
@@ -378,6 +385,7 @@ export class OpenCliWebTaskService {
     this.emitProgress(task, undefined, "rewriting", 25, "正在基于当前结果进行迭代洗稿", onProgress);
 
     const settings = await this.settingsService.getWebToPostSettings();
+    const workspaceDir = await this.getWorkspaceDir();
     const profile = await this.resolveProfile(settings);
     const rewriteResult = await this.openCliWebLlmService.rewriteWebContent({
       provider: settings.openCliProvider || "chatgpt",
@@ -392,7 +400,8 @@ export class OpenCliWebTaskService {
       prompt: task.rewritePrompt,
       sourceRecordIds: existingResult.sourceRecordIds,
       timeoutMs: settings.openCliTimeoutMs || 180000,
-      intervalMs: settings.openCliPollIntervalMs || 3000
+      intervalMs: settings.openCliPollIntervalMs || 3000,
+      workingDir: workspaceDir
     });
 
     rewriteResult.updatedAt = new Date().toISOString();
@@ -557,11 +566,16 @@ export class OpenCliWebTaskService {
     return record;
   }
 
-  private async reopenRecordPage(profile: string, record: WebCrawlRecord, sessionName: string): Promise<void> {
-    await this.openCliBrowserService.close(profile, sessionName).catch(() => undefined);
-    await this.openCliBrowserService.open(profile, sessionName, record.sourceUrl);
+  private async reopenRecordPage(
+    profile: string,
+    record: WebCrawlRecord,
+    sessionName: string,
+    workingDir: string
+  ): Promise<void> {
+    await this.openCliBrowserService.close(profile, sessionName, workingDir).catch(() => undefined);
+    await this.openCliBrowserService.open(profile, sessionName, record.sourceUrl, workingDir);
     record.lastRunAt = new Date().toISOString();
-    await this.openCliBrowserService.wait(profile, sessionName, 3);
+    await this.openCliBrowserService.wait(profile, sessionName, 3, workingDir);
   }
 
   private emitProgress(

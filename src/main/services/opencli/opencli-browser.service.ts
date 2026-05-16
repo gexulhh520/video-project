@@ -1,6 +1,6 @@
 import { OpenCliCommandRunner, OpenCliCommandResult } from "./opencli-command-runner";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { parseOpenCliJson } from "./opencli-output-parser";
 
 export type OpenCliImageCandidate = {
@@ -18,53 +18,65 @@ type OpenCliExtractPayload = {
 export class OpenCliBrowserService {
   constructor(private readonly runner: OpenCliCommandRunner) {}
 
-  async open(profile: string, sessionName: string, url: string): Promise<void> {
+  async open(profile: string, sessionName: string, url: string, workingDir?: string): Promise<void> {
     await this.runBrowserCommand(
       profile,
       [
         [sessionName, "open", url],
         ["open", url]
       ],
-      60000
+      60000,
+      false,
+      workingDir
     );
   }
 
-  async wait(profile: string, sessionName: string, seconds: number): Promise<void> {
+  async wait(profile: string, sessionName: string, seconds: number, workingDir?: string): Promise<void> {
     await this.runBrowserCommand(
       profile,
       [
         [sessionName, "wait", "time", String(seconds)],
         ["wait", "time", String(seconds)]
       ],
-      Math.max(10000, seconds * 1000 + 5000)
+      Math.max(10000, seconds * 1000 + 5000),
+      false,
+      workingDir
     );
   }
 
-  async getTitle(profile: string, sessionName: string): Promise<string> {
+  async getTitle(profile: string, sessionName: string, workingDir?: string): Promise<string> {
     const result = await this.runBrowserCommand(
       profile,
       [
         [sessionName, "get", "title"],
         ["get", "title"]
       ],
-      30000
+      30000,
+      false,
+      workingDir
     );
 
     return result.stdout.trim();
   }
 
-  async extract(profile: string, sessionName: string, sourceUrl: string, chunkSize = 8000): Promise<string> {
+  async extract(
+    profile: string,
+    sessionName: string,
+    sourceUrl: string,
+    chunkSize = 8000,
+    workingDir?: string
+  ): Promise<string> {
     // Preferred: one-shot page read per official docs (`opencli web read --url ...`).
-    const webReadText = await this.readViaWebRead(profile, sourceUrl);
+    const webReadText = await this.readViaWebRead(profile, sourceUrl, workingDir);
     if (webReadText.trim()) {
       return webReadText.trim();
     }
 
     // Fallback: browser extract with chunk stitching.
-    return this.extractViaBrowser(profile, sessionName, chunkSize);
+    return this.extractViaBrowser(profile, sessionName, chunkSize, workingDir);
   }
 
-  async collectImageUrls(profile: string, sessionName: string): Promise<OpenCliImageCandidate[]> {
+  async collectImageUrls(profile: string, sessionName: string, workingDir?: string): Promise<OpenCliImageCandidate[]> {
     const js =
       "(() => JSON.stringify(Array.from(document.images).map((img) => ({ src: img.currentSrc || img.src || '', alt: img.alt || '', width: img.naturalWidth || img.width || 0, height: img.naturalHeight || img.height || 0 })).filter((item) => item.src && item.width >= 120 && item.height >= 120)))()";
 
@@ -74,13 +86,15 @@ export class OpenCliBrowserService {
         [sessionName, "eval", js],
         ["eval", js]
       ],
-      60000
+      60000,
+      false,
+      workingDir
     );
 
     return this.parseImageCandidates(result);
   }
 
-  async close(profile: string, sessionName: string): Promise<void> {
+  async close(profile: string, sessionName: string, workingDir?: string): Promise<void> {
     await this.runBrowserCommand(
       profile,
       [
@@ -88,11 +102,12 @@ export class OpenCliBrowserService {
         ["close"]
       ],
       15000,
-      true
+      true,
+      workingDir
     );
   }
 
-  private async readViaWebRead(profile: string, sourceUrl: string): Promise<string> {
+  private async readViaWebRead(profile: string, sourceUrl: string, workingDir?: string): Promise<string> {
     const commandCandidates = [
       ["--profile", profile, "web", "read", "--url", sourceUrl, "--wait-until", "networkidle", "-f", "json"],
       ["--profile", profile, "web", "read", "--url", sourceUrl, "-f", "json"],
@@ -102,14 +117,15 @@ export class OpenCliBrowserService {
     for (const args of commandCandidates) {
       const result = await this.runner.run(args, {
         timeoutMs: 120000,
-        ignoreError: true
+        ignoreError: true,
+        cwd: workingDir
       });
       if (result.code !== 0 && !result.stdout.trim()) {
         continue;
       }
 
       const merged = `${result.stdout}\n${result.stderr}`.trim();
-      const extracted = await this.extractTextFromWebRead(merged);
+      const extracted = await this.extractTextFromWebRead(merged, workingDir);
       if (extracted.trim()) {
         return extracted;
       }
@@ -118,14 +134,14 @@ export class OpenCliBrowserService {
     return "";
   }
 
-  private async extractTextFromWebRead(raw: string): Promise<string> {
+  private async extractTextFromWebRead(raw: string, workingDir?: string): Promise<string> {
     if (!raw.trim()) return "";
     try {
       const parsed = parseOpenCliJson<unknown>(raw);
       const text = this.pickContent(parsed);
       if (text) return text;
 
-      const savedText = await this.readSavedArticleFile(parsed);
+      const savedText = await this.readSavedArticleFile(parsed, workingDir);
       if (savedText) return savedText;
     } catch {
       // Fall back to raw text.
@@ -134,20 +150,26 @@ export class OpenCliBrowserService {
     return raw.trim();
   }
 
-  private async readSavedArticleFile(payload: unknown): Promise<string> {
+  private async readSavedArticleFile(payload: unknown, workingDir?: string): Promise<string> {
     const savedPath = this.pickSavedPath(payload);
     if (!savedPath) {
       return "";
     }
 
     try {
-      return (await readFile(resolve(process.cwd(), savedPath), "utf8")).trim();
+      const resolvedPath = isAbsolute(savedPath) ? savedPath : resolve(workingDir || process.cwd(), savedPath);
+      return (await readFile(resolvedPath, "utf8")).trim();
     } catch {
       return "";
     }
   }
 
-  private async extractViaBrowser(profile: string, sessionName: string, chunkSize: number): Promise<string> {
+  private async extractViaBrowser(
+    profile: string,
+    sessionName: string,
+    chunkSize: number,
+    workingDir?: string
+  ): Promise<string> {
     let startChar: number | null = 0;
     let round = 0;
     const pieces: string[] = [];
@@ -165,6 +187,9 @@ export class OpenCliBrowserService {
               ["extract", "--chunk-size", String(chunkSize)]
             ],
         90000
+        ,
+        false,
+        workingDir
       );
 
       const payload = this.parseExtractPayload(result);
@@ -364,14 +389,16 @@ export class OpenCliBrowserService {
     profile: string,
     commandCandidates: string[][],
     timeoutMs: number,
-    ignoreError = false
+    ignoreError = false,
+    workingDir?: string
   ) {
     const errors: string[] = [];
     for (const commandArgs of commandCandidates) {
       try {
         return await this.runner.run(["--profile", profile, "browser", ...commandArgs], {
           timeoutMs,
-          ignoreError
+          ignoreError,
+          cwd: workingDir
         });
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));

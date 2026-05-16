@@ -4,8 +4,7 @@
   OpenCliProviderStatus,
   WebRewriteResult
 } from "../../types/app.types";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseOpenCliJson } from "./opencli-output-parser";
 import { OpenCliCommandRunner } from "./opencli-command-runner";
@@ -16,6 +15,7 @@ type AskOptions = {
   prompt: string;
   timeoutMs: number;
   intervalMs?: number;
+  workingDir?: string;
 };
 type OpenCliReadMessage = {
   Index?: number;
@@ -31,6 +31,7 @@ type ExtractArticleOptions = {
   userPrompt?: string;
   timeoutMs: number;
   intervalMs?: number;
+  workingDir?: string;
 };
 
 type RewriteWebContentOptions = {
@@ -42,6 +43,7 @@ type RewriteWebContentOptions = {
   sourceRecordIds: string[];
   timeoutMs: number;
   intervalMs?: number;
+  workingDir?: string;
 };
 
 const PROVIDER_LOGIN_URLS: Record<OpenCliProvider, string> = {
@@ -57,6 +59,7 @@ const CONNECTION_TEST_PROMPT = "请只回复：连接成功";
 const DEFAULT_EXTRACT_PROMPT =
   "请提取网页正文，删除导航、广告、评论、页脚、推荐内容和无关信息，只输出清洗后的正文。";
 const ARG_FILE_PREFIX = "__OPENCLI_ARG_FILE__:";
+const OPENCLI_PROMPT_DEBUG_DIR = ".cache/opencli-prompts";
 
 class OpenCliProfileLock {
   private readonly locks = new Map<string, Promise<void>>();
@@ -147,7 +150,8 @@ export class OpenCliWebLlmService {
       profile: options.profile,
       prompt,
       timeoutMs: options.timeoutMs,
-      intervalMs: options.intervalMs
+      intervalMs: options.intervalMs,
+      workingDir: options.workingDir
     });
 
     const extracted = response.trim();
@@ -181,7 +185,8 @@ export class OpenCliWebLlmService {
       profile: options.profile,
       prompt,
       timeoutMs: options.timeoutMs,
-      intervalMs: options.intervalMs
+      intervalMs: options.intervalMs,
+      workingDir: options.workingDir
     });
 
     const parsed = this.parseRewritePayload(response);
@@ -212,33 +217,42 @@ export class OpenCliWebLlmService {
     }
 
     return this.profileLock.runExclusive(normalizedProfile, async () => {
-      await this.startNewChat(options.provider, normalizedProfile);
-      await this.send(options.provider, normalizedProfile, options.prompt);
+      await this.startNewChat(options.provider, normalizedProfile, options.workingDir);
+      await this.send(options.provider, normalizedProfile, options.prompt, options.workingDir);
       return this.pollReadResult(
         options.provider,
         normalizedProfile,
         options.timeoutMs,
-        Math.max(1500, options.intervalMs ?? 3000)
+        Math.max(1500, options.intervalMs ?? 3000),
+        options.workingDir
       );
     });
   }
 
-  private async startNewChat(provider: OpenCliProvider, profile: string): Promise<void> {
+  private async startNewChat(provider: OpenCliProvider, profile: string, workingDir?: string): Promise<void> {
     await this.runner.run(["--profile", profile, provider, "new"], {
-      timeoutMs: 60000
+      timeoutMs: 60000,
+      cwd: workingDir
     });
   }
 
-  private async send(provider: OpenCliProvider, profile: string, prompt: string): Promise<void> {
+  private async send(provider: OpenCliProvider, profile: string, prompt: string, workingDir?: string): Promise<void> {
     const normalizedPrompt = this.normalizePromptForTransport(prompt);
-    const tempDir = await mkdtemp(join(tmpdir(), "opencli-prompt-"));
+    const debugPromptPath = await this.writeDebugPrompt(normalizedPrompt, workingDir);
+    const tempBaseDir = join(workingDir || process.cwd(), OPENCLI_PROMPT_DEBUG_DIR, "tmp");
+    await mkdir(tempBaseDir, { recursive: true });
+    const tempDir = await mkdtemp(join(tempBaseDir, "opencli-prompt-"));
     const promptPath = join(tempDir, "prompt.txt");
     await writeFile(promptPath, normalizedPrompt, "utf8");
 
     try {
       await this.runner.run(["--profile", profile, provider, "send", `${ARG_FILE_PREFIX}${promptPath}`], {
-        timeoutMs: 60000
+        timeoutMs: 60000,
+        cwd: workingDir
       });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`${msg}\nOpenCLI prompt debug file: ${debugPromptPath}`);
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -248,7 +262,8 @@ export class OpenCliWebLlmService {
     provider: OpenCliProvider,
     profile: string,
     timeoutMs: number,
-    intervalMs: number
+    intervalMs: number,
+    workingDir?: string
   ): Promise<string> {
     const startedAt = Date.now();
     let lastAssistant = "";
@@ -256,7 +271,7 @@ export class OpenCliWebLlmService {
 
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      const messages = await this.readMessages(provider, profile);
+      const messages = await this.readMessages(provider, profile, workingDir);
       const latestAssistant = this.getLatestAssistantText(messages);
       if (!latestAssistant) {
         continue;
@@ -281,9 +296,14 @@ export class OpenCliWebLlmService {
     throw new Error("OpenCLI Web 模型响应超时，未读到稳定的 Assistant 输出。");
   }
 
-  private async readMessages(provider: OpenCliProvider, profile: string): Promise<OpenCliReadMessage[]> {
+  private async readMessages(
+    provider: OpenCliProvider,
+    profile: string,
+    workingDir?: string
+  ): Promise<OpenCliReadMessage[]> {
     const result = await this.runner.run(["--profile", profile, provider, "read", "-f", "json"], {
-      timeoutMs: 60000
+      timeoutMs: 60000,
+      cwd: workingDir
     });
     const payloadText = `${result.stdout}\n${result.stderr}`.trim();
     if (!payloadText) {
@@ -338,8 +358,20 @@ export class OpenCliWebLlmService {
     return "";
   }
 
+  private async writeDebugPrompt(prompt: string, workingDir?: string): Promise<string> {
+    const dir = join(workingDir || process.cwd(), OPENCLI_PROMPT_DEBUG_DIR);
+    await mkdir(dir, { recursive: true });
+    const fileName = `prompt-${Date.now()}.txt`;
+    const path = join(dir, fileName);
+    await writeFile(path, prompt, { encoding: "utf8", flag: "w" });
+    return path;
+  }
+
   private normalizePromptForTransport(prompt: string): string {
     return String(prompt || "")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, "$1")
+      .replace(/https?:\/\/[^\s]+/gi, " ")
+      .replace(/www\.[^\s]+/gi, " ")
       .replace(/\r\n/g, "\n")
       .replace(/\n{2,}/g, " <段落分隔> ")
       .replace(/\n/g, " ")

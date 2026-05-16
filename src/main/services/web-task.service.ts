@@ -24,6 +24,7 @@ import { LlmService } from "./llm.service";
 import { SettingsService } from "./settings.service";
 
 export class WebTaskService {
+  private static readonly MAX_REWRITE_TITLE_LENGTH = 40;
   constructor(
     private readonly settingsService: SettingsService,
     private readonly llmService: LlmService,
@@ -327,6 +328,7 @@ export class WebTaskService {
       confirmedRecords.map((record) => record.recordId)
     );
 
+    rewriteResult.title = this.limitRewriteTitle(rewriteResult.title);
     rewriteResult.updatedAt = new Date().toISOString();
 
     task.rewriteResult = this.withRewriteId(rewriteResult);
@@ -367,6 +369,7 @@ export class WebTaskService {
       existingResult.sourceRecordIds
     );
 
+    rewriteResult.title = this.limitRewriteTitle(rewriteResult.title);
     rewriteResult.updatedAt = new Date().toISOString();
     task.rewriteResult = this.withRewriteId(rewriteResult);
     this.appendRewriteHistory(task, task.rewriteResult);
@@ -386,7 +389,7 @@ export class WebTaskService {
 
     task.rewriteResult = this.withRewriteId({
       ...options.rewriteResult,
-      title: options.rewriteResult.title.trim(),
+      title: this.limitRewriteTitle(options.rewriteResult.title),
       paragraphs,
       fullText: paragraphs.join("\n\n"),
       updatedAt: new Date().toISOString(),
@@ -609,6 +612,16 @@ export class WebTaskService {
     };
     const existing = (task.rewriteHistory || []).filter((item) => item.rewriteId !== next.rewriteId);
     task.rewriteHistory = [next, ...existing];
+  }
+
+  private limitRewriteTitle(title: string): string {
+    const normalized = String(title || "").trim();
+    if (!normalized) {
+      return "";
+    }
+    return normalized.length > WebTaskService.MAX_REWRITE_TITLE_LENGTH
+      ? normalized.slice(0, WebTaskService.MAX_REWRITE_TITLE_LENGTH)
+      : normalized;
   }
 
   async deleteTask(taskId: string): Promise<void> {

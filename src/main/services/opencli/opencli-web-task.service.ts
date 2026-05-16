@@ -25,6 +25,7 @@ import { OpenCliRuntimeService } from "./opencli-runtime.service";
 import { OpenCliWebLlmService } from "./opencli-web-llm.service";
 
 const MAX_IMAGES_PER_RECORD = 30;
+const MAX_REWRITE_TITLE_LENGTH = 40;
 
 export class OpenCliWebTaskService {
   constructor(
@@ -364,6 +365,7 @@ export class OpenCliWebTaskService {
       workingDir: workspaceDir
     });
 
+    rewriteResult.title = this.limitRewriteTitle(rewriteResult.title);
     rewriteResult.updatedAt = new Date().toISOString();
     task.rewriteResult = this.withRewriteId(rewriteResult);
     this.appendRewriteHistory(task, task.rewriteResult);
@@ -411,6 +413,7 @@ export class OpenCliWebTaskService {
       workingDir: workspaceDir
     });
 
+    rewriteResult.title = this.limitRewriteTitle(rewriteResult.title);
     rewriteResult.updatedAt = new Date().toISOString();
     task.rewriteResult = this.withRewriteId(rewriteResult);
     this.appendRewriteHistory(task, task.rewriteResult);
@@ -430,7 +433,7 @@ export class OpenCliWebTaskService {
 
     task.rewriteResult = this.withRewriteId({
       ...options.rewriteResult,
-      title: options.rewriteResult.title.trim(),
+      title: this.limitRewriteTitle(options.rewriteResult.title),
       paragraphs,
       fullText: paragraphs.join("\n\n"),
       updatedAt: new Date().toISOString(),
@@ -698,6 +701,14 @@ export class OpenCliWebTaskService {
       ...result,
       rewriteId: result.rewriteId || uuidv4()
     };
+  }
+
+  private limitRewriteTitle(title: string): string {
+    const normalized = String(title || "").trim();
+    if (!normalized) {
+      return "";
+    }
+    return normalized.length > MAX_REWRITE_TITLE_LENGTH ? normalized.slice(0, MAX_REWRITE_TITLE_LENGTH) : normalized;
   }
 
   private appendRewriteHistory(task: WebCrawlTask, result: NonNullable<WebCrawlTask["rewriteResult"]>): void {

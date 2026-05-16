@@ -60,6 +60,7 @@ const DEFAULT_EXTRACT_PROMPT =
   "请提取网页正文，删除导航、广告、评论、页脚、推荐内容和无关信息，只输出清洗后的正文。";
 const ARG_FILE_PREFIX = "__OPENCLI_ARG_FILE__:";
 const OPENCLI_PROMPT_DEBUG_DIR = ".cache/opencli-prompts";
+const MAX_REWRITE_TITLE_LENGTH = 40;
 
 class OpenCliProfileLock {
   private readonly locks = new Map<string, Promise<void>>();
@@ -170,6 +171,9 @@ export class OpenCliWebLlmService {
     const prompt = this.buildSingleLinePrompt([
       "你是专业中文爆款图文二创编辑。",
       "请基于输入素材，生成一篇新的原创图文稿。不要输出 JSON，不要输出解释、注释、Markdown。",
+      "禁止将生成内容放入任何文档、附件、下载链接或文件中，只能直接在回复正文中输出结果。",
+      "标题必须放在回复最开头，第一行只能是标题，标题前不能出现任何说明文字、符号或空行。",
+      "标题行末尾必须换行，正文必须从下一行开始输出，不得与标题同行。",
       "输出格式要求：第一行仅输出标题；从第二行开始每行一个正文段落，段落之间不要编号，不要项目符号，不要空洞过渡语。",
       "核心目标：在不改变事实、不编造信息的前提下，把素材改写成一篇适合公众号发布的原创爆款图文稿。文章要有传播感、阅读欲和完整逻辑，而不是简单复述原文。",
       "标题要求：1. 标题要有钩子，有点击欲，但不能夸大事实。2. 可使用以下方式制造吸引力：悬念式（先抛出一个问题，引导读者继续看）；反差式（先写传言，再写官方数据形成反差）；冲突式（突出自媒体说法与官方回应之间的不同）；结果式（先写热搜结果，再倒推事件经过）；情绪式（用网友关心的问题切入，但不得煽动）。3. 标题不要使用低俗、惊悚、虚假、夸大表达。",
@@ -407,11 +411,21 @@ export class OpenCliWebLlmService {
       .split(/\r?\n/)
       .map((line) => line.replace(/^#{1,6}\s*/, "").trim())
       .filter(Boolean);
-    const extractedTitle = lines[0]?.replace(/^(标题|title)\s*[:：]\s*/i, "").trim() || "";
+    const firstLineRaw = lines[0] || "";
+    const firstLineTitleOnly = firstLineRaw.replace(/^(标题|title)\s*[:：]\s*/i, "").trim();
+    const titleBodySplit =
+      firstLineTitleOnly.match(/^(.{3,60}?)[。！？!?：:]\s+(.+)$/) ||
+      firstLineTitleOnly.match(/^(.{3,60}?)\s+(.+)$/);
+    const extractedTitle = titleBodySplit ? titleBodySplit[1].trim() : firstLineTitleOnly;
+
     let paragraphs = lines
       .slice(1)
       .map((line) => line.replace(/^\d+[.)、]\s*/, "").trim())
       .filter(Boolean);
+
+    if (titleBodySplit?.[2]?.trim()) {
+      paragraphs.unshift(titleBodySplit[2].trim());
+    }
 
     // Fallback: some providers return one long block instead of line-split output.
     if (paragraphs.length === 0) {
@@ -419,11 +433,13 @@ export class OpenCliWebLlmService {
       paragraphs = this.splitBodyIntoParagraphs(bodyText);
     }
 
+    paragraphs = this.normalizeParagraphs(paragraphs);
+
     if (paragraphs.length === 0) {
       throw new Error("OpenCLI Web 模型返回内容不足，未解析出正文段落。");
     }
 
-    const title = extractedTitle || this.buildFallbackTitle(fallbackTitle, paragraphs[0]);
+    const title = this.limitTitleLength(extractedTitle || this.buildFallbackTitle(fallbackTitle, paragraphs[0]));
     return { title, paragraphs };
   }
 
@@ -450,10 +466,21 @@ export class OpenCliWebLlmService {
   private splitBodyIntoParagraphs(text: string): string[] {
     const normalized = String(text || "")
       .replace(/<段落分隔>/g, "\n")
-      .replace(/\s+/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/[ \t]+/g, " ")
       .trim();
     if (!normalized) {
       return [];
+    }
+
+    // Handle numbered sections returned in one line: 1. ... 2. ...
+    const numbered = normalized
+      .replace(/([。！？!?])\s*(?=\d+[.)、]\s*)/g, "$1\n")
+      .split(/\s*(?=\d+[.)、]\s*)/)
+      .map((item) => item.replace(/^\d+[.)、]\s*/, "").trim())
+      .filter(Boolean);
+    if (numbered.length >= 2) {
+      return numbered;
     }
 
     const blocks = normalized
@@ -484,17 +511,53 @@ export class OpenCliWebLlmService {
     return result;
   }
 
+  private normalizeParagraphs(paragraphs: string[]): string[] {
+    const cleaned = paragraphs
+      .map((item) =>
+        String(item || "")
+          .replace(/<段落分隔>/g, "\n")
+          .replace(/[ \t]+/g, " ")
+          .trim()
+      )
+      .filter(Boolean);
+
+    if (cleaned.length >= 2) {
+      return cleaned;
+    }
+
+    const only = cleaned[0] || "";
+    if (!only) {
+      return [];
+    }
+
+    // If only one giant paragraph remains, re-split for readability.
+    if (only.length > 120) {
+      return this.splitBodyIntoParagraphs(only);
+    }
+
+    return [only];
+  }
+
   private buildFallbackTitle(candidateTitle: string | undefined, firstParagraph: string): string {
     const preferred = String(candidateTitle || "").trim();
     if (preferred) {
-      return preferred;
+      return this.limitTitleLength(preferred);
     }
 
     const source = String(firstParagraph || "").replace(/\s+/g, " ").trim();
     if (!source) {
       return "二次原创稿";
     }
-    return source.length > 28 ? `${source.slice(0, 28)}...` : source;
+    const compact = source.length > MAX_REWRITE_TITLE_LENGTH ? source.slice(0, MAX_REWRITE_TITLE_LENGTH) : source;
+    return this.limitTitleLength(compact);
+  }
+
+  private limitTitleLength(title: string): string {
+    const normalized = String(title || "").trim();
+    if (!normalized) {
+      return "";
+    }
+    return normalized.length > MAX_REWRITE_TITLE_LENGTH ? normalized.slice(0, MAX_REWRITE_TITLE_LENGTH) : normalized;
   }
 
   private buildArticleSourceText(articles: Array<{ title: string; body: string }>): string {

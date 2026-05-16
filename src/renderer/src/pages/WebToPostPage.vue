@@ -1038,6 +1038,24 @@ function updateParagraphText(blockId: string, value: string): void {
   syncRewriteDraftText();
 }
 
+function removeParagraphBlock(blockId: string): void {
+  if (!rewriteDraft.value) {
+    return;
+  }
+
+  const target = rewriteDraft.value.contentBlocks.find(
+    (block): block is Extract<ContentBlock, { type: "paragraph" }> => block.type === "paragraph" && block.blockId === blockId
+  );
+  if (!target) {
+    return;
+  }
+
+  rewriteDraft.value.contentBlocks = rewriteDraft.value.contentBlocks.filter(
+    (block) => block.blockId !== blockId && !(block.type === "image" && block.sectionId === target.sectionId)
+  );
+  syncRewriteDraftText();
+}
+
 function syncRewriteDraftText(): void {
   if (!rewriteDraft.value) {
     return;
@@ -1757,6 +1775,9 @@ function formatDateTime(value?: string): string {
                     <button class="ghost-btn small-btn" @click="openImagePicker(block.sectionId)">从图片池插图</button>
                     <button class="ghost-btn small-btn" :disabled="selectingUploadImage" @click="imagePickerSectionId = block.sectionId; uploadImageToSection()">
                       上传本地图片
+                    </button>
+                    <button class="ghost-btn small-btn delete-record-btn" @click="removeParagraphBlock(block.blockId)">
+                      删除段落
                     </button>
                   </div>
                 </div>

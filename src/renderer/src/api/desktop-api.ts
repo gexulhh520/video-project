@@ -7,6 +7,7 @@ import type {
   AppSettings,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
+  DeleteWebRewriteHistoryOptions,
   DraftSummary,
   FramePreviewResult,
   GeneratePostOptions,
@@ -116,6 +117,8 @@ export const desktopApi = {
     window.desktopApi.rewriteWebTaskIterative(taskId, toPlainObject(options)),
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
     window.desktopApi.saveWebRewriteResult(taskId, toPlainObject(options)),
+  deleteWebRewriteHistory: (taskId: string, options: DeleteWebRewriteHistoryOptions): Promise<WebCrawlTask> =>
+    window.desktopApi.deleteWebRewriteHistory(taskId, toPlainObject(options)),
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
     window.desktopApi.toggleWebImageSelection(taskId, assetId, selected),
   deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>

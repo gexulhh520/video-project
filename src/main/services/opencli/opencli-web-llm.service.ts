@@ -189,7 +189,7 @@ export class OpenCliWebLlmService {
       workingDir: options.workingDir
     });
 
-    const parsed = this.parseRewritePayload(response);
+    const parsed = this.parseRewritePayload(response, options.title);
     const now = new Date().toISOString();
     const contentBlocks: ContentBlock[] = parsed.paragraphs.map((paragraph, index) => ({
       type: "paragraph",
@@ -387,7 +387,7 @@ export class OpenCliWebLlmService {
       .join(" ");
   }
 
-  private parseRewritePayload(content: string): { title: string; paragraphs: string[] } {
+  private parseRewritePayload(content: string, fallbackTitle?: string): { title: string; paragraphs: string[] } {
     const raw = String(content || "").trim();
     if (!raw) {
       throw new Error("OpenCLI Web 模型返回结果为空。");
@@ -398,28 +398,103 @@ export class OpenCliWebLlmService {
       .replace(/```$/i, "")
       .trim();
 
-    const lines = cleaned
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    if (lines.length < 2) {
-      throw new Error("OpenCLI Web 模型返回内容不足，无法还原标题和段落。");
+    const jsonParsed = this.tryParseRewriteJson(cleaned);
+    if (jsonParsed) {
+      return jsonParsed;
     }
 
-    const title = lines[0]
-      .replace(/^(标题|title)\s*[:：]\s*/i, "")
-      .trim();
-    const paragraphs = lines
+    const lines = cleaned
+      .split(/\r?\n/)
+      .map((line) => line.replace(/^#{1,6}\s*/, "").trim())
+      .filter(Boolean);
+    const extractedTitle = lines[0]?.replace(/^(标题|title)\s*[:：]\s*/i, "").trim() || "";
+    let paragraphs = lines
       .slice(1)
       .map((line) => line.replace(/^\d+[.)、]\s*/, "").trim())
       .filter(Boolean);
 
-    if (!title || paragraphs.length === 0) {
-      throw new Error("OpenCLI Web 模型返回结果缺少标题或段落。");
+    // Fallback: some providers return one long block instead of line-split output.
+    if (paragraphs.length === 0) {
+      const bodyText = lines.join(" ").replace(/^标题\s*[:：]\s*/i, "").trim();
+      paragraphs = this.splitBodyIntoParagraphs(bodyText);
     }
 
+    if (paragraphs.length === 0) {
+      throw new Error("OpenCLI Web 模型返回内容不足，未解析出正文段落。");
+    }
+
+    const title = extractedTitle || this.buildFallbackTitle(fallbackTitle, paragraphs[0]);
     return { title, paragraphs };
+  }
+
+  private tryParseRewriteJson(raw: string): { title: string; paragraphs: string[] } | null {
+    try {
+      const parsed = parseOpenCliJson<unknown>(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      const record = parsed as Record<string, unknown>;
+      const title = String(record.title || "").trim();
+      const paragraphs = Array.isArray(record.paragraphs)
+        ? record.paragraphs.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+      if (!title || paragraphs.length === 0) {
+        return null;
+      }
+      return { title, paragraphs };
+    } catch {
+      return null;
+    }
+  }
+
+  private splitBodyIntoParagraphs(text: string): string[] {
+    const normalized = String(text || "")
+      .replace(/<段落分隔>/g, "\n")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const blocks = normalized
+      .split(/\n+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (blocks.length >= 2) {
+      return blocks;
+    }
+
+    const sentences = normalized
+      .split(/(?<=[。！？!?])/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (sentences.length <= 1) {
+      return [normalized];
+    }
+
+    const targetGroups = Math.min(4, Math.max(2, Math.ceil(sentences.length / 2)));
+    const perGroup = Math.ceil(sentences.length / targetGroups);
+    const result: string[] = [];
+    for (let i = 0; i < sentences.length; i += perGroup) {
+      const chunk = sentences.slice(i, i + perGroup).join("");
+      if (chunk.trim()) {
+        result.push(chunk.trim());
+      }
+    }
+    return result;
+  }
+
+  private buildFallbackTitle(candidateTitle: string | undefined, firstParagraph: string): string {
+    const preferred = String(candidateTitle || "").trim();
+    if (preferred) {
+      return preferred;
+    }
+
+    const source = String(firstParagraph || "").replace(/\s+/g, " ").trim();
+    if (!source) {
+      return "二次原创稿";
+    }
+    return source.length > 28 ? `${source.slice(0, 28)}...` : source;
   }
 
   private buildArticleSourceText(articles: Array<{ title: string; body: string }>): string {

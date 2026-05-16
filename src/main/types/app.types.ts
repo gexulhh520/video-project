@@ -294,6 +294,7 @@ export type WebCrawlRecord = {
 };
 
 export type WebRewriteResult = {
+  rewriteId?: string;
   title: string;
   paragraphs: string[];
   contentBlocks: ContentBlock[];
@@ -315,6 +316,7 @@ export type WebCrawlTask = {
   imageAssets: WebImageAsset[];
   rewritePrompt: string;
   rewriteResult?: WebRewriteResult;
+  rewriteHistory?: WebRewriteResult[];
   runtimeHealth?: BrowserRuntimeHealthStatus;
 };
 
@@ -357,6 +359,10 @@ export type SaveWebRewriteResultOptions = {
 
 export type DeleteWebRecordOptions = {
   recordId: string;
+};
+
+export type DeleteWebRewriteHistoryOptions = {
+  rewriteId: string;
 };
 
 export type WebTaskAutoExportResult = {
@@ -441,6 +447,7 @@ export type DesktopApi = {
   rewriteWebTask: (taskId: string, options: RewriteWebTaskOptions) => Promise<WebCrawlTask>;
   rewriteWebTaskIterative: (taskId: string, options: IterativeRewriteWebTaskOptions) => Promise<WebCrawlTask>;
   saveWebRewriteResult: (taskId: string, options: SaveWebRewriteResultOptions) => Promise<WebCrawlTask>;
+  deleteWebRewriteHistory: (taskId: string, options: DeleteWebRewriteHistoryOptions) => Promise<WebCrawlTask>;
   toggleWebImageSelection: (taskId: string, assetId: string, selected: boolean) => Promise<WebCrawlTask>;
   deleteWebRecord: (taskId: string, options: DeleteWebRecordOptions) => Promise<WebCrawlTask>;
   deleteWebTask: (taskId: string) => Promise<void>;

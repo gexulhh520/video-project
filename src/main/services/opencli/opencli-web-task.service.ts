@@ -45,7 +45,8 @@ export class OpenCliWebTaskService {
       status: "idle",
       records: [],
       imageAssets: [],
-      rewritePrompt: ""
+      rewritePrompt: "",
+      rewriteHistory: []
     };
 
     await this.saveTask(task);
@@ -78,7 +79,12 @@ export class OpenCliWebTaskService {
   async getTaskById(taskId: string): Promise<WebCrawlTask> {
     const taskPath = await this.getTaskJsonPath(taskId);
     const content = await readFile(taskPath, "utf8");
-    return JSON.parse(content) as WebCrawlTask;
+    const task = JSON.parse(content) as WebCrawlTask;
+    task.rewriteHistory = (task.rewriteHistory || []).map((item) => ({
+      ...item,
+      rewriteId: item.rewriteId || uuidv4()
+    }));
+    return task;
   }
 
   async startCrawl(
@@ -359,7 +365,8 @@ export class OpenCliWebTaskService {
     });
 
     rewriteResult.updatedAt = new Date().toISOString();
-    task.rewriteResult = rewriteResult;
+    task.rewriteResult = this.withRewriteId(rewriteResult);
+    this.appendRewriteHistory(task, task.rewriteResult);
     task.status = "completed";
     task.updatedAt = new Date().toISOString();
     await this.saveTask(task);
@@ -405,7 +412,8 @@ export class OpenCliWebTaskService {
     });
 
     rewriteResult.updatedAt = new Date().toISOString();
-    task.rewriteResult = rewriteResult;
+    task.rewriteResult = this.withRewriteId(rewriteResult);
+    this.appendRewriteHistory(task, task.rewriteResult);
     task.status = "completed";
     task.updatedAt = new Date().toISOString();
     await this.saveTask(task);
@@ -420,14 +428,26 @@ export class OpenCliWebTaskService {
       throw new Error("当前原创结果不完整，无法保存。");
     }
 
-    task.rewriteResult = {
+    task.rewriteResult = this.withRewriteId({
       ...options.rewriteResult,
       title: options.rewriteResult.title.trim(),
       paragraphs,
       fullText: paragraphs.join("\n\n"),
       updatedAt: new Date().toISOString(),
       sourceRecordIds: Array.from(new Set(options.rewriteResult.sourceRecordIds.map((item) => item.trim()).filter(Boolean)))
-    };
+    });
+    this.appendRewriteHistory(task, task.rewriteResult);
+    task.updatedAt = new Date().toISOString();
+    await this.saveTask(task);
+    return task;
+  }
+
+  async deleteRewriteHistory(taskId: string, rewriteId: string): Promise<WebCrawlTask> {
+    const task = await this.getTaskById(taskId);
+    task.rewriteHistory = (task.rewriteHistory || []).filter((item) => item.rewriteId !== rewriteId);
+    if (task.rewriteResult?.rewriteId === rewriteId) {
+      task.rewriteResult = task.rewriteHistory[0];
+    }
     task.updatedAt = new Date().toISOString();
     await this.saveTask(task);
     return task;
@@ -669,6 +689,24 @@ export class OpenCliWebTaskService {
     await mkdir(taskDir, { recursive: true });
     task.updatedAt = new Date().toISOString();
     await writeFile(join(taskDir, "task.json"), JSON.stringify(task, null, 2), "utf8");
+  }
+
+  private withRewriteId(
+    result: NonNullable<WebCrawlTask["rewriteResult"]>
+  ): NonNullable<WebCrawlTask["rewriteResult"]> {
+    return {
+      ...result,
+      rewriteId: result.rewriteId || uuidv4()
+    };
+  }
+
+  private appendRewriteHistory(task: WebCrawlTask, result: NonNullable<WebCrawlTask["rewriteResult"]>): void {
+    const next = {
+      ...result,
+      rewriteId: result.rewriteId || uuidv4()
+    };
+    const existing = (task.rewriteHistory || []).filter((item) => item.rewriteId !== next.rewriteId);
+    task.rewriteHistory = [next, ...existing];
   }
 
   private async getWorkspaceDir(): Promise<string> {

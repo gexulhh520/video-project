@@ -9,6 +9,7 @@ import type {
   ArticleRewriteSettings,
   AppSettings,
   ConfirmWebRecordBodyOptions,
+  DeleteWebRewriteHistoryOptions,
   DeleteWebRecordOptions,
   GeneratePostOptions,
   IterativeRewriteWebTaskOptions,
@@ -331,6 +332,13 @@ export function registerIpcHandlers(
     async (_event, taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> => {
       const activeService = await getActiveWebTaskService();
       return activeService.saveRewriteResult(taskId, options);
+    }
+  );
+  ipcMain.handle(
+    "web-task:delete-rewrite-history",
+    async (_event, taskId: string, options: DeleteWebRewriteHistoryOptions): Promise<WebCrawlTask> => {
+      const activeService = await getActiveWebTaskService();
+      return activeService.deleteRewriteHistory(taskId, options.rewriteId);
     }
   );
   ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> => {

@@ -46,6 +46,7 @@ const confirmImagePoolOpen = ref(false);
 const rewriteResultOpen = ref(false);
 const imagePickerSectionId = ref<string | null>(null);
 const rewriteDraft = ref<WebRewriteResult | null>(null);
+const selectedRewriteHistoryId = ref("");
 const imageUrlsByPath = ref<Record<string, string>>({});
 const progress = ref<WebTaskProgress>({
   taskId: "idle",
@@ -136,6 +137,7 @@ const viewingRecordImageAssets = computed(() => {
 });
 
 const rewriteSourceRecordIds = computed(() => rewriteDraft.value?.sourceRecordIds ?? rewriteSelectedRecordIds.value);
+const rewriteHistoryList = computed(() => activeTask.value?.rewriteHistory ?? []);
 
 const rewriteSourceImageAssets = computed(() => {
   if (!activeTask.value) {
@@ -843,6 +845,7 @@ async function rewriteTask(): Promise<void> {
       recordIds: rewriteSelectedRecordIds.value
     });
     rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    selectedRewriteHistoryId.value = activeTask.value.rewriteResult?.rewriteId || "";
     rewriteResultOpen.value = Boolean(rewriteDraft.value);
     imagePickerSectionId.value = null;
     await refreshTaskList();
@@ -879,6 +882,7 @@ async function rewriteWholeResult(): Promise<void> {
       prompt: rewritePromptInput.value
     });
     rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    selectedRewriteHistoryId.value = activeTask.value.rewriteResult?.rewriteId || "";
     rewriteResultOpen.value = Boolean(rewriteDraft.value);
     imagePickerSectionId.value = null;
     await refreshTaskList();
@@ -910,6 +914,7 @@ async function rewriteFromSourceAgain(): Promise<void> {
       recordIds: sourceRecordIds
     });
     rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    selectedRewriteHistoryId.value = activeTask.value.rewriteResult?.rewriteId || "";
     rewriteResultOpen.value = Boolean(rewriteDraft.value);
     imagePickerSectionId.value = null;
     await refreshTaskList();
@@ -942,13 +947,60 @@ function openRewriteResult(): void {
   }
 
   rewriteDraft.value = cloneRewriteResult(activeTask.value.rewriteResult);
+  selectedRewriteHistoryId.value = activeTask.value.rewriteResult.rewriteId || "";
   rewriteResultOpen.value = true;
   imagePickerSectionId.value = null;
 }
 
 function closeRewriteResult(): void {
   rewriteResultOpen.value = false;
+  selectedRewriteHistoryId.value = "";
   imagePickerSectionId.value = null;
+}
+
+function openRewriteFromHistory(rewriteId: string): void {
+  if (!activeTask.value) {
+    return;
+  }
+
+  const target = (activeTask.value.rewriteHistory || []).find((item) => item.rewriteId === rewriteId);
+  if (!target) {
+    return;
+  }
+
+  rewriteDraft.value = cloneRewriteResult(target);
+  selectedRewriteHistoryId.value = rewriteId;
+  rewriteResultOpen.value = true;
+  imagePickerSectionId.value = null;
+}
+
+async function deleteSelectedRewriteHistory(): Promise<void> {
+  if (!activeTask.value || !selectedRewriteHistoryId.value || busy.value) {
+    return;
+  }
+
+  busy.value = true;
+  errorMessage.value = "";
+  try {
+    activeTask.value = await desktopApi.deleteWebRewriteHistory(activeTask.value.taskId, {
+      rewriteId: selectedRewriteHistoryId.value
+    });
+    const nextCurrent = activeTask.value.rewriteResult;
+    rewriteDraft.value = nextCurrent ? cloneRewriteResult(nextCurrent) : null;
+    selectedRewriteHistoryId.value = nextCurrent?.rewriteId || "";
+    rewriteResultOpen.value = Boolean(rewriteDraft.value);
+    await refreshTaskList();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除二次原创历史失败";
+  } finally {
+    busy.value = false;
+  }
+}
+
+function formatRewriteHistoryLabel(item: WebRewriteResult, index: number): string {
+  const timeText = item.updatedAt || item.createdAt || "";
+  const titleText = (item.title || "未命名结果").slice(0, 22);
+  return `#${rewriteHistoryList.value.length - index} ${titleText} · ${formatDateTime(timeText)}`;
 }
 
 function toggleRewriteRecord(recordId: string, checked: boolean): void {
@@ -1111,6 +1163,7 @@ async function saveRewriteResult(): Promise<void> {
       rewriteResult: cloneRewriteResult(rewriteDraft.value)
     });
     rewriteDraft.value = activeTask.value.rewriteResult ? cloneRewriteResult(activeTask.value.rewriteResult) : null;
+    selectedRewriteHistoryId.value = activeTask.value.rewriteResult?.rewriteId || "";
     await refreshTaskList();
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "保存原创结果失败";
@@ -1394,29 +1447,27 @@ function formatDateTime(value?: string): string {
           </div>
         </div>
 
-        <div v-if="!activeTask" class="empty-state">创建任务并抓取正文后，这里可以勾选需要参与二次原创的正文。</div>
+        <div v-if="!activeTask" class="empty-state">创建任务并抓取正文后，这里会显示当前提取正文，可在历史弹窗里勾选多条。</div>
         <div v-else class="rewrite-result">
           <div class="selection-shell">
             <div class="history-header">
-              <strong>勾选需要参与二次原创的正文</strong>
-              <span>{{ rewriteCandidateRecords.length }} 条可用</span>
+              <strong>当前提取正文</strong>
+              <span>已勾选 {{ rewriteSelectedRecordIds.length }} 条</span>
             </div>
-            <div v-if="!rewriteCandidateRecords.length" class="empty-note">先在左侧确认正文，这里才会出现可勾选的正文。</div>
+            <div v-if="!currentRecord?.userEditedBody?.trim()" class="empty-note">先在左侧确认正文，才能开始二次原创。</div>
             <div v-else class="compose-record-list">
-              <label v-for="record in rewriteCandidateRecords" :key="record.recordId" class="compose-record-card">
+              <article class="compose-record-card">
                 <div class="compose-record-top">
-                  <input
-                    :checked="rewriteSelectedRecordIds.includes(record.recordId)"
-                    type="checkbox"
-                    @change="toggleRewriteRecord(record.recordId, ($event.target as HTMLInputElement).checked)"
-                  />
                   <div>
-                    <strong>{{ record.title || summarizeUrl(record.sourceUrl, 44) }}</strong>
-                    <span>{{ summarizeUrl(record.sourceUrl, 72) }}</span>
+                    <strong>{{ currentRecord.title || summarizeUrl(currentRecord.sourceUrl, 44) }}</strong>
+                    <span>{{ summarizeUrl(currentRecord.sourceUrl, 72) }}</span>
                   </div>
                 </div>
-                <p>{{ summarizeBody(record.userEditedBody) }}</p>
-              </label>
+                <p>{{ summarizeBody(currentRecord.userEditedBody) }}</p>
+              </article>
+            </div>
+            <div class="field-actions">
+              <button class="ghost-btn" @click="openHistoryRecords">从历史正文列表勾选多条</button>
             </div>
           </div>
 
@@ -1551,6 +1602,15 @@ function formatDateTime(value?: string): string {
                   </div>
                 </button>
                 <div class="record-card-actions">
+                  <label class="ghost-btn small-btn rewrite-pick-toggle" @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="rewriteSelectedRecordIds.includes(record.recordId)"
+                      :disabled="!record.userEditedBody.trim()"
+                      @change="toggleRewriteRecord(record.recordId, ($event.target as HTMLInputElement).checked)"
+                    />
+                    <span>用于二创</span>
+                  </label>
                   <button class="ghost-btn small-btn" @click.stop="startEditingRecord(record)">编辑</button>
                   <button class="ghost-btn small-btn" @click.stop="openRecordImagePool(record.recordId)">图片池</button>
                   <button class="ghost-btn small-btn delete-record-btn" :disabled="busy" @click.stop="deleteRecord(record.recordId)">删除</button>
@@ -1648,6 +1708,24 @@ function formatDateTime(value?: string): string {
         </div>
 
         <div class="result-toolbar">
+          <select
+            class="history-select"
+            :value="selectedRewriteHistoryId"
+            :disabled="busy || !rewriteHistoryList.length"
+            @change="openRewriteFromHistory(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="" disabled>选择历史结果</option>
+            <option v-for="(item, index) in rewriteHistoryList" :key="item.rewriteId || index" :value="item.rewriteId || ''">
+              {{ formatRewriteHistoryLabel(item, index) }}
+            </option>
+          </select>
+          <button
+            class="ghost-btn toolbar-btn"
+            :disabled="busy || !selectedRewriteHistoryId"
+            @click="deleteSelectedRewriteHistory"
+          >
+            删除当前历史
+          </button>
           <button class="ghost-btn toolbar-btn" :disabled="busy || !activeTask" @click="rewriteWholeResult">
             {{ busy ? "迭代洗稿中..." : "迭代洗稿" }}
           </button>
@@ -2193,6 +2271,12 @@ textarea {
   font-size: 12px;
 }
 
+.rewrite-pick-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .record-edit-form {
   display: grid;
   gap: 12px;
@@ -2569,6 +2653,10 @@ textarea {
 .small-btn,
 .small-insert-btn {
   width: auto;
+}
+
+.history-select {
+  min-width: 280px;
 }
 
 .result-body {

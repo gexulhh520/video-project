@@ -15,7 +15,13 @@ const emit = defineEmits<{
 
 const form = ref<ArticleRewriteSettings>({
   llmApiKey: "",
-  llmModel: "deepseek-v4-flash"
+  llmModel: "deepseek-v4-flash",
+  runtime: "opencli",
+  openCliCommand: "opencli",
+  openCliProfile: "",
+  openCliProvider: "chatgpt",
+  openCliPollIntervalMs: 3000,
+  openCliTimeoutMs: 180000
 });
 
 watch(
@@ -23,7 +29,13 @@ watch(
   (settings) => {
     form.value = {
       llmApiKey: settings?.llmApiKey ?? "",
-      llmModel: settings?.llmModel ?? "deepseek-v4-flash"
+      llmModel: settings?.llmModel ?? "deepseek-v4-flash",
+      runtime: settings?.runtime ?? "opencli",
+      openCliCommand: settings?.openCliCommand ?? "opencli",
+      openCliProfile: settings?.openCliProfile ?? "",
+      openCliProvider: settings?.openCliProvider ?? "chatgpt",
+      openCliPollIntervalMs: settings?.openCliPollIntervalMs ?? 3000,
+      openCliTimeoutMs: settings?.openCliTimeoutMs ?? 180000
     };
   },
   { immediate: true }
@@ -32,7 +44,13 @@ watch(
 function handleSave(): void {
   emit("save", {
     llmApiKey: form.value.llmApiKey.trim(),
-    llmModel: form.value.llmModel.trim() || "deepseek-v4-flash"
+    llmModel: form.value.llmModel.trim() || "deepseek-v4-flash",
+    runtime: form.value.runtime ?? "opencli",
+    openCliCommand: form.value.openCliCommand?.trim() || "opencli",
+    openCliProfile: form.value.openCliProfile?.trim() || "",
+    openCliProvider: form.value.openCliProvider ?? "chatgpt",
+    openCliPollIntervalMs: Number(form.value.openCliPollIntervalMs) || 3000,
+    openCliTimeoutMs: Number(form.value.openCliTimeoutMs) || 180000
   });
 }
 </script>
@@ -50,15 +68,54 @@ function handleSave(): void {
 
       <div class="content">
         <label class="field">
-          <span>LLM Key</span>
-          <input v-model="form.llmApiKey" type="password" placeholder="填写 LLM_API_KEY" />
+          <span>运行模式</span>
+          <select v-model="form.runtime">
+            <option value="opencli">opencli（推荐）</option>
+            <option value="bb-browser">API Key</option>
+          </select>
         </label>
 
-        <label class="field">
-          <span>LLM 模型</span>
-          <input v-model="form.llmModel" type="text" placeholder="deepseek-v4-flash" />
-          <small>默认模型为 `deepseek-v4-flash`，可改为你账号可用的其他模型。</small>
-        </label>
+        <template v-if="form.runtime === 'opencli'">
+          <label class="field">
+            <span>OpenCLI 命令</span>
+            <input v-model="form.openCliCommand" type="text" placeholder="opencli" />
+          </label>
+          <label class="field">
+            <span>OpenCLI Profile</span>
+            <input v-model="form.openCliProfile" type="text" placeholder="8qatyy5j" />
+          </label>
+          <label class="field">
+            <span>Provider</span>
+            <select v-model="form.openCliProvider">
+              <option value="chatgpt">chatgpt</option>
+              <option value="gemini">gemini</option>
+              <option value="claude">claude</option>
+              <option value="grok">grok</option>
+              <option value="doubao">doubao</option>
+              <option value="yuanbao">yuanbao</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>轮询间隔(ms)</span>
+            <input v-model.number="form.openCliPollIntervalMs" type="number" min="500" step="100" />
+          </label>
+          <label class="field">
+            <span>超时(ms)</span>
+            <input v-model.number="form.openCliTimeoutMs" type="number" min="10000" step="1000" />
+          </label>
+        </template>
+
+        <template v-else>
+          <label class="field">
+            <span>LLM Key</span>
+            <input v-model="form.llmApiKey" type="password" placeholder="填写 LLM_API_KEY" />
+          </label>
+          <label class="field">
+            <span>LLM 模型</span>
+            <input v-model="form.llmModel" type="text" placeholder="deepseek-v4-flash" />
+            <small>默认模型为 `deepseek-v4-flash`，可改为你账号可用的其他模型。</small>
+          </label>
+        </template>
 
         <p class="hint">该配置会保存到当前工作空间的 `config/article-rewrite.json`，仅用于图文改写模块。</p>
 
@@ -82,6 +139,7 @@ function handleSave(): void {
 .field { display: grid; gap: 10px; }
 .field span { color: #9db4d8; font-size: 12px; }
 .field input { width: 100%; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(149,181,255,.16); background: rgba(255,255,255,.03); color: #edf5ff; }
+.field select { width: 100%; min-height: 46px; padding: 0 14px; border-radius: 12px; border: 1px solid rgba(149,181,255,.16); background: rgba(255,255,255,.03); color: #edf5ff; }
 .field small, .hint { color: #9db4d8; line-height: 1.7; }
 .close-btn, .primary-btn { min-height: 42px; padding: 0 16px; border-radius: 12px; border: 1px solid rgba(140,173,247,.14); cursor: pointer; font-weight: 600; }
 .close-btn { background: rgba(255,255,255,.03); color: #eaf3ff; }

@@ -148,6 +148,12 @@ export type VideoToPostSettings = {
 export type ArticleRewriteSettings = {
   llmApiKey: string;
   llmModel: string;
+  runtime?: WebToPostRuntime;
+  openCliCommand?: string;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
+  openCliPollIntervalMs?: number;
+  openCliTimeoutMs?: number;
 };
 
 export type WebToPostRuntime = "bb-browser" | "opencli";
@@ -199,6 +205,11 @@ export type ArticleRewriteConfigStatus = {
   ready: boolean;
   hasLlmApiKey: boolean;
   resolvedLlmModel: string;
+  runtime?: WebToPostRuntime;
+  hasOpenCliCommand?: boolean;
+  hasOpenCliProfile?: boolean;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
   missingItems: string[];
 };
 

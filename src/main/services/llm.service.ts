@@ -1,5 +1,6 @@
 ﻿import axios from "axios";
 import type {
+  ArticleRewriteSettings,
   ArticleSection,
   ContentBlock,
   LlmSectionsResult,
@@ -751,10 +752,13 @@ export class LlmService {
     },
     scope: "video" | "web" | "article-rewrite" = "video"
   ): Promise<string> {
-    if (scope === "video") {
-      const videoSettings = await this.settingsService.getVideoToPostSettings();
-      if (videoSettings.runtime === "opencli") {
-        return this.requestByOpenCli(messages, videoSettings);
+    if (scope === "video" || scope === "article-rewrite") {
+      const runtimeSettings =
+        scope === "video"
+          ? await this.settingsService.getVideoToPostSettings()
+          : await this.settingsService.getArticleRewriteSettings();
+      if (runtimeSettings.runtime === "opencli") {
+        return this.requestByOpenCli(messages, runtimeSettings);
       }
     }
 
@@ -802,7 +806,7 @@ export class LlmService {
 
   private async requestByOpenCli(
     messages: Array<{ role: "system" | "user"; content: string }>,
-    settings: VideoToPostSettings
+    settings: VideoToPostSettings | ArticleRewriteSettings
   ): Promise<string> {
     if (!this.openCliRuntimeService || !this.openCliWebLlmService) {
       throw new Error("OpenCLI LLM runtime is not initialized.");

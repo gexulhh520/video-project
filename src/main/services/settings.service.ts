@@ -49,7 +49,13 @@ const DEFAULT_WEB_TO_POST_SETTINGS: WebToPostSettings = {
 
 const DEFAULT_ARTICLE_REWRITE_SETTINGS: ArticleRewriteSettings = {
   llmApiKey: "",
-  llmModel: "deepseek-v4-flash"
+  llmModel: "deepseek-v4-flash",
+  runtime: "opencli",
+  openCliCommand: "opencli",
+  openCliProfile: "",
+  openCliProvider: "chatgpt",
+  openCliPollIntervalMs: 3000,
+  openCliTimeoutMs: 180000
 };
 
 const DEFAULT_GLOBAL_RUNTIME_SETTINGS: GlobalRuntimeSettings = {
@@ -280,10 +286,16 @@ export class SettingsService {
       await access(configPath, constants.R_OK);
       const content = await readFile(configPath, "utf8");
       const stored = JSON.parse(content) as StoredArticleRewriteSettings;
-      return {
+      return this.normalizeArticleRewriteSettings({
         llmApiKey: stored.llmApiKey?.trim() ?? "",
-        llmModel: stored.llmModel?.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel
-      };
+        llmModel: stored.llmModel?.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel,
+        runtime: stored.runtime,
+        openCliCommand: stored.openCliCommand,
+        openCliProfile: stored.openCliProfile,
+        openCliProvider: stored.openCliProvider,
+        openCliPollIntervalMs: stored.openCliPollIntervalMs,
+        openCliTimeoutMs: stored.openCliTimeoutMs
+      });
     } catch {
       return { ...DEFAULT_ARTICLE_REWRITE_SETTINGS };
     }
@@ -294,10 +306,16 @@ export class SettingsService {
     const configPath = this.getArticleRewriteConfigPath(appSettings.workspaceDir);
     await mkdir(join(appSettings.workspaceDir, "config"), { recursive: true });
 
-    const normalizedSettings: ArticleRewriteSettings = {
+    const normalizedSettings = this.normalizeArticleRewriteSettings({
       llmApiKey: settings.llmApiKey.trim(),
-      llmModel: settings.llmModel.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel
-    };
+      llmModel: settings.llmModel.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel,
+      runtime: settings.runtime,
+      openCliCommand: settings.openCliCommand,
+      openCliProfile: settings.openCliProfile,
+      openCliProvider: settings.openCliProvider,
+      openCliPollIntervalMs: settings.openCliPollIntervalMs,
+      openCliTimeoutMs: settings.openCliTimeoutMs
+    });
 
     await writeFile(configPath, JSON.stringify(normalizedSettings, null, 2), "utf8");
     return normalizedSettings;
@@ -305,19 +323,37 @@ export class SettingsService {
 
   async getArticleRewriteConfigStatus(): Promise<ArticleRewriteConfigStatus> {
     const toolSettings = await this.getArticleRewriteSettings();
+    const runtime = toolSettings.runtime ?? "opencli";
     const hasLlmApiKey = Boolean(toolSettings.llmApiKey || process.env.LLM_API_KEY);
+    const hasOpenCliCommand = Boolean(toolSettings.openCliCommand?.trim());
+    const hasOpenCliProfile = Boolean(toolSettings.openCliProfile?.trim());
     const resolvedLlmModel =
       toolSettings.llmModel || process.env.LLM_MODEL || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel;
     const missingItems: string[] = [];
 
-    if (!hasLlmApiKey) {
-      missingItems.push("LLM Key");
+    if (runtime === "opencli") {
+      if (!hasOpenCliCommand) {
+        missingItems.push("OpenCLI 命令");
+      }
+
+      if (!hasOpenCliProfile) {
+        missingItems.push("OpenCLI Profile");
+      }
+    } else {
+      if (!hasLlmApiKey) {
+        missingItems.push("LLM Key");
+      }
     }
 
     return {
       ready: missingItems.length === 0,
       hasLlmApiKey,
       resolvedLlmModel,
+      runtime,
+      hasOpenCliCommand,
+      hasOpenCliProfile,
+      openCliProfile: toolSettings.openCliProfile,
+      openCliProvider: toolSettings.openCliProvider,
       missingItems
     };
   }
@@ -409,6 +445,24 @@ export class SettingsService {
 
     normalized.runtime = this.normalizeWebRuntime(normalized.runtime);
     normalized.openCliCommand = normalized.openCliCommand?.trim() || DEFAULT_VIDEO_TO_POST_SETTINGS.openCliCommand;
+    normalized.openCliProfile = normalized.openCliProfile?.trim() ?? "";
+    normalized.openCliProvider = this.normalizeOpenCliProvider(normalized.openCliProvider);
+    normalized.openCliPollIntervalMs = this.normalizePositiveNumber(normalized.openCliPollIntervalMs, 3000);
+    normalized.openCliTimeoutMs = this.normalizePositiveNumber(normalized.openCliTimeoutMs, 180000);
+
+    return normalized;
+  }
+
+  private normalizeArticleRewriteSettings(settings: ArticleRewriteSettings): ArticleRewriteSettings {
+    const normalized: ArticleRewriteSettings = {
+      ...DEFAULT_ARTICLE_REWRITE_SETTINGS,
+      ...settings,
+      llmApiKey: settings.llmApiKey?.trim() ?? "",
+      llmModel: settings.llmModel?.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.llmModel
+    };
+
+    normalized.runtime = this.normalizeWebRuntime(normalized.runtime);
+    normalized.openCliCommand = normalized.openCliCommand?.trim() || DEFAULT_ARTICLE_REWRITE_SETTINGS.openCliCommand;
     normalized.openCliProfile = normalized.openCliProfile?.trim() ?? "";
     normalized.openCliProvider = this.normalizeOpenCliProvider(normalized.openCliProvider);
     normalized.openCliPollIntervalMs = this.normalizePositiveNumber(normalized.openCliPollIntervalMs, 3000);

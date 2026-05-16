@@ -1,7 +1,15 @@
 ﻿<script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import type { ArticleRewriteConfigStatus, ArticleRewriteSettings, DraftSummary, PostDraft } from "../../../main/types/app.types";
+import type {
+  ArticleRewriteConfigStatus,
+  ArticleRewriteSettings,
+  DraftSummary,
+  OpenCliProvider,
+  OpenCliProviderStatus,
+  OpenCliRuntimeHealthStatus,
+  PostDraft
+} from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import ArticleRewriteSettingsModal from "../components/ArticleRewriteSettingsModal.vue";
 import ArticleRewriteDraftEditor from "../components/ArticleRewriteDraftEditor.vue";
@@ -20,6 +28,12 @@ const settingsOpen = ref(false);
 const settingsSaving = ref(false);
 const toolSettings = ref<ArticleRewriteSettings | null>(null);
 const configStatus = ref<ArticleRewriteConfigStatus | null>(null);
+const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
+const openCliProvider = ref<OpenCliProvider>("chatgpt");
+const openCliSelectedProfile = ref("");
+const openCliRepairing = ref(false);
+const openCliTesting = ref(false);
+const openCliTestMessage = ref("");
 const busy = ref(false);
 const savingDraft = ref(false);
 const exportingWord = ref(false);
@@ -29,11 +43,111 @@ const editorOpen = ref(false);
 const generationUserPrompt = ref("");
 const errorMessage = ref("");
 
-void refreshDrafts(true);
-void loadConfigStatus();
+onMounted(() => {
+  void refreshDrafts(true);
+  void loadConfigStatus();
+  void checkOpenCliHealthOnEnter();
+});
+
+watch(openCliProvider, () => {
+  void persistSelectedOpenCliProvider();
+});
 
 async function loadConfigStatus(): Promise<void> {
   configStatus.value = await desktopApi.getArticleRewriteConfigStatus();
+}
+
+async function checkOpenCliHealthOnEnter(): Promise<void> {
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    openCliTestMessage.value = "";
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+
+    const settings = await desktopApi.getArticleRewriteSettings();
+    openCliProvider.value = settings.openCliProvider ?? "chatgpt";
+    if (
+      openCliHealth.value.healthy &&
+      openCliHealth.value.selectedProfile &&
+      (settings.runtime !== "opencli" || settings.openCliProfile !== openCliHealth.value.selectedProfile)
+    ) {
+      await desktopApi.saveArticleRewriteSettings({
+        ...settings,
+        runtime: "opencli",
+        openCliProfile: openCliHealth.value.selectedProfile,
+        openCliProvider: settings.openCliProvider ?? "chatgpt"
+      });
+      await loadConfigStatus();
+    }
+  } catch {
+    openCliHealth.value = null;
+  }
+}
+
+async function persistSelectedOpenCliProvider(): Promise<void> {
+  const provider = openCliProvider.value;
+  const settings = await desktopApi.getArticleRewriteSettings();
+  if (settings.openCliProvider === provider) {
+    return;
+  }
+
+  await desktopApi.saveArticleRewriteSettings({
+    ...settings,
+    openCliProvider: provider
+  });
+}
+
+async function refreshOpenCliHealth(): Promise<void> {
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+  }
+}
+
+async function repairOpenCli(): Promise<void> {
+  openCliRepairing.value = true;
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.repairOpenCliRuntime();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 修复失败";
+  } finally {
+    openCliRepairing.value = false;
+  }
+}
+
+async function openProviderLoginPage(): Promise<void> {
+  const profile = openCliSelectedProfile.value.trim() || undefined;
+  try {
+    await desktopApi.openOpenCliProviderLoginPage(openCliProvider.value, profile);
+    openCliTestMessage.value = "已打开模型登录页，请登录后再点击测试连接。";
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "打开模型登录页失败";
+  }
+}
+
+async function testOpenCliProvider(): Promise<void> {
+  openCliTesting.value = true;
+  const profile = openCliSelectedProfile.value.trim() || undefined;
+  try {
+    const result: OpenCliProviderStatus = await desktopApi.testOpenCliProvider(openCliProvider.value, profile);
+    openCliTestMessage.value = result.message || (result.ready ? "连接成功" : "连接失败");
+  } catch (error) {
+    openCliTestMessage.value = error instanceof Error ? error.message : "测试失败";
+  } finally {
+    openCliTesting.value = false;
+  }
 }
 
 async function openToolSettings(): Promise<void> {
@@ -61,7 +175,7 @@ async function handleSelectWord(): Promise<void> {
 async function handleImportWord(): Promise<void> {
   if (!selectedWordPath.value || busy.value) return;
   if (!configStatus.value?.ready) {
-    errorMessage.value = "请先配置图文改写模块的 LLM Key。";
+    errorMessage.value = "请先完成图文改写工具配置。";
     return;
   }
 
@@ -84,6 +198,7 @@ async function handleGenerateFromPrompt(): Promise<void> {
   busy.value = true;
   errorMessage.value = "";
   try {
+    await persistSelectedOpenCliProvider();
     draft.value = await desktopApi.rewriteArticleRewriteDraft({
       draft: draft.value,
       userPrompt: generationUserPrompt.value,
@@ -205,6 +320,34 @@ function toggleEditor(): void {
         </button>
       </div>
 
+      <div class="mode-card">
+        <span class="mode-label">OpenCLI 运行状态</span>
+        <strong>{{ openCliHealth?.healthy ? "正常" : "待检测 / 异常" }}</strong>
+        <span class="mode-label">Profile：{{ openCliSelectedProfile || openCliHealth?.selectedProfile || "未选择" }}</span>
+        <label class="prompt-field">
+          <span>Provider</span>
+          <select v-model="openCliProvider">
+            <option value="chatgpt">chatgpt</option>
+            <option value="gemini">gemini</option>
+            <option value="claude">claude</option>
+            <option value="grok">grok</option>
+            <option value="doubao">doubao</option>
+            <option value="yuanbao">yuanbao</option>
+          </select>
+        </label>
+        <div class="quick-actions">
+          <button class="draft-trigger-btn" :disabled="busy || openCliRepairing" @click="refreshOpenCliHealth">重新检测</button>
+          <button class="draft-trigger-btn" :disabled="busy || openCliRepairing" @click="repairOpenCli">
+            {{ openCliRepairing ? "修复中..." : "一键修复" }}
+          </button>
+          <button class="draft-trigger-btn" :disabled="busy" @click="openProviderLoginPage">打开模型登录页</button>
+          <button class="draft-trigger-btn" :disabled="busy || openCliTesting" @click="testOpenCliProvider">
+            {{ openCliTesting ? "测试中..." : "测试连接" }}
+          </button>
+        </div>
+        <small v-if="openCliTestMessage">{{ openCliTestMessage }}</small>
+      </div>
+
       <label class="prompt-field">
         <span>个性化提示词</span>
         <textarea v-model="generationUserPrompt" rows="6" placeholder="可输入场景提示词，如：改成小红书风格，语气更口语化。" />
@@ -237,8 +380,6 @@ function toggleEditor(): void {
         :draft="draft"
         :saving="savingDraft"
         :replacing-image-block-id="replacingImageBlockId"
-        
-        
         @change="handleDraftChange"
         @save="saveDraftEdits"
         @replace-image="replaceDraftImage"
@@ -271,15 +412,15 @@ function toggleEditor(): void {
 .back-btn,.draft-trigger-btn,.export-btn,.editor-toggle-btn { min-height: 44px; border-radius: 12px; border: 1px solid rgba(140,173,247,.14); font-size: 14px; font-weight: 600; cursor: pointer; }
 .back-btn,.draft-trigger-btn { background: rgba(255,255,255,.03); color: #eaf3ff; }
 .export-btn,.editor-toggle-btn { background: linear-gradient(135deg, #79f0d5, #47b9ff); color: #08111f; }
-.export-btn:disabled,.editor-toggle-btn:disabled { opacity: .56; cursor: not-allowed; }
+.export-btn:disabled,.editor-toggle-btn:disabled,.draft-trigger-btn:disabled { opacity: .56; cursor: not-allowed; }
 .import-card,.mode-card,.error-card { padding: 14px; border-radius: 14px; border: 1px solid rgba(140,173,247,.14); background: rgba(255,255,255,.03); display: grid; gap: 10px; }
 .mode-label { font-size: 12px; color: #92abd1; }
 .quick-actions { display: grid; gap: 10px; }
 .prompt-field { display: grid; gap: 8px; }
 .prompt-field span { font-size: 12px; color: #9db4d8; }
 .prompt-field textarea { width: 100%; border: 1px solid rgba(149,181,255,.16); border-radius: 12px; background: rgba(255,255,255,.03); color: #edf5ff; padding: 10px 12px; resize: vertical; }
+.prompt-field select { width: 100%; min-height: 44px; border: 1px solid rgba(149,181,255,.16); border-radius: 12px; background: rgba(255,255,255,.03); color: #edf5ff; padding: 0 12px; }
 .preview-column,.editor-column { min-height: 0; overflow: hidden; }
 .error-card { color: #ffd9d9; border-color: rgba(255,106,106,.22); background: rgba(255,106,106,.08); }
 @media (max-width: 1180px) { .video-page { grid-template-columns: 1fr; } }
 </style>
-

@@ -51,7 +51,6 @@ type HardwareSignals = {
   boardSerial: string;
   biosSerial: string;
   cpuId: string;
-  systemDiskSerial: string;
   primaryMac: string;
   hostname: string;
 };
@@ -153,16 +152,12 @@ function getWindowsHardwareSignals(): Partial<HardwareSignals> {
   const cpuId = runWindowsSignalCommand(
     "powershell -NoProfile -Command \"(Get-CimInstance Win32_Processor).ProcessorId\""
   );
-  const systemDiskSerial = runWindowsSignalCommand(
-    "powershell -NoProfile -Command \"(Get-CimInstance Win32_LogicalDisk -Filter \\\"DeviceID='C:'\\\" | Select-Object -First 1).VolumeSerialNumber\""
-  );
 
   return {
     machineGuid,
     boardSerial,
     biosSerial,
-    cpuId,
-    systemDiskSerial
+    cpuId
   };
 }
 
@@ -175,7 +170,6 @@ function collectHardwareSignals(): HardwareSignals {
     boardSerial: normalizeSignal(winSignals.boardSerial ?? ""),
     biosSerial: normalizeSignal(winSignals.biosSerial ?? ""),
     cpuId: normalizeSignal(winSignals.cpuId ?? ""),
-    systemDiskSerial: normalizeSignal(winSignals.systemDiskSerial ?? ""),
     primaryMac: normalizeSignal(mac),
     hostname: normalizeSignal(os.hostname())
   };
@@ -186,8 +180,7 @@ function buildMachineIdFromSignals(signals: HardwareSignals): string {
     signals.machineGuid,
     signals.boardSerial,
     signals.biosSerial,
-    signals.cpuId,
-    signals.systemDiskSerial
+    signals.cpuId
   ].filter(Boolean);
 
   const fallbackParts = [signals.primaryMac, signals.hostname].filter(Boolean);
@@ -205,7 +198,6 @@ function matchScore(a: HardwareSignals, b: HardwareSignals): number {
     ["boardSerial", 3],
     ["biosSerial", 3],
     ["cpuId", 3],
-    ["systemDiskSerial", 3],
     ["primaryMac", 1],
     ["hostname", 1]
   ];
@@ -227,7 +219,6 @@ function getMatchedFields(a: HardwareSignals, b: HardwareSignals): Array<keyof H
     "boardSerial",
     "biosSerial",
     "cpuId",
-    "systemDiskSerial",
     "primaryMac",
     "hostname"
   ];
@@ -266,6 +257,18 @@ export function getPrimaryMacAddress(): string {
 }
 
 export function getMachineId(): string {
+  // Fast path: avoid expensive hardware probing on every startup.
+  // If machine id and snapshot both exist, trust persisted id for runtime speed.
+  const persisted = readPersistedMachineId();
+  const existingSnapshot = readSnapshot();
+  if (persisted && existingSnapshot && existingSnapshot.machineId === persisted) {
+    logFingerprintDebug("machine-id-decision", {
+      decision: "fast_path_use_persisted_machine_id",
+      machineId: maskSignal(persisted)
+    });
+    return persisted;
+  }
+
   const currentSignals = collectHardwareSignals();
   const currentComputedMachineId = buildMachineIdFromSignals(currentSignals);
 
@@ -274,12 +277,11 @@ export function getMachineId(): string {
     boardSerial: maskSignal(currentSignals.boardSerial),
     biosSerial: maskSignal(currentSignals.biosSerial),
     cpuId: maskSignal(currentSignals.cpuId),
-    systemDiskSerial: maskSignal(currentSignals.systemDiskSerial),
     primaryMac: maskSignal(currentSignals.primaryMac),
     hostname: currentSignals.hostname
   });
 
-  const snapshot = readSnapshot();
+  const snapshot = existingSnapshot;
   if (snapshot) {
     const score = matchScore(snapshot.signals, currentSignals);
     const threshold = 8;

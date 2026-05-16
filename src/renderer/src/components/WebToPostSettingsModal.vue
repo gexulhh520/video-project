@@ -19,7 +19,13 @@ const form = ref<WebToPostSettings>({
   bbBrowserCommand: "npx",
   bbBrowserArgs: "-y -p bb-browser bb-browser",
   bbBrowserMcpCommand: "npx",
-  bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp"
+  bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp",
+  runtime: "opencli",
+  openCliCommand: "opencli",
+  openCliProfile: "",
+  openCliProvider: "chatgpt",
+  openCliPollIntervalMs: 3000,
+  openCliTimeoutMs: 180000
 });
 
 watch(
@@ -31,7 +37,13 @@ watch(
       bbBrowserCommand: settings?.bbBrowserCommand ?? "npx",
       bbBrowserArgs: settings?.bbBrowserArgs ?? "-y -p bb-browser bb-browser",
       bbBrowserMcpCommand: settings?.bbBrowserMcpCommand ?? "npx",
-      bbBrowserMcpArgs: settings?.bbBrowserMcpArgs ?? "-y -p bb-browser bb-browser-mcp"
+      bbBrowserMcpArgs: settings?.bbBrowserMcpArgs ?? "-y -p bb-browser bb-browser-mcp",
+      runtime: settings?.runtime ?? "opencli",
+      openCliCommand: settings?.openCliCommand ?? "opencli",
+      openCliProfile: settings?.openCliProfile ?? "",
+      openCliProvider: settings?.openCliProvider ?? "chatgpt",
+      openCliPollIntervalMs: settings?.openCliPollIntervalMs ?? 3000,
+      openCliTimeoutMs: settings?.openCliTimeoutMs ?? 180000
     };
   },
   { immediate: true }
@@ -44,8 +56,22 @@ function handleSave(): void {
     bbBrowserCommand: form.value.bbBrowserCommand.trim() || "npx",
     bbBrowserArgs: form.value.bbBrowserArgs.trim() || "-y -p bb-browser bb-browser",
     bbBrowserMcpCommand: form.value.bbBrowserMcpCommand.trim() || "npx",
-    bbBrowserMcpArgs: form.value.bbBrowserMcpArgs.trim() || "-y -p bb-browser bb-browser-mcp"
+    bbBrowserMcpArgs: form.value.bbBrowserMcpArgs.trim() || "-y -p bb-browser bb-browser-mcp",
+    runtime: form.value.runtime ?? "opencli",
+    openCliCommand: form.value.openCliCommand?.trim() || "opencli",
+    openCliProfile: form.value.openCliProfile?.trim() || "",
+    openCliProvider: form.value.openCliProvider ?? "chatgpt",
+    openCliPollIntervalMs: normalizePositiveNumber(form.value.openCliPollIntervalMs, 3000),
+    openCliTimeoutMs: normalizePositiveNumber(form.value.openCliTimeoutMs, 180000)
   });
+}
+
+function normalizePositiveNumber(value: number | undefined, fallback: number): number {
+  if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(value);
 }
 </script>
 
@@ -62,38 +88,80 @@ function handleSave(): void {
 
       <div class="content">
         <label class="field">
-          <span>bb-browser 启动命令</span>
-          <input v-model="form.bbBrowserCommand" type="text" placeholder="例如 npx" />
+          <span>运行时</span>
+          <select v-model="form.runtime">
+            <option value="opencli">opencli（推荐）</option>
+            <option value="bb-browser">bb-browser（兼容）</option>
+          </select>
         </label>
 
-        <label class="field">
-          <span>bb-browser 启动参数</span>
-          <input v-model="form.bbBrowserArgs" type="text" placeholder="-y -p bb-browser bb-browser" />
-          <small>默认通过 `npx -y -p bb-browser bb-browser ...` 执行健康检测、reset 和抓取命令，不再假设系统全局安装了 bb-browser。</small>
-        </label>
+        <template v-if="form.runtime === 'opencli'">
+          <label class="field">
+            <span>OpenCLI 命令</span>
+            <input v-model="form.openCliCommand" type="text" placeholder="opencli" />
+          </label>
 
-        <label class="field">
-          <span>bb-browser MCP 命令</span>
-          <input v-model="form.bbBrowserMcpCommand" type="text" placeholder="例如 npx" />
-        </label>
+          <label class="field">
+            <span>OpenCLI Profile（可留空，进入工具页后自动检测）</span>
+            <input v-model="form.openCliProfile" type="text" placeholder="例如 8qatyy5j" />
+          </label>
 
-        <label class="field">
-          <span>bb-browser MCP 参数</span>
-          <input v-model="form.bbBrowserMcpArgs" type="text" placeholder="-y -p bb-browser bb-browser-mcp" />
-          <small>这组配置先保留备用。当前网页抓取链路已经回退到稳定的 bb-browser CLI 调用，健康检测、打开页面、抓标题、快照和抓图都走 CLI。</small>
-        </label>
+          <label class="field">
+            <span>OpenCLI Provider</span>
+            <select v-model="form.openCliProvider">
+              <option value="chatgpt">chatgpt</option>
+              <option value="gemini">gemini</option>
+              <option value="claude">claude</option>
+              <option value="grok">grok</option>
+              <option value="doubao">doubao</option>
+              <option value="yuanbao">yuanbao</option>
+            </select>
+          </label>
 
-        <label class="field">
-          <span>LLM Key</span>
-          <input v-model="form.llmApiKey" type="password" placeholder="填写 LLM_API_KEY" />
-        </label>
+          <label class="field">
+            <span>轮询间隔（毫秒）</span>
+            <input v-model.number="form.openCliPollIntervalMs" type="number" min="1000" step="500" />
+          </label>
 
-        <label class="field">
-          <span>LLM 模型</span>
-          <input v-model="form.llmModel" type="text" placeholder="deepseek-v4-flash" />
-        </label>
+          <label class="field">
+            <span>超时（毫秒）</span>
+            <input v-model.number="form.openCliTimeoutMs" type="number" min="30000" step="1000" />
+          </label>
+        </template>
 
-        <p class="hint">这些配置会保存到当前工作空间下的 `config/web-to-post.json`。</p>
+        <template v-else>
+          <label class="field">
+            <span>bb-browser 启动命令</span>
+            <input v-model="form.bbBrowserCommand" type="text" placeholder="例如 npx" />
+          </label>
+
+          <label class="field">
+            <span>bb-browser 启动参数</span>
+            <input v-model="form.bbBrowserArgs" type="text" placeholder="-y -p bb-browser bb-browser" />
+          </label>
+
+          <label class="field">
+            <span>bb-browser MCP 命令</span>
+            <input v-model="form.bbBrowserMcpCommand" type="text" placeholder="例如 npx" />
+          </label>
+
+          <label class="field">
+            <span>bb-browser MCP 参数</span>
+            <input v-model="form.bbBrowserMcpArgs" type="text" placeholder="-y -p bb-browser bb-browser-mcp" />
+          </label>
+
+          <label class="field">
+            <span>LLM Key</span>
+            <input v-model="form.llmApiKey" type="password" placeholder="填写 LLM_API_KEY" />
+          </label>
+
+          <label class="field">
+            <span>LLM 模型</span>
+            <input v-model="form.llmModel" type="text" placeholder="deepseek-v4-flash" />
+          </label>
+        </template>
+
+        <p class="hint">配置会保存到当前工作空间下的 `config/web-to-post.json`。</p>
 
         <div class="actions">
           <button class="primary-btn" :disabled="saving" @click="handleSave">
@@ -163,7 +231,8 @@ function handleSave(): void {
   font-size: 12px;
 }
 
-.field input {
+.field input,
+.field select {
   width: 100%;
   min-height: 46px;
   padding: 0 14px;
@@ -173,7 +242,6 @@ function handleSave(): void {
   color: #edf5ff;
 }
 
-.field small,
 .hint {
   color: #9db4d8;
   line-height: 1.7;
@@ -209,3 +277,4 @@ function handleSave(): void {
   justify-content: flex-end;
 }
 </style>
+

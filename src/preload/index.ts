@@ -80,6 +80,12 @@ const desktopApi: DesktopApi = {
   saveWebToPostSettings: async (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     ipcRenderer.invoke("web-to-post-settings:save", settings),
   getWebToPostConfigStatus: async (): Promise<WebToPostConfigStatus> => ipcRenderer.invoke("web-to-post-settings:status"),
+  checkOpenCliHealth: async () => ipcRenderer.invoke("opencli:health:check"),
+  repairOpenCliRuntime: async () => ipcRenderer.invoke("opencli:health:repair"),
+  openOpenCliProviderLoginPage: async (provider, profile) =>
+    ipcRenderer.invoke("opencli:provider:open-login", provider, profile),
+  testOpenCliProvider: async (provider, profile) =>
+    ipcRenderer.invoke("opencli:provider:test", provider, profile),
   replaceDraftImage: async (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     ipcRenderer.invoke("draft:replace-image", draftId, blockId, sourceImagePath),
   previewDraftFrame: async (draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> =>

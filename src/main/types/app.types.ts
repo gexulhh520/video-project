@@ -144,6 +144,10 @@ export type ArticleRewriteSettings = {
   llmModel: string;
 };
 
+export type WebToPostRuntime = "bb-browser" | "opencli";
+
+export type OpenCliProvider = "chatgpt" | "gemini" | "claude" | "grok" | "doubao" | "yuanbao";
+
 export type WebToPostSettings = {
   llmApiKey: string;
   llmModel: string;
@@ -151,6 +155,12 @@ export type WebToPostSettings = {
   bbBrowserArgs: string;
   bbBrowserMcpCommand: string;
   bbBrowserMcpArgs: string;
+  runtime?: WebToPostRuntime;
+  openCliCommand?: string;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
+  openCliPollIntervalMs?: number;
+  openCliTimeoutMs?: number;
 };
 
 export type VideoToPostConfigStatus = {
@@ -166,6 +176,11 @@ export type WebToPostConfigStatus = {
   hasLlmApiKey: boolean;
   hasBbBrowserCommand: boolean;
   resolvedLlmModel: string;
+  runtime?: WebToPostRuntime;
+  hasOpenCliCommand?: boolean;
+  hasOpenCliProfile?: boolean;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
   missingItems: string[];
 };
 
@@ -200,6 +215,29 @@ export type BrowserRuntimeHealthStatus = {
   daemonRunning: boolean;
   cdpConnected: boolean;
   checkedAt: string;
+  message: string;
+  rawOutput?: string;
+};
+
+export type OpenCliProfileStatus = {
+  id: string;
+  status: "connected" | "disconnected" | "unknown";
+  version?: string;
+};
+
+export type OpenCliRuntimeHealthStatus = {
+  healthy: boolean;
+  checkedAt: string;
+  message: string;
+  rawOutput?: string;
+  profiles: OpenCliProfileStatus[];
+  selectedProfile?: string;
+};
+
+export type OpenCliProviderStatus = {
+  provider: OpenCliProvider;
+  profile?: string;
+  ready: boolean;
   message: string;
   rawOutput?: string;
 };
@@ -382,6 +420,10 @@ export type DesktopApi = {
   getWebToPostSettings: () => Promise<WebToPostSettings>;
   saveWebToPostSettings: (settings: WebToPostSettings) => Promise<WebToPostSettings>;
   getWebToPostConfigStatus: () => Promise<WebToPostConfigStatus>;
+  checkOpenCliHealth: () => Promise<OpenCliRuntimeHealthStatus>;
+  repairOpenCliRuntime: () => Promise<OpenCliRuntimeHealthStatus>;
+  openOpenCliProviderLoginPage: (provider: OpenCliProvider, profile?: string) => Promise<void>;
+  testOpenCliProvider: (provider: OpenCliProvider, profile?: string) => Promise<OpenCliProviderStatus>;
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string) => Promise<PostDraft>;
   previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions) => Promise<FramePreviewResult>;
   replaceDraftImageFromFrame: (draftId: string, blockId: string, options: ReplaceFrameAssetOptions) => Promise<PostDraft>;

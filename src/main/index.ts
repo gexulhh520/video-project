@@ -14,6 +14,12 @@ import { BrowserRuntimeService } from "./services/browser-runtime.service";
 import { BbBrowserService } from "./services/bb-browser.service";
 import { WebTaskService } from "./services/web-task.service";
 import { ArticleRewriteService } from "./services/article-rewrite.service";
+import { OpenCliCommandRunner } from "./services/opencli/opencli-command-runner";
+import { OpenCliRuntimeService } from "./services/opencli/opencli-runtime.service";
+import { OpenCliBrowserService } from "./services/opencli/opencli-browser.service";
+import { OpenCliWebLlmService } from "./services/opencli/opencli-web-llm.service";
+import { OpenCliImageDownloader } from "./services/opencli/opencli-image-downloader";
+import { OpenCliWebTaskService } from "./services/opencli/opencli-web-task.service";
 
 dotenv.config();
 
@@ -49,8 +55,30 @@ function createWindow(): void {
   const browserRuntimeService = new BrowserRuntimeService(settingsService);
   const bbBrowserService = new BbBrowserService(settingsService);
   const webTaskService = new WebTaskService(settingsService, llmService, browserRuntimeService, bbBrowserService);
+  const openCliCommandRunner = new OpenCliCommandRunner();
+  const openCliRuntimeService = new OpenCliRuntimeService(openCliCommandRunner, settingsService);
+  const openCliBrowserService = new OpenCliBrowserService(openCliCommandRunner);
+  const openCliWebLlmService = new OpenCliWebLlmService(openCliCommandRunner);
+  const openCliImageDownloader = new OpenCliImageDownloader();
+  const openCliWebTaskService = new OpenCliWebTaskService(
+    settingsService,
+    openCliRuntimeService,
+    openCliBrowserService,
+    openCliWebLlmService,
+    openCliImageDownloader
+  );
   const articleRewriteService = new ArticleRewriteService(settingsService, llmService);
-  registerIpcHandlers(mainWindow, postService, settingsService, webTaskService, imageEditService, articleRewriteService);
+  registerIpcHandlers(
+    mainWindow,
+    postService,
+    settingsService,
+    webTaskService,
+    openCliWebTaskService,
+    openCliRuntimeService,
+    openCliWebLlmService,
+    imageEditService,
+    articleRewriteService
+  );
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);

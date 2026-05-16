@@ -2,6 +2,9 @@ import { BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type {
+  OpenCliProvider,
+  OpenCliProviderStatus,
+  OpenCliRuntimeHealthStatus,
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
@@ -30,6 +33,9 @@ import type {
 import { PostService } from "./services/post.service";
 import { SettingsService } from "./services/settings.service";
 import { WebTaskService } from "./services/web-task.service";
+import { OpenCliWebTaskService } from "./services/opencli/opencli-web-task.service";
+import { OpenCliRuntimeService } from "./services/opencli/opencli-runtime.service";
+import { OpenCliWebLlmService } from "./services/opencli/opencli-web-llm.service";
 import { ImageEditService } from "./services/image-edit.service";
 import { LicenseService } from "./services/license.service";
 import { ArticleRewriteService } from "./services/article-rewrite.service";
@@ -42,10 +48,17 @@ export function registerIpcHandlers(
   postService: PostService,
   settingsService: SettingsService,
   webTaskService: WebTaskService,
+  openCliWebTaskService: OpenCliWebTaskService,
+  openCliRuntimeService: OpenCliRuntimeService,
+  openCliWebLlmService: OpenCliWebLlmService,
   imageEditService: ImageEditService,
   articleRewriteService: ArticleRewriteService
 ): void {
   const licenseService = new LicenseService();
+  const getActiveWebTaskService = async (): Promise<WebTaskService | OpenCliWebTaskService> => {
+    const settings = await settingsService.getWebToPostSettings();
+    return settings.runtime === "bb-browser" ? webTaskService : openCliWebTaskService;
+  };
 
   ipcMain.handle("license:get-machine-id", async () => licenseService.getMachineId());
   ipcMain.handle("license:check", async () => licenseService.checkLocalLicense());
@@ -126,6 +139,23 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("web-to-post-settings:status", async (): Promise<WebToPostConfigStatus> =>
     settingsService.getWebToPostConfigStatus()
+  );
+  ipcMain.handle("opencli:health:check", async (): Promise<OpenCliRuntimeHealthStatus> =>
+    openCliRuntimeService.checkHealth()
+  );
+  ipcMain.handle("opencli:health:repair", async (): Promise<OpenCliRuntimeHealthStatus> =>
+    openCliRuntimeService.repair()
+  );
+  ipcMain.handle("opencli:provider:open-login", async (_event, provider: OpenCliProvider, profile?: string): Promise<void> => {
+    const selectedProfile = await openCliRuntimeService.resolveActiveProfile(profile);
+    await openCliWebLlmService.openProviderLoginPage(provider, selectedProfile);
+  });
+  ipcMain.handle(
+    "opencli:provider:test",
+    async (_event, provider: OpenCliProvider, profile?: string): Promise<OpenCliProviderStatus> => {
+      const selectedProfile = await openCliRuntimeService.resolveActiveProfile(profile);
+      return openCliWebLlmService.testProvider(provider, selectedProfile);
+    }
   );
 
   ipcMain.handle("post:generate", async (_event, videoPath: string, options: GeneratePostOptions): Promise<PostDraft> => {
@@ -235,35 +265,55 @@ export function registerIpcHandlers(
   ipcMain.handle("article-draft:rewrite-iterative", async (_event, options: RewriteDraftIterativeOptions) =>
     articleRewriteService.rewriteDraftIterative(options)
   );
-  ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => webTaskService.listTasks());
-  ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => webTaskService.getTaskById(taskId));
-  ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => webTaskService.createTask(title));
+  ipcMain.handle("web-task:list", async (): Promise<WebTaskSummary[]> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.listTasks();
+  });
+  ipcMain.handle("web-task:get", async (_event, taskId: string): Promise<WebCrawlTask> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.getTaskById(taskId);
+  });
+  ipcMain.handle("web-task:create", async (_event, title?: string): Promise<WebCrawlTask> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.createTask(title);
+  });
   ipcMain.handle("web-task:start-crawl", async (_event, taskId: string, options: WebCrawlStartOptions): Promise<WebCrawlTask> => {
     const sendProgress = (progress: WebTaskProgress): void => {
       mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
     };
 
-    return webTaskService.startCrawl(taskId, options, sendProgress);
+    const activeService = await getActiveWebTaskService();
+    return activeService.startCrawl(taskId, options, sendProgress);
   });
-  ipcMain.handle("web-task:save-record-body", async (_event, taskId: string, options: ConfirmWebRecordBodyOptions): Promise<WebCrawlTask> =>
-    webTaskService.saveRecordBody(taskId, options)
+  ipcMain.handle(
+    "web-task:save-record-body",
+    async (_event, taskId: string, options: ConfirmWebRecordBodyOptions): Promise<WebCrawlTask> => {
+      const activeService = await getActiveWebTaskService();
+      return activeService.saveRecordBody(taskId, options);
+    }
   );
-  ipcMain.handle("web-task:retry-record-extract", async (_event, taskId: string, options: { recordId: string; prompt: string }): Promise<WebCrawlTask> =>
-    webTaskService.retryRecordExtract(taskId, options)
+  ipcMain.handle(
+    "web-task:retry-record-extract",
+    async (_event, taskId: string, options: { recordId: string; prompt: string }): Promise<WebCrawlTask> => {
+      const activeService = await getActiveWebTaskService();
+      return activeService.retryRecordExtract(taskId, options);
+    }
   );
   ipcMain.handle("web-task:collect-images", async (_event, taskId: string, recordId: string): Promise<WebCrawlTask> => {
     const sendProgress = (progress: WebTaskProgress): void => {
       mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
     };
 
-    return webTaskService.collectRecordImages(taskId, recordId, sendProgress);
+    const activeService = await getActiveWebTaskService();
+    return activeService.collectRecordImages(taskId, recordId, sendProgress);
   });
   ipcMain.handle("web-task:rewrite", async (_event, taskId: string, options: RewriteWebTaskOptions): Promise<WebCrawlTask> => {
     const sendProgress = (progress: WebTaskProgress): void => {
       mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
     };
 
-    return webTaskService.rewriteTask(taskId, options, sendProgress);
+    const activeService = await getActiveWebTaskService();
+    return activeService.rewriteTask(taskId, options, sendProgress);
   });
   ipcMain.handle(
     "web-task:rewrite-iterative",
@@ -272,24 +322,36 @@ export function registerIpcHandlers(
         mainWindow.webContents.send(WEB_TASK_PROGRESS_CHANNEL, progress);
       };
 
-      return webTaskService.rewriteTaskIterative(taskId, options, sendProgress);
+      const activeService = await getActiveWebTaskService();
+      return activeService.rewriteTaskIterative(taskId, options, sendProgress);
     }
   );
-  ipcMain.handle("web-task:save-rewrite-result", async (_event, taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> =>
-    webTaskService.saveRewriteResult(taskId, options)
+  ipcMain.handle(
+    "web-task:save-rewrite-result",
+    async (_event, taskId: string, options: SaveWebRewriteResultOptions): Promise<WebCrawlTask> => {
+      const activeService = await getActiveWebTaskService();
+      return activeService.saveRewriteResult(taskId, options);
+    }
   );
-  ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> =>
-    webTaskService.toggleImageSelection(taskId, assetId, selected)
-  );
-  ipcMain.handle("web-task:delete-record", async (_event, taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> =>
-    webTaskService.deleteRecord(taskId, options.recordId)
-  );
-  ipcMain.handle("web-task:delete-task", async (_event, taskId: string): Promise<void> => webTaskService.deleteTask(taskId));
-  ipcMain.handle("web-task:rename-task", async (_event, taskId: string, title: string): Promise<WebCrawlTask> =>
-    webTaskService.renameTask(taskId, title)
-  );
+  ipcMain.handle("web-task:toggle-image", async (_event, taskId: string, assetId: string, selected: boolean): Promise<WebCrawlTask> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.toggleImageSelection(taskId, assetId, selected);
+  });
+  ipcMain.handle("web-task:delete-record", async (_event, taskId: string, options: DeleteWebRecordOptions): Promise<WebCrawlTask> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.deleteRecord(taskId, options.recordId);
+  });
+  ipcMain.handle("web-task:delete-task", async (_event, taskId: string): Promise<void> => {
+    const activeService = await getActiveWebTaskService();
+    await activeService.deleteTask(taskId);
+  });
+  ipcMain.handle("web-task:rename-task", async (_event, taskId: string, title: string): Promise<WebCrawlTask> => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.renameTask(taskId, title);
+  });
   ipcMain.handle("web-task:export-word", async (_event, taskId: string) => {
-    const task = await webTaskService.getTaskById(taskId);
+    const activeService = await getActiveWebTaskService();
+    const task = await activeService.getTaskById(taskId);
     const defaultFileName = `${sanitizeFileName(task.rewriteResult?.title || task.title || "网页原创草稿")}.docx`;
     const result = await dialog.showSaveDialog(mainWindow, {
       title: "导出 Word 文档",
@@ -306,11 +368,12 @@ export function registerIpcHandlers(
       return null;
     }
 
-    return webTaskService.exportTaskToWord(taskId, result.filePath);
+    return activeService.exportTaskToWord(taskId, result.filePath);
   });
-  ipcMain.handle("web-task:auto-export-bundle", async (_event, taskId: string) =>
-    webTaskService.autoExportTaskBundle(taskId)
-  );
+  ipcMain.handle("web-task:auto-export-bundle", async (_event, taskId: string) => {
+    const activeService = await getActiveWebTaskService();
+    return activeService.autoExportTaskBundle(taskId);
+  });
   ipcMain.handle("draft:preview-frame", async (_event, draftId: string, options: ReplaceFrameAssetOptions) =>
     postService.previewDraftFrame(draftId, options)
   );

@@ -1,4 +1,7 @@
 import type {
+  OpenCliProvider,
+  OpenCliProviderStatus,
+  OpenCliRuntimeHealthStatus,
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
@@ -76,6 +79,12 @@ export const desktopApi = {
   saveWebToPostSettings: (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     window.desktopApi.saveWebToPostSettings(toPlainObject(settings)),
   getWebToPostConfigStatus: (): Promise<WebToPostConfigStatus> => window.desktopApi.getWebToPostConfigStatus(),
+  checkOpenCliHealth: (): Promise<OpenCliRuntimeHealthStatus> => window.desktopApi.checkOpenCliHealth(),
+  repairOpenCliRuntime: (): Promise<OpenCliRuntimeHealthStatus> => window.desktopApi.repairOpenCliRuntime(),
+  openOpenCliProviderLoginPage: (provider: OpenCliProvider, profile?: string): Promise<void> =>
+    window.desktopApi.openOpenCliProviderLoginPage(provider, profile),
+  testOpenCliProvider: (provider: OpenCliProvider, profile?: string): Promise<OpenCliProviderStatus> =>
+    window.desktopApi.testOpenCliProvider(provider, profile),
   replaceDraftImage: (draftId: string, blockId: string, sourceImagePath: string): Promise<PostDraft> =>
     window.desktopApi.replaceDraftImage(draftId, blockId, sourceImagePath),
   previewDraftFrame: (draftId: string, options: ReplaceFrameAssetOptions): Promise<FramePreviewResult> =>

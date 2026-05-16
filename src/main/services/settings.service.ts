@@ -3,10 +3,12 @@ import { constants } from "node:fs";
 import { join, resolve } from "node:path";
 import { app } from "electron";
 import type {
+  OpenCliProvider,
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
   GlobalRuntimeSettings,
+  WebToPostRuntime,
   VideoToPostConfigStatus,
   VideoToPostSettings,
   WebToPostConfigStatus,
@@ -30,7 +32,13 @@ const DEFAULT_WEB_TO_POST_SETTINGS: WebToPostSettings = {
   bbBrowserCommand: "npx",
   bbBrowserArgs: "-y -p bb-browser bb-browser",
   bbBrowserMcpCommand: "npx",
-  bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp"
+  bbBrowserMcpArgs: "-y -p bb-browser bb-browser-mcp",
+  runtime: "opencli",
+  openCliCommand: "opencli",
+  openCliProfile: "",
+  openCliProvider: "chatgpt",
+  openCliPollIntervalMs: 3000,
+  openCliTimeoutMs: 180000
 };
 
 const DEFAULT_ARTICLE_REWRITE_SETTINGS: ArticleRewriteSettings = {
@@ -143,7 +151,13 @@ export class SettingsService {
         bbBrowserCommand: stored.bbBrowserCommand?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserCommand,
         bbBrowserArgs: stored.bbBrowserArgs?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserArgs,
         bbBrowserMcpCommand: stored.bbBrowserMcpCommand?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpCommand,
-        bbBrowserMcpArgs: stored.bbBrowserMcpArgs?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpArgs
+        bbBrowserMcpArgs: stored.bbBrowserMcpArgs?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpArgs,
+        runtime: stored.runtime,
+        openCliCommand: stored.openCliCommand,
+        openCliProfile: stored.openCliProfile,
+        openCliProvider: stored.openCliProvider,
+        openCliPollIntervalMs: stored.openCliPollIntervalMs,
+        openCliTimeoutMs: stored.openCliTimeoutMs
       });
     } catch {
       return { ...DEFAULT_WEB_TO_POST_SETTINGS };
@@ -161,7 +175,13 @@ export class SettingsService {
       bbBrowserCommand: settings.bbBrowserCommand.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserCommand,
       bbBrowserArgs: settings.bbBrowserArgs.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserArgs,
       bbBrowserMcpCommand: settings.bbBrowserMcpCommand.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpCommand,
-      bbBrowserMcpArgs: settings.bbBrowserMcpArgs.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpArgs
+      bbBrowserMcpArgs: settings.bbBrowserMcpArgs.trim() || DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpArgs,
+      runtime: settings.runtime,
+      openCliCommand: settings.openCliCommand,
+      openCliProfile: settings.openCliProfile,
+      openCliProvider: settings.openCliProvider,
+      openCliPollIntervalMs: settings.openCliPollIntervalMs,
+      openCliTimeoutMs: settings.openCliTimeoutMs
     });
 
     await writeFile(configPath, JSON.stringify(normalizedSettings, null, 2), "utf8");
@@ -170,24 +190,37 @@ export class SettingsService {
 
   async getWebToPostConfigStatus(): Promise<WebToPostConfigStatus> {
     const toolSettings = await this.getWebToPostSettings();
+    const runtime = toolSettings.runtime ?? "opencli";
     const hasLlmApiKey = Boolean(toolSettings.llmApiKey || process.env.LLM_API_KEY);
     const hasBbBrowserCommand = Boolean(toolSettings.bbBrowserCommand.trim());
     const hasBbBrowserArgs = Boolean(toolSettings.bbBrowserArgs.trim());
     const hasBbBrowserMcpCommand = Boolean(toolSettings.bbBrowserMcpCommand.trim());
     const hasBbBrowserMcpArgs = Boolean(toolSettings.bbBrowserMcpArgs.trim());
+    const hasOpenCliCommand = Boolean(toolSettings.openCliCommand?.trim());
+    const hasOpenCliProfile = Boolean(toolSettings.openCliProfile?.trim());
     const resolvedLlmModel = toolSettings.llmModel || process.env.LLM_MODEL || DEFAULT_WEB_TO_POST_SETTINGS.llmModel;
     const missingItems: string[] = [];
 
-    if (!hasLlmApiKey) {
-      missingItems.push("LLM Key");
-    }
+    if (runtime === "opencli") {
+      if (!hasOpenCliCommand) {
+        missingItems.push("OpenCLI 命令");
+      }
 
-    if (!hasBbBrowserCommand || !hasBbBrowserArgs) {
-      missingItems.push("bb-browser CLI 命令");
-    }
+      if (!hasOpenCliProfile) {
+        missingItems.push("OpenCLI Profile");
+      }
+    } else {
+      if (!hasLlmApiKey) {
+        missingItems.push("LLM Key");
+      }
 
-    if (!hasBbBrowserMcpCommand || !hasBbBrowserMcpArgs) {
-      missingItems.push("bb-browser MCP 命令");
+      if (!hasBbBrowserCommand || !hasBbBrowserArgs) {
+        missingItems.push("bb-browser CLI 命令");
+      }
+
+      if (!hasBbBrowserMcpCommand || !hasBbBrowserMcpArgs) {
+        missingItems.push("bb-browser MCP 命令");
+      }
     }
 
     return {
@@ -195,6 +228,11 @@ export class SettingsService {
       hasLlmApiKey,
       hasBbBrowserCommand,
       resolvedLlmModel,
+      runtime,
+      hasOpenCliCommand,
+      hasOpenCliProfile,
+      openCliProfile: toolSettings.openCliProfile,
+      openCliProvider: toolSettings.openCliProvider,
       missingItems
     };
   }
@@ -309,7 +347,41 @@ export class SettingsService {
       normalized.bbBrowserMcpArgs = DEFAULT_WEB_TO_POST_SETTINGS.bbBrowserMcpArgs;
     }
 
+    normalized.runtime = this.normalizeWebRuntime(normalized.runtime);
+    normalized.openCliProvider = this.normalizeOpenCliProvider(normalized.openCliProvider);
+    normalized.openCliCommand = normalized.openCliCommand?.trim() || DEFAULT_WEB_TO_POST_SETTINGS.openCliCommand;
+    normalized.openCliProfile = normalized.openCliProfile?.trim() || "";
+    normalized.openCliPollIntervalMs = this.normalizePositiveNumber(
+      normalized.openCliPollIntervalMs,
+      DEFAULT_WEB_TO_POST_SETTINGS.openCliPollIntervalMs as number
+    );
+    normalized.openCliTimeoutMs = this.normalizePositiveNumber(
+      normalized.openCliTimeoutMs,
+      DEFAULT_WEB_TO_POST_SETTINGS.openCliTimeoutMs as number
+    );
+
     return normalized;
+  }
+
+  private normalizeWebRuntime(runtime: WebToPostRuntime | undefined): WebToPostRuntime {
+    return runtime === "bb-browser" ? "bb-browser" : "opencli";
+  }
+
+  private normalizeOpenCliProvider(provider: OpenCliProvider | undefined): OpenCliProvider {
+    const candidates: OpenCliProvider[] = ["chatgpt", "gemini", "claude", "grok", "doubao", "yuanbao"];
+    if (provider && candidates.includes(provider)) {
+      return provider;
+    }
+
+    return DEFAULT_WEB_TO_POST_SETTINGS.openCliProvider as OpenCliProvider;
+  }
+
+  private normalizePositiveNumber(value: number | undefined, fallback: number): number {
+    if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+      return fallback;
+    }
+
+    return Math.floor(value);
   }
 
   private normalizeGlobalRuntimeSettings(settings?: Partial<GlobalRuntimeSettings>): GlobalRuntimeSettings {

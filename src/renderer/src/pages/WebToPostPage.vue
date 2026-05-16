@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type {
   ContentBlock,
+  OpenCliProvider,
+  OpenCliRuntimeHealthStatus,
   PostDraft,
   WebCrawlRecord,
   WebCrawlTask,
@@ -17,6 +19,12 @@ import { desktopApi } from "../api/desktop-api";
 const router = useRouter();
 
 const toolConfigStatus = ref<WebToPostConfigStatus | null>(null);
+const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
+const openCliRepairing = ref(false);
+const openCliTesting = ref(false);
+const openCliSelectedProfile = ref("");
+const openCliProvider = ref<OpenCliProvider>("chatgpt");
+const openCliTestMessage = ref("");
 const taskList = ref<WebTaskSummary[]>([]);
 const activeTask = ref<WebCrawlTask | null>(null);
 const taskLoading = ref(false);
@@ -180,6 +188,14 @@ const runtimeStatusLabel = computed(() => {
   return "待检测 / 异常";
 });
 
+const openCliRuntimeStatusText = computed(() => {
+  if (!openCliHealth.value) {
+    return "待检测";
+  }
+
+  return openCliHealth.value.healthy ? "正常" : "异常";
+});
+
 watch(
   currentRecord,
   (record) => {
@@ -304,11 +320,99 @@ onBeforeUnmount(() => {
 });
 
 async function bootstrap(): Promise<void> {
-  await Promise.all([loadToolConfigStatus(), refreshTaskList()]);
+  await Promise.all([loadToolConfigStatus(), refreshTaskList(), checkOpenCliHealthOnEnter()]);
 }
 
 async function loadToolConfigStatus(): Promise<void> {
   toolConfigStatus.value = await desktopApi.getWebToPostConfigStatus();
+  if (toolConfigStatus.value?.openCliProvider) {
+    openCliProvider.value = toolConfigStatus.value.openCliProvider;
+  }
+}
+
+async function checkOpenCliHealthOnEnter(): Promise<void> {
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    openCliTestMessage.value = "";
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+
+    const settings = await desktopApi.getWebToPostSettings();
+    openCliProvider.value = settings.openCliProvider ?? "chatgpt";
+    if (
+      openCliHealth.value.healthy &&
+      openCliHealth.value.selectedProfile &&
+      (settings.runtime !== "opencli" || settings.openCliProfile !== openCliHealth.value.selectedProfile)
+    ) {
+      await desktopApi.saveWebToPostSettings({
+        ...settings,
+        runtime: "opencli",
+        openCliProfile: openCliHealth.value.selectedProfile,
+        openCliProvider: settings.openCliProvider ?? "chatgpt"
+      });
+      await loadToolConfigStatus();
+    }
+  } catch (error) {
+    openCliHealth.value = null;
+    if ((toolConfigStatus.value?.runtime ?? "opencli") === "opencli") {
+      errorMessage.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+    }
+  }
+}
+
+async function refreshOpenCliHealth(): Promise<void> {
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadToolConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+  }
+}
+
+async function repairOpenCli(): Promise<void> {
+  openCliRepairing.value = true;
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.repairOpenCliRuntime();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadToolConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 修复失败";
+  } finally {
+    openCliRepairing.value = false;
+  }
+}
+
+async function openProviderLoginPage(): Promise<void> {
+  try {
+    const profile = openCliSelectedProfile.value.trim() || undefined;
+    await desktopApi.openOpenCliProviderLoginPage(openCliProvider.value, profile);
+    openCliTestMessage.value = "已打开模型登录页，请登录后再点击测试连接。";
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "打开登录页失败";
+  }
+}
+
+async function testOpenCliProvider(): Promise<void> {
+  openCliTesting.value = true;
+  openCliTestMessage.value = "";
+  try {
+    const profile = openCliSelectedProfile.value.trim() || undefined;
+    const result = await desktopApi.testOpenCliProvider(openCliProvider.value, profile);
+    openCliTestMessage.value = result.message;
+    await refreshOpenCliHealth();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI Provider 测试失败";
+  } finally {
+    openCliTesting.value = false;
+  }
 }
 
 async function refreshTaskList(): Promise<void> {
@@ -1116,6 +1220,34 @@ function formatDateTime(value?: string): string {
         <strong class="status-text">{{ progress.message }}</strong>
         <span class="subtle">{{ Math.round(progress.progress) }}%</span>
         <span class="subtle">浏览器环境：{{ runtimeStatusLabel }}</span>
+      </div>
+
+      <div class="panel">
+        <span class="label">OpenCLI 运行状态</span>
+        <span class="subtle">状态：{{ openCliRuntimeStatusText }}</span>
+        <span class="subtle">Profile：{{ openCliSelectedProfile || openCliHealth?.selectedProfile || "未选择" }}</span>
+        <label class="field">
+          <span>Provider</span>
+          <select v-model="openCliProvider">
+            <option value="chatgpt">chatgpt</option>
+            <option value="gemini">gemini</option>
+            <option value="claude">claude</option>
+            <option value="grok">grok</option>
+            <option value="doubao">doubao</option>
+            <option value="yuanbao">yuanbao</option>
+          </select>
+        </label>
+        <div class="stack-actions">
+          <button class="ghost-btn" :disabled="busy || openCliRepairing" @click="refreshOpenCliHealth">重新检测</button>
+          <button class="ghost-btn" :disabled="busy || openCliRepairing" @click="repairOpenCli">
+            {{ openCliRepairing ? "修复中..." : "一键修复" }}
+          </button>
+          <button class="ghost-btn" :disabled="busy" @click="openProviderLoginPage">打开模型登录页</button>
+          <button class="ghost-btn" :disabled="busy || openCliTesting" @click="testOpenCliProvider">
+            {{ openCliTesting ? "测试中..." : "测试连接" }}
+          </button>
+        </div>
+        <small v-if="openCliTestMessage">{{ openCliTestMessage }}</small>
       </div>
 
       <div class="panel">

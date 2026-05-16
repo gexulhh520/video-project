@@ -137,6 +137,12 @@ export type VideoToPostSettings = {
   doubaoAsrApiKey: string;
   llmApiKey: string;
   llmModel: string;
+  runtime?: WebToPostRuntime;
+  openCliCommand?: string;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
+  openCliPollIntervalMs?: number;
+  openCliTimeoutMs?: number;
 };
 
 export type ArticleRewriteSettings = {
@@ -168,6 +174,11 @@ export type VideoToPostConfigStatus = {
   hasDoubaoAsrApiKey: boolean;
   hasLlmApiKey: boolean;
   resolvedLlmModel: string;
+  runtime?: WebToPostRuntime;
+  hasOpenCliCommand?: boolean;
+  hasOpenCliProfile?: boolean;
+  openCliProfile?: string;
+  openCliProvider?: OpenCliProvider;
   missingItems: string[];
 };
 

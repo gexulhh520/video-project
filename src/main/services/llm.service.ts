@@ -1,6 +1,19 @@
 ﻿import axios from "axios";
-import type { ArticleSection, ContentBlock, LlmSectionsResult, PostDraft, RewriteDraftOptions, RewriteDraftResult, TranscriptSegment, WebRewriteResult } from "../types/app.types";
+import type {
+  ArticleSection,
+  ContentBlock,
+  LlmSectionsResult,
+  OpenCliProvider,
+  PostDraft,
+  RewriteDraftOptions,
+  RewriteDraftResult,
+  TranscriptSegment,
+  VideoToPostSettings,
+  WebRewriteResult
+} from "../types/app.types";
 import { SettingsService } from "./settings.service";
+import { OpenCliRuntimeService } from "./opencli/opencli-runtime.service";
+import { OpenCliWebLlmService } from "./opencli/opencli-web-llm.service";
 
 type OpenAiLikeResponse = {
   choices?: Array<{
@@ -98,7 +111,11 @@ function buildUserPrompt(segments: TranscriptSegment[], userPrompt?: string): st
 }
 
 export class LlmService {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly openCliRuntimeService?: OpenCliRuntimeService,
+    private readonly openCliWebLlmService?: OpenCliWebLlmService
+  ) {}
 
   async generateSectionsByLlm(
     segments: TranscriptSegment[],
@@ -734,6 +751,13 @@ export class LlmService {
     },
     scope: "video" | "web" | "article-rewrite" = "video"
   ): Promise<string> {
+    if (scope === "video") {
+      const videoSettings = await this.settingsService.getVideoToPostSettings();
+      if (videoSettings.runtime === "opencli") {
+        return this.requestByOpenCli(messages, videoSettings);
+      }
+    }
+
     const toolSettings =
       scope === "web"
         ? await this.settingsService.getWebToPostSettings()
@@ -774,6 +798,31 @@ export class LlmService {
     );
 
     return response.data.choices?.[0]?.message?.content?.trim() ?? "";
+  }
+
+  private async requestByOpenCli(
+    messages: Array<{ role: "system" | "user"; content: string }>,
+    settings: VideoToPostSettings
+  ): Promise<string> {
+    if (!this.openCliRuntimeService || !this.openCliWebLlmService) {
+      throw new Error("OpenCLI LLM runtime is not initialized.");
+    }
+
+    const provider = (settings.openCliProvider || "chatgpt") as OpenCliProvider;
+    const profile = await this.openCliRuntimeService.resolveActiveProfile(settings.openCliProfile);
+    const prompt = messages
+      .map((msg) => `${msg.role === "system" ? "系统要求" : "用户输入"}：${msg.content}`)
+      .join("\n\n");
+
+    const content = await this.openCliWebLlmService.askByProvider({
+      provider,
+      profile,
+      prompt,
+      timeoutMs: settings.openCliTimeoutMs || 180000,
+      intervalMs: settings.openCliPollIntervalMs || 3000
+    });
+
+    return content.trim();
   }
 
   private normalizeSection(section: ArticleSection, index: number): ArticleSection {

@@ -163,6 +163,10 @@ export class OpenCliWebLlmService {
     return extracted;
   }
 
+  async askByProvider(options: AskOptions): Promise<string> {
+    return this.askOnce(options);
+  }
+
   async rewriteWebContent(options: RewriteWebContentOptions): Promise<WebRewriteResult> {
     if (!options.articles.length) {
       throw new Error("没有可用于二次创作的正文内容。");

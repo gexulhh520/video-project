@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import type {
+  OpenCliProvider,
+  OpenCliRuntimeHealthStatus,
+  OpenCliProviderStatus,
   AppSettings,
   DraftSummary,
   FrameAssetMode,
@@ -32,6 +35,12 @@ const settingsOpen = ref(false);
 const settingsSaving = ref(false);
 const appSettings = ref<AppSettings | null>(null);
 const videoToPostConfigStatus = ref<VideoToPostConfigStatus | null>(null);
+const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
+const openCliProvider = ref<OpenCliProvider>("chatgpt");
+const openCliSelectedProfile = ref("");
+const openCliRepairing = ref(false);
+const openCliTesting = ref(false);
+const openCliTestMessage = ref("");
 const busy = ref(false);
 const savingDraft = ref(false);
 const exportingWord = ref(false);
@@ -79,6 +88,11 @@ onMounted(() => {
   void refreshDrafts(true);
   void loadSettings();
   void loadVideoToPostConfigStatus();
+  void checkOpenCliHealthOnEnter();
+});
+
+watch(openCliProvider, () => {
+  void persistSelectedOpenCliProvider();
 });
 
 onBeforeUnmount(() => {
@@ -91,6 +105,99 @@ async function loadSettings(): Promise<void> {
 
 async function loadVideoToPostConfigStatus(): Promise<void> {
   videoToPostConfigStatus.value = await desktopApi.getVideoToPostConfigStatus();
+}
+
+async function checkOpenCliHealthOnEnter(): Promise<void> {
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    openCliTestMessage.value = "";
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+
+    const settings = await desktopApi.getVideoToPostSettings();
+    openCliProvider.value = settings.openCliProvider ?? "chatgpt";
+    if (
+      openCliHealth.value.healthy &&
+      openCliHealth.value.selectedProfile &&
+      (settings.runtime !== "opencli" || settings.openCliProfile !== openCliHealth.value.selectedProfile)
+    ) {
+      await desktopApi.saveVideoToPostSettings({
+        ...settings,
+        runtime: "opencli",
+        openCliProfile: openCliHealth.value.selectedProfile,
+        openCliProvider: settings.openCliProvider ?? "chatgpt"
+      });
+      await loadVideoToPostConfigStatus();
+    }
+  } catch {
+    openCliHealth.value = null;
+  }
+}
+
+async function persistSelectedOpenCliProvider(): Promise<void> {
+  const provider = openCliProvider.value;
+  const settings = await desktopApi.getVideoToPostSettings();
+  if (settings.openCliProvider === provider) {
+    return;
+  }
+
+  await desktopApi.saveVideoToPostSettings({
+    ...settings,
+    openCliProvider: provider
+  });
+}
+
+async function refreshOpenCliHealth(): Promise<void> {
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadVideoToPostConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+  }
+}
+
+async function repairOpenCli(): Promise<void> {
+  openCliRepairing.value = true;
+  openCliTestMessage.value = "";
+  try {
+    openCliHealth.value = await desktopApi.repairOpenCliRuntime();
+    if (openCliHealth.value.selectedProfile) {
+      openCliSelectedProfile.value = openCliHealth.value.selectedProfile;
+    }
+    await loadVideoToPostConfigStatus();
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "OpenCLI 修复失败";
+  } finally {
+    openCliRepairing.value = false;
+  }
+}
+
+async function openProviderLoginPage(): Promise<void> {
+  const profile = openCliSelectedProfile.value.trim() || undefined;
+  try {
+    await desktopApi.openOpenCliProviderLoginPage(openCliProvider.value, profile);
+    openCliTestMessage.value = "已打开登录页，请在浏览器完成登录后再测试。";
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "打开登录页失败";
+  }
+}
+
+async function testOpenCliProvider(): Promise<void> {
+  openCliTesting.value = true;
+  const profile = openCliSelectedProfile.value.trim() || undefined;
+  try {
+    const result: OpenCliProviderStatus = await desktopApi.testOpenCliProvider(openCliProvider.value, profile);
+    openCliTestMessage.value = result.message || (result.ready ? "连接成功" : "连接失败");
+  } catch (error) {
+    openCliTestMessage.value = error instanceof Error ? error.message : "测试失败";
+  } finally {
+    openCliTesting.value = false;
+  }
 }
 
 async function openSettings(): Promise<void> {
@@ -172,6 +279,7 @@ async function handleGenerate(): Promise<void> {
   busy.value = true;
   errorMessage.value = "";
   draft.value = null;
+  await persistSelectedOpenCliProvider();
   progress.value = {
     taskId: "queued",
     status: "copying_video",
@@ -585,6 +693,34 @@ function toggleImmersiveEditor(): void {
         @update-user-prompt="updateGenerationUserPrompt"
       />
 
+      <div class="mode-card">
+        <span class="mode-label">OpenCLI 运行状态</span>
+        <strong>{{ openCliHealth?.healthy ? "正常" : "待检测 / 异常" }}</strong>
+        <span class="mode-label">Profile：{{ openCliSelectedProfile || openCliHealth?.selectedProfile || "未选择" }}</span>
+        <label class="field">
+          <span>Provider</span>
+          <select v-model="openCliProvider">
+            <option value="chatgpt">chatgpt</option>
+            <option value="gemini">gemini</option>
+            <option value="claude">claude</option>
+            <option value="grok">grok</option>
+            <option value="doubao">doubao</option>
+            <option value="yuanbao">yuanbao</option>
+          </select>
+        </label>
+        <div class="mode-actions">
+          <button class="secondary-toggle-btn" :disabled="busy || openCliRepairing" @click="refreshOpenCliHealth">重新检测</button>
+          <button class="secondary-toggle-btn" :disabled="busy || openCliRepairing" @click="repairOpenCli">
+            {{ openCliRepairing ? "修复中..." : "一键修复" }}
+          </button>
+          <button class="secondary-toggle-btn" :disabled="busy" @click="openProviderLoginPage">打开模型登录页</button>
+          <button class="secondary-toggle-btn" :disabled="busy || openCliTesting" @click="testOpenCliProvider">
+            {{ openCliTesting ? "测试中..." : "测试连接" }}
+          </button>
+        </div>
+        <small v-if="openCliTestMessage">{{ openCliTestMessage }}</small>
+      </div>
+
       <div v-if="appSettings" class="workspace-card">
         <span>当前工作空间</span>
         <strong>{{ appSettings.workspaceDir }}</strong>
@@ -785,6 +921,26 @@ function toggleImmersiveEditor(): void {
   font-size: 14px;
   color: #eef5ff;
   margin-bottom: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.field span {
+  font-size: 12px;
+  color: #92abd1;
+}
+
+.field select {
+  min-height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf3ff;
+  padding: 0 12px;
 }
 
 .mode-actions {

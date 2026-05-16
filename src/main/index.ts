@@ -49,17 +49,17 @@ function createWindow(): void {
   const ffmpegService = new FfmpegService();
   const doubaoAsrService = new DoubaoAsrService(settingsService);
   const transcriptService = new TranscriptService(ffmpegService, doubaoAsrService);
-  const llmService = new LlmService(settingsService);
-  const postService = new PostService(ffmpegService, transcriptService, llmService, settingsService);
-  const imageEditService = new ImageEditService(postService, settingsService);
-  const browserRuntimeService = new BrowserRuntimeService(settingsService);
-  const bbBrowserService = new BbBrowserService(settingsService);
-  const webTaskService = new WebTaskService(settingsService, llmService, browserRuntimeService, bbBrowserService);
   const openCliCommandRunner = new OpenCliCommandRunner();
   const openCliRuntimeService = new OpenCliRuntimeService(openCliCommandRunner, settingsService);
   const openCliBrowserService = new OpenCliBrowserService(openCliCommandRunner);
   const openCliWebLlmService = new OpenCliWebLlmService(openCliCommandRunner);
   const openCliImageDownloader = new OpenCliImageDownloader();
+  const llmService = new LlmService(settingsService, openCliRuntimeService, openCliWebLlmService);
+  const postService = new PostService(ffmpegService, transcriptService, llmService, settingsService);
+  const imageEditService = new ImageEditService(postService, settingsService);
+  const browserRuntimeService = new BrowserRuntimeService(settingsService);
+  const bbBrowserService = new BbBrowserService(settingsService);
+  const webTaskService = new WebTaskService(settingsService, llmService, browserRuntimeService, bbBrowserService);
   const openCliWebTaskService = new OpenCliWebTaskService(
     settingsService,
     openCliRuntimeService,

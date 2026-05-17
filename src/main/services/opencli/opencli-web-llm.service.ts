@@ -16,6 +16,7 @@ type AskOptions = {
   timeoutMs: number;
   intervalMs?: number;
   workingDir?: string;
+  acceptResponse?: (text: string) => boolean;
 };
 type OpenCliReadMessage = {
   Index?: number;
@@ -233,7 +234,8 @@ export class OpenCliWebLlmService {
         normalizedProfile,
         options.timeoutMs,
         Math.max(1500, options.intervalMs ?? 3000),
-        options.workingDir
+        options.workingDir,
+        options.acceptResponse
       );
     });
   }
@@ -272,7 +274,8 @@ export class OpenCliWebLlmService {
     profile: string,
     timeoutMs: number,
     intervalMs: number,
-    workingDir?: string
+    workingDir?: string,
+    acceptResponse?: (text: string) => boolean
   ): Promise<string> {
     const startedAt = Date.now();
     let lastAssistant = "";
@@ -319,6 +322,9 @@ export class OpenCliWebLlmService {
       }
 
       if (stableRounds >= 2) {
+        if (acceptResponse && !acceptResponse(latestAssistant)) {
+          continue;
+        }
         return latestAssistant;
       }
     }

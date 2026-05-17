@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import type {
   ContentStudioConfigStatus,
   ContentStudioModelRole,
+  ContentStudioParagraphImagePlanUpdate,
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTopicProgress,
@@ -19,6 +20,12 @@ import TopicAdvancedSettingsModal from "../components/content-studio/TopicAdvanc
 import MaterialRewriteTab from "../components/content-studio/MaterialRewriteTab.vue";
 import HotCreateTab from "../components/content-studio/HotCreateTab.vue";
 import LayoutTab from "../components/content-studio/LayoutTab.vue";
+import ArticlePickerModal from "../components/content-studio/ArticlePickerModal.vue";
+import TaskHistoryModal from "../components/content-studio/TaskHistoryModal.vue";
+import ImagePlanModal from "../components/content-studio/ImagePlanModal.vue";
+import ImageAssetModal from "../components/content-studio/ImageAssetModal.vue";
+import PublishPreviewDrawer from "../components/content-studio/PublishPreviewDrawer.vue";
+import PublishDraftFallbackModal from "../components/content-studio/PublishDraftFallbackModal.vue";
 import TabModelSettingsModal from "../components/content-studio/TabModelSettingsModal.vue";
 import StudioResultDrawer from "../components/content-studio/StudioResultDrawer.vue";
 import RunLogModal from "../components/content-studio/RunLogModal.vue";
@@ -42,6 +49,7 @@ const savingTab = ref(false);
 const globalModalOpen = ref(false);
 const tabModelModalOpen = ref(false);
 const runLogOpen = ref(false);
+const taskHistoryOpen = ref(false);
 const resultDrawerOpen = ref(false);
 const topicAdvancedModalOpen = ref(false);
 const runLogTitle = ref("运行记录");
@@ -51,6 +59,34 @@ const testMessage = ref("");
 const pageNotice = ref("");
 const topicRunning = ref(false);
 const latestTopicTask = ref<ContentStudioTask | null>(null);
+const layoutArticlePickerOpen = ref(false);
+const layoutArticleLoading = ref(false);
+const layoutSelectingTaskId = ref<string | null>(null);
+const layoutArticleCandidates = ref<ContentStudioTask[]>([]);
+const layoutSelectedTask = ref<ContentStudioTask | null>(null);
+const imagePlanModalOpen = ref(false);
+const imagePlanSaving = ref(false);
+const imageAssetModalOpen = ref(false);
+const imageAssetSaving = ref(false);
+const copyingPublishDraft = ref(false);
+const publishPreviewOpen = ref(false);
+const imagePreviewMap = ref<Record<string, string>>({});
+const publishDraftFallbackOpen = ref(false);
+const publishDraftFallbackText = ref("");
+const exportingWord = ref(false);
+const exportingImages = ref(false);
+const taskHistoryLoading = ref(false);
+const taskHistoryDeletingTaskId = ref<string | null>(null);
+const taskHistoryPage = ref(1);
+const taskHistoryPageSize = 8;
+const topicTaskSummaries = ref<Array<{
+  taskId: string;
+  tab: ContentStudioTabKey;
+  title: string;
+  status: "idle" | "running" | "completed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+}>>([]);
 const topicProgress = ref<ContentStudioTopicProgress | null>(null);
 const topicAdvancedSettings = ref({
   reviewRounds: 2,
@@ -173,6 +209,299 @@ async function testTabModel(role: ContentStudioModelRole, provider: OpenCliProvi
 
 function goHome(): void {
   void router.push("/");
+}
+
+async function openTaskHistory(): Promise<void> {
+  taskHistoryOpen.value = true;
+  taskHistoryPage.value = 1;
+  await loadTopicTaskSummaries();
+}
+
+async function loadTopicTaskSummaries(): Promise<void> {
+  taskHistoryLoading.value = true;
+  try {
+    const tasks = await desktopApi.listContentStudioTasks();
+    topicTaskSummaries.value = tasks
+      .filter((task) => task.tab === "topic")
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } finally {
+    taskHistoryLoading.value = false;
+  }
+}
+
+function changeTaskHistoryPage(nextPage: number): void {
+  const maxPage = Math.max(1, Math.ceil(topicTaskSummaries.value.length / taskHistoryPageSize));
+  taskHistoryPage.value = Math.min(maxPage, Math.max(1, nextPage));
+}
+
+async function openTaskFromHistory(taskId: string): Promise<void> {
+  const task = await desktopApi.getContentStudioTaskById(taskId);
+  latestTopicTask.value = task;
+  runLogTitle.value = "话题成文 - 运行记录";
+  runLogDescription.value = formatRunLogDescription(task);
+  resultDrawerOpen.value = true;
+  taskHistoryOpen.value = false;
+}
+
+async function deleteTaskFromHistory(taskId: string): Promise<void> {
+  const confirmed = window.confirm("确认删除这条历史任务吗？删除后不可恢复。");
+  if (!confirmed) {
+    return;
+  }
+  taskHistoryDeletingTaskId.value = taskId;
+  try {
+    await desktopApi.deleteContentStudioTask(taskId);
+    if (latestTopicTask.value?.taskId === taskId) {
+      latestTopicTask.value = null;
+    }
+    await loadTopicTaskSummaries();
+    const maxPage = Math.max(1, Math.ceil(topicTaskSummaries.value.length / taskHistoryPageSize));
+    if (taskHistoryPage.value > maxPage) {
+      taskHistoryPage.value = maxPage;
+    }
+    pageNotice.value = "历史任务已删除。";
+  } finally {
+    taskHistoryDeletingTaskId.value = null;
+  }
+}
+
+async function setActiveTab(tab: ContentStudioTabKey): Promise<void> {
+  activeTab.value = tab;
+  if (tab === "layout") {
+    await loadLayoutArticleCandidates();
+  }
+}
+
+async function loadLayoutArticleCandidates(): Promise<void> {
+  layoutArticleLoading.value = true;
+  try {
+    const tasks = await desktopApi.listContentStudioTasks();
+    const candidateSummaries = tasks.filter((task) => task.tab === "topic" && task.status === "completed");
+    const candidateTasks = await Promise.all(
+      candidateSummaries.map((task) => desktopApi.getContentStudioTaskById(task.taskId))
+    );
+    layoutArticleCandidates.value = candidateTasks
+      .filter((task) => task.result && task.result.paragraphs.length > 0)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } finally {
+    layoutArticleLoading.value = false;
+  }
+}
+
+async function openLayoutArticlePicker(): Promise<void> {
+  if (!layoutArticleCandidates.value.length) {
+    await loadLayoutArticleCandidates();
+  }
+  layoutArticlePickerOpen.value = true;
+}
+
+async function selectLayoutArticle(taskId: string): Promise<void> {
+  layoutSelectingTaskId.value = taskId;
+  try {
+    layoutSelectedTask.value = await desktopApi.getContentStudioTaskById(taskId);
+    await loadImagePreviews();
+    layoutArticlePickerOpen.value = false;
+    pageNotice.value = "图文编排文章已切换。";
+  } finally {
+    layoutSelectingTaskId.value = null;
+  }
+}
+
+async function loadImagePreviews(): Promise<void> {
+  const task = layoutSelectedTask.value;
+  if (!task?.imageAssets.length) {
+    imagePreviewMap.value = {};
+    return;
+  }
+  const pairs = await Promise.all(
+    task.imageAssets.map(async (asset) => {
+      try {
+        const dataUrl = await desktopApi.readImageAsDataUrl(asset.localPath);
+        return [asset.assetId, dataUrl] as const;
+      } catch {
+        return [asset.assetId, ""] as const;
+      }
+    })
+  );
+  imagePreviewMap.value = Object.fromEntries(pairs.filter((item) => item[1]));
+}
+
+function openImagePlanModal(): void {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  imagePlanModalOpen.value = true;
+}
+
+async function saveImagePlan(updates: ContentStudioParagraphImagePlanUpdate[]): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  imagePlanSaving.value = true;
+  try {
+    const task = await desktopApi.saveContentStudioImagePlan(layoutSelectedTask.value.taskId, updates);
+    layoutSelectedTask.value = task;
+    layoutArticleCandidates.value = layoutArticleCandidates.value.map((item) => item.taskId === task.taskId ? task : item);
+    imagePlanModalOpen.value = false;
+    pageNotice.value = "配图计划已保存。";
+  } finally {
+    imagePlanSaving.value = false;
+  }
+}
+
+function openImageAssetModal(): void {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  void loadImagePreviews();
+  imageAssetModalOpen.value = true;
+}
+
+function openPublishPreviewDrawer(): void {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  void loadImagePreviews();
+  publishPreviewOpen.value = true;
+}
+
+async function withImageAssetSave(action: () => Promise<ContentStudioTask>): Promise<void> {
+  imageAssetSaving.value = true;
+  try {
+    const task = await action();
+    layoutSelectedTask.value = task;
+    layoutArticleCandidates.value = layoutArticleCandidates.value.map((item) => item.taskId === task.taskId ? task : item);
+    await loadImagePreviews();
+  } finally {
+    imageAssetSaving.value = false;
+  }
+}
+
+async function addLocalImageToLayoutTask(): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  const imagePath = await desktopApi.selectImage();
+  if (!imagePath) {
+    return;
+  }
+  await withImageAssetSave(() => desktopApi.addContentStudioLocalImage(layoutSelectedTask.value!.taskId, imagePath));
+  pageNotice.value = "图片已导入图片池。";
+}
+
+async function bindImageForLayoutTask(paragraphId: string, assetId: string): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  await withImageAssetSave(() =>
+    desktopApi.bindContentStudioImage(layoutSelectedTask.value!.taskId, paragraphId, assetId)
+  );
+  pageNotice.value = `已绑定段落 ${paragraphId}。`;
+}
+
+async function unbindImageForLayoutTask(paragraphId: string): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  await withImageAssetSave(() =>
+    desktopApi.unbindContentStudioImage(layoutSelectedTask.value!.taskId, paragraphId)
+  );
+  pageNotice.value = `已解绑段落 ${paragraphId}。`;
+}
+
+async function deleteImageFromLayoutTask(assetId: string): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  const confirmed = window.confirm("确认删除该图片吗？删除后会自动解除绑定。");
+  if (!confirmed) {
+    return;
+  }
+  await withImageAssetSave(() =>
+    desktopApi.deleteContentStudioImage(layoutSelectedTask.value!.taskId, assetId)
+  );
+  pageNotice.value = "图片已删除并自动解绑。";
+}
+
+async function generateAiImageForLayoutTask(payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  pageNotice.value = "AI 生图进行中，请稍候...";
+  try {
+    await withImageAssetSave(() =>
+      desktopApi.generateContentStudioAiImage(layoutSelectedTask.value!.taskId, {
+        paragraphId: payload.paragraphId || undefined,
+        prompt: payload.prompt,
+        bindAfterGenerate: payload.bindAfterGenerate
+      })
+    );
+    pageNotice.value = "AI 图片已生成并加入图片池。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? `AI 生图失败：${error.message}` : "AI 生图失败";
+  }
+}
+
+async function copyLayoutPublishDraft(): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  copyingPublishDraft.value = true;
+  try {
+    const draft = await desktopApi.buildContentStudioPublishDraft(layoutSelectedTask.value.taskId);
+    try {
+      await navigator.clipboard.writeText(draft);
+      pageNotice.value = "发布稿已复制。";
+    } catch {
+      publishDraftFallbackText.value = draft;
+      publishDraftFallbackOpen.value = true;
+      pageNotice.value = "系统剪贴板不可用，请在弹窗中手动复制。";
+    }
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "复制发布稿失败";
+  } finally {
+    copyingPublishDraft.value = false;
+  }
+}
+
+async function exportLayoutWord(): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  exportingWord.value = true;
+  try {
+    const outputPath = await desktopApi.exportContentStudioWord(layoutSelectedTask.value.taskId);
+    if (outputPath) {
+      pageNotice.value = `Word 已导出：${outputPath}`;
+    }
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "Word 导出失败";
+  } finally {
+    exportingWord.value = false;
+  }
+}
+
+async function exportLayoutImages(): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+  exportingImages.value = true;
+  try {
+    const outputPath = await desktopApi.exportContentStudioImages(layoutSelectedTask.value.taskId);
+    if (outputPath) {
+      pageNotice.value = `图片压缩包已导出：${outputPath}`;
+    }
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "图片压缩包导出失败";
+  } finally {
+    exportingImages.value = false;
+  }
 }
 
 function openTopicAdvancedSettings(): void {
@@ -325,7 +654,7 @@ function rerunTopicFromDrawer(): void {
       <div class="header-actions">
         <button class="ghost-btn" @click="openGlobalSettings">全局配置</button>
         <button class="ghost-btn" :disabled="!latestTopicTask" @click="reopenLatestTopicResult">最近结果</button>
-        <button class="ghost-btn" @click="runLogOpen = true">历史任务</button>
+        <button class="ghost-btn" @click="openTaskHistory">历史任务</button>
       </div>
     </header>
 
@@ -342,7 +671,7 @@ function rerunTopicFromDrawer(): void {
         :key="tab.key"
         class="tab-btn"
         :class="{ active: activeTab === tab.key }"
-        @click="activeTab = tab.key"
+        @click="setActiveTab(tab.key)"
       >
         {{ tab.label }}
       </button>
@@ -377,8 +706,19 @@ function rerunTopicFromDrawer(): void {
         v-if="activeTab === 'layout'"
         :tab-ready="currentTabStatus.ready"
         :missing-items="currentTabStatus.missingItems"
+        :selected-task="layoutSelectedTask"
+        :copying-publish-draft="copyingPublishDraft"
+        :exporting-word="exportingWord"
+        :exporting-images="exportingImages"
         @open-model-settings="openModelSettings('layout')"
         @open-run-log="runLogOpen = true"
+        @open-article-picker="openLayoutArticlePicker"
+        @open-image-plan="openImagePlanModal"
+        @open-image-assets="openImageAssetModal"
+        @copy-publish-draft="copyLayoutPublishDraft"
+        @open-publish-preview="openPublishPreviewDrawer"
+        @export-word="exportLayoutWord"
+        @export-images="exportLayoutImages"
       />
     </section>
 
@@ -423,6 +763,62 @@ function rerunTopicFromDrawer(): void {
       @view-run-log="openRunLogFromDrawer"
       @rerun="rerunTopicFromDrawer"
       @close="resultDrawerOpen = false"
+    />
+
+    <ArticlePickerModal
+      :open="layoutArticlePickerOpen"
+      :tasks="layoutArticleCandidates"
+      :loading="layoutArticleLoading"
+      :selecting-task-id="layoutSelectingTaskId"
+      @close="layoutArticlePickerOpen = false"
+      @select="selectLayoutArticle"
+    />
+
+    <TaskHistoryModal
+      :open="taskHistoryOpen"
+      :loading="taskHistoryLoading"
+      :deleting-task-id="taskHistoryDeletingTaskId"
+      :tasks="topicTaskSummaries"
+      :page="taskHistoryPage"
+      :page-size="taskHistoryPageSize"
+      @close="taskHistoryOpen = false"
+      @change-page="changeTaskHistoryPage"
+      @delete="deleteTaskFromHistory"
+      @open="openTaskFromHistory"
+    />
+
+    <ImagePlanModal
+      :open="imagePlanModalOpen"
+      :task="layoutSelectedTask"
+      :saving="imagePlanSaving"
+      @close="imagePlanModalOpen = false"
+      @save="saveImagePlan"
+    />
+
+    <ImageAssetModal
+      :open="imageAssetModalOpen"
+      :task="layoutSelectedTask"
+      :saving="imageAssetSaving"
+      :image-preview-map="imagePreviewMap"
+      @close="imageAssetModalOpen = false"
+      @add-local-image="addLocalImageToLayoutTask"
+      @bind="bindImageForLayoutTask"
+      @unbind="unbindImageForLayoutTask"
+      @delete-image="deleteImageFromLayoutTask"
+      @generate-ai-image="generateAiImageForLayoutTask"
+    />
+
+    <PublishPreviewDrawer
+      :open="publishPreviewOpen"
+      :task="layoutSelectedTask"
+      :image-preview-map="imagePreviewMap"
+      @close="publishPreviewOpen = false"
+    />
+
+    <PublishDraftFallbackModal
+      :open="publishDraftFallbackOpen"
+      :text="publishDraftFallbackText"
+      @close="publishDraftFallbackOpen = false"
     />
   </section>
 </template>

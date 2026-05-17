@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch } from "vue";
 import type { ContentStudioSettings } from "../../../../main/types/content-studio.types";
 import type { OpenCliProvider, OpenCliRuntimeHealthStatus } from "../../../../main/types/app.types";
@@ -16,6 +16,7 @@ const emit = defineEmits<{
 }>();
 
 const PROVIDERS: OpenCliProvider[] = ["chatgpt", "gemini", "claude", "grok", "doubao", "yuanbao"];
+const DEFAULT_OPENCLI_COMMAND = "opencli";
 
 const form = ref<ContentStudioSettings | null>(null);
 const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
@@ -48,7 +49,7 @@ function handleSave(): void {
 
   emit("save", {
     ...form.value,
-    openCliCommand: form.value.openCliCommand.trim() || "opencli",
+    openCliCommand: DEFAULT_OPENCLI_COMMAND,
     image: {
       ...form.value.image,
       profile: form.value.image.profile.trim(),
@@ -66,7 +67,7 @@ async function handleCheckOpenCliHealth(): Promise<void> {
   openCliStatusMessage.value = "";
 
   try {
-    openCliHealth.value = await desktopApi.checkContentStudioOpenCliHealth(form.value.openCliCommand);
+    openCliHealth.value = await desktopApi.checkContentStudioOpenCliHealth(DEFAULT_OPENCLI_COMMAND);
     openCliStatusMessage.value = openCliHealth.value.message;
   } catch (error) {
     openCliHealth.value = null;
@@ -85,7 +86,7 @@ async function handleRepairOpenCliRuntime(): Promise<void> {
   openCliStatusMessage.value = "";
 
   try {
-    openCliHealth.value = await desktopApi.repairContentStudioOpenCliRuntime(form.value.openCliCommand);
+    openCliHealth.value = await desktopApi.repairContentStudioOpenCliRuntime(DEFAULT_OPENCLI_COMMAND);
     openCliStatusMessage.value = openCliHealth.value.message;
   } catch (error) {
     openCliHealth.value = null;
@@ -108,13 +109,8 @@ async function handleRepairOpenCliRuntime(): Promise<void> {
       </div>
 
       <div v-if="form" class="content">
-        <label class="field">
-          <span>OpenCLI 命令</span>
-          <input v-model="form.openCliCommand" type="text" placeholder="opencli" />
-        </label>
-
         <section class="group runtime-card">
-          <h4>OpenCLI 运行状态</h4>
+          <h4>运行状态</h4>
           <strong class="runtime-status">{{ openCliHealth?.healthy ? "正常" : "待检测 / 异常" }}</strong>
           <span class="hint">Profile：{{ openCliHealth?.selectedProfile || "未检测到" }}</span>
           <div class="runtime-actions">
@@ -156,10 +152,10 @@ async function handleRepairOpenCliRuntime(): Promise<void> {
           </label>
 
           <label class="field">
-            <span>图片输出目录 (可选)</span>
-            <input v-model="form.image.outputDir" type="text" placeholder="例如：images 或 content-studio/images" />
+            <span>浏览器默认下载目录</span>
+            <input v-model="form.image.outputDir" type="text" placeholder="例如：D:\\Downloads 或 content-studio/downloads" />
           </label>
-          <p class="hint">建议填写工作空间内目录名（相对路径），留空则后续使用默认目录。</p>
+          <p class="hint">chatgpt 浏览器生图将先下载到这个目录，再自动复制到任务 images 目录。</p>
         </section>
 
         <p class="hint">配置保存在 `config/content-studio.json`，每个选项卡模型配置在工作台内单独维护。</p>

@@ -2,6 +2,9 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type {
+  ContentStudioImageAsset,
+  ContentStudioImagePlanType,
+  ContentStudioParagraphImageBinding,
   ContentStudioTabKey,
   ContentStudioTabModelSettings,
   ContentStudioTask,
@@ -54,7 +57,8 @@ export class ContentStudioTaskStore {
   async getTaskById(taskId: string): Promise<ContentStudioTask | null> {
     try {
       const content = await readFile(join(await this.getTaskDir(taskId), "task.json"), "utf8");
-      return JSON.parse(content) as ContentStudioTask;
+      const parsed = JSON.parse(content) as ContentStudioTask;
+      return this.normalizeTask(parsed);
     } catch {
       return null;
     }
@@ -94,6 +98,10 @@ export class ContentStudioTaskStore {
     await rm(await this.getTaskDir(taskId), { recursive: true, force: true });
   }
 
+  async getTaskDirPath(taskId: string): Promise<string> {
+    return this.getTaskDir(taskId);
+  }
+
   private async getTasksRootDir(): Promise<string> {
     const workspaceDir = (await this.settingsService.getSettings()).workspaceDir;
     return join(workspaceDir, "content-studio", "tasks");
@@ -101,5 +109,109 @@ export class ContentStudioTaskStore {
 
   private async getTaskDir(taskId: string): Promise<string> {
     return join(await this.getTasksRootDir(), taskId);
+  }
+
+  private normalizeTask(task: ContentStudioTask): ContentStudioTask {
+    const imageAssets = this.normalizeImageAssets(task.imageAssets);
+    const validAssetIds = new Set(imageAssets.map((asset) => asset.assetId));
+    const imageBindings = this.normalizeImageBindings(task.imageBindings, validAssetIds);
+    const result = task.result
+      ? {
+          ...task.result,
+          paragraphs: task.result.paragraphs.map((paragraph, index) => ({
+            ...paragraph,
+            paragraphId: String(paragraph.paragraphId || `p${index + 1}`),
+            imagePlan: paragraph.imagePlan
+              ? {
+                  type: this.normalizeImagePlanType(paragraph.imagePlan.type),
+                  caption: paragraph.imagePlan.caption,
+                  prompt: paragraph.imagePlan.prompt
+                }
+              : undefined
+          }))
+        }
+      : undefined;
+
+    return {
+      ...task,
+      imageAssets,
+      imageBindings,
+      result
+    };
+  }
+
+  private normalizeImageAssets(assets: unknown): ContentStudioImageAsset[] {
+    if (!Array.isArray(assets)) {
+      return [];
+    }
+    const normalized: ContentStudioImageAsset[] = [];
+    assets.forEach((item, index) => {
+        const value = item as Partial<ContentStudioImageAsset> | null;
+        if (!value || typeof value !== "object") {
+          return;
+        }
+        const localPath = String(value.localPath || "").trim();
+        if (!localPath) {
+          return;
+        }
+        const fileName = String(value.fileName || "").trim() || `legacy-image-${index + 1}`;
+        const sourceType = value.sourceType === "generated" || value.sourceType === "source" || value.sourceType === "local_upload"
+          ? value.sourceType
+          : "local_upload";
+        const asset: ContentStudioImageAsset = {
+          assetId: String(value.assetId || `legacy-asset-${index + 1}`),
+          sourceType,
+          fileName,
+          localPath,
+          createdAt: String(value.createdAt || new Date(0).toISOString())
+        };
+        if (value.caption) {
+          asset.caption = String(value.caption);
+        }
+        normalized.push(asset);
+      });
+    return normalized;
+  }
+
+  private normalizeImageBindings(
+    bindings: unknown,
+    validAssetIds: Set<string>
+  ): ContentStudioParagraphImageBinding[] {
+    if (!Array.isArray(bindings)) {
+      return [];
+    }
+    const normalized: ContentStudioParagraphImageBinding[] = [];
+    bindings.forEach((item) => {
+        const value = item as Partial<ContentStudioParagraphImageBinding> | null;
+        if (!value || typeof value !== "object") {
+          return;
+        }
+        const paragraphId = String(value.paragraphId || "").trim();
+        const assetId = String(value.assetId || "").trim();
+        if (!paragraphId || !assetId || !validAssetIds.has(assetId)) {
+          return;
+        }
+        const binding: ContentStudioParagraphImageBinding = {
+          paragraphId,
+          assetId
+        };
+        if (value.caption) {
+          binding.caption = String(value.caption);
+        }
+        normalized.push(binding);
+      });
+
+    const dedupMap = new Map<string, ContentStudioParagraphImageBinding>();
+    for (const binding of normalized) {
+      dedupMap.set(binding.paragraphId, binding);
+    }
+    return [...dedupMap.values()];
+  }
+
+  private normalizeImagePlanType(type: string | undefined): ContentStudioImagePlanType {
+    if (type === "source_image" || type === "ai_generated" || type === "infographic" || type === "none") {
+      return type;
+    }
+    return "none";
   }
 }

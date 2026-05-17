@@ -27,6 +27,8 @@ import type {
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TestContentStudioModelOptions,
+  ContentStudioParagraphImagePlanUpdate,
+  ContentStudioGenerateImageOptions,
   TaskProgress,
   TopicCreateInput,
   VideoToPostConfigStatus,
@@ -98,6 +100,24 @@ export const desktopApi = {
   deleteContentStudioTask: (taskId: string): Promise<void> => window.desktopApi.deleteContentStudioTask(taskId),
   runContentStudioTopic: (options: TopicCreateInput): Promise<ContentStudioTask> =>
     window.desktopApi.runContentStudioTopic(toPlainObject(options)),
+  saveContentStudioImagePlan: (taskId: string, updates: ContentStudioParagraphImagePlanUpdate[]): Promise<ContentStudioTask> =>
+    window.desktopApi.saveContentStudioImagePlan(taskId, toPlainObject(updates)),
+  addContentStudioLocalImage: (taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
+    window.desktopApi.addContentStudioLocalImage(taskId, sourceImagePath),
+  bindContentStudioImage: (taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
+    window.desktopApi.bindContentStudioImage(taskId, paragraphId, assetId),
+  unbindContentStudioImage: (taskId: string, paragraphId: string): Promise<ContentStudioTask> =>
+    window.desktopApi.unbindContentStudioImage(taskId, paragraphId),
+  deleteContentStudioImage: (taskId: string, assetId: string): Promise<ContentStudioTask> =>
+    window.desktopApi.deleteContentStudioImage(taskId, assetId),
+  buildContentStudioPublishDraft: (taskId: string): Promise<string> =>
+    window.desktopApi.buildContentStudioPublishDraft(taskId),
+  generateContentStudioAiImage: (taskId: string, options: ContentStudioGenerateImageOptions): Promise<ContentStudioTask> =>
+    window.desktopApi.generateContentStudioAiImage(taskId, toPlainObject(options)),
+  exportContentStudioWord: (taskId: string): Promise<string | null> =>
+    window.desktopApi.exportContentStudioWord(taskId),
+  exportContentStudioImages: (taskId: string): Promise<string | null> =>
+    window.desktopApi.exportContentStudioImages(taskId),
   getWebToPostSettings: (): Promise<WebToPostSettings> => window.desktopApi.getWebToPostSettings(),
   saveWebToPostSettings: (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     window.desktopApi.saveWebToPostSettings(toPlainObject(settings)),

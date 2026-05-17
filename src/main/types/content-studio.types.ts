@@ -54,6 +54,33 @@ export type ContentStudioImagePlan = {
   caption?: string;
 };
 
+export type ContentStudioParagraphImagePlanUpdate = {
+  paragraphId: string;
+  imagePlan?: ContentStudioImagePlan;
+};
+
+export type ContentStudioImageAsset = {
+  assetId: string;
+  sourceType: "local_upload" | "generated" | "source";
+  fileName: string;
+  localPath: string;
+  createdAt: string;
+  caption?: string;
+  sourceRef?: string;
+};
+
+export type ContentStudioParagraphImageBinding = {
+  paragraphId: string;
+  assetId: string;
+  caption?: string;
+};
+
+export type ContentStudioGenerateImageOptions = {
+  paragraphId?: string;
+  prompt: string;
+  bindAfterGenerate?: boolean;
+};
+
 export type ContentStudioArticleParagraph = {
   paragraphId: string;
   text: string;
@@ -120,7 +147,8 @@ export type ContentStudioTask = {
   settingsSnapshot: ContentStudioTabModelSettings;
   debateSteps: ContentStudioDebateStep[];
   result?: ContentStudioArticle;
-  imageAssets: unknown[];
+  imageAssets: ContentStudioImageAsset[];
+  imageBindings?: ContentStudioParagraphImageBinding[];
   error?: string;
 };
 

@@ -3,6 +3,8 @@ import type {
   ContentStudioConfigStatus,
   ContentStudioDebateStep,
   ContentStudioModelConfig,
+  ContentStudioGenerateImageOptions,
+  ContentStudioParagraphImagePlanUpdate,
   ContentStudioModelRole,
   ContentStudioSettings,
   ContentStudioTabConfigStatus,
@@ -20,6 +22,8 @@ export type {
   ContentStudioConfigStatus,
   ContentStudioDebateStep,
   ContentStudioModelConfig,
+  ContentStudioGenerateImageOptions,
+  ContentStudioParagraphImagePlanUpdate,
   ContentStudioModelRole,
   ContentStudioSettings,
   ContentStudioTabConfigStatus,
@@ -489,6 +493,18 @@ export type DesktopApi = {
   getContentStudioTaskById: (taskId: string) => Promise<ContentStudioTask>;
   deleteContentStudioTask: (taskId: string) => Promise<void>;
   runContentStudioTopic: (options: TopicCreateInput) => Promise<ContentStudioTask>;
+  saveContentStudioImagePlan: (
+    taskId: string,
+    updates: ContentStudioParagraphImagePlanUpdate[]
+  ) => Promise<ContentStudioTask>;
+  addContentStudioLocalImage: (taskId: string, sourceImagePath: string) => Promise<ContentStudioTask>;
+  bindContentStudioImage: (taskId: string, paragraphId: string, assetId: string) => Promise<ContentStudioTask>;
+  unbindContentStudioImage: (taskId: string, paragraphId: string) => Promise<ContentStudioTask>;
+  deleteContentStudioImage: (taskId: string, assetId: string) => Promise<ContentStudioTask>;
+  buildContentStudioPublishDraft: (taskId: string) => Promise<string>;
+  generateContentStudioAiImage: (taskId: string, options: ContentStudioGenerateImageOptions) => Promise<ContentStudioTask>;
+  exportContentStudioWord: (taskId: string) => Promise<string | null>;
+  exportContentStudioImages: (taskId: string) => Promise<string | null>;
   getWebToPostSettings: () => Promise<WebToPostSettings>;
   saveWebToPostSettings: (settings: WebToPostSettings) => Promise<WebToPostSettings>;
   getWebToPostConfigStatus: () => Promise<WebToPostConfigStatus>;

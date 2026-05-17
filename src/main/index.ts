@@ -25,6 +25,9 @@ import { ContentStudioOpenCliClient } from "./services/content-studio/content-st
 import { ContentStudioSettingsService } from "./services/content-studio/content-studio-settings.service";
 import { ContentStudioTaskStore } from "./services/content-studio/content-studio-task-store";
 import { ContentStudioService } from "./services/content-studio/content-studio.service";
+import { ContentStudioLayoutService } from "./services/content-studio/content-studio-layout.service";
+import { ContentStudioExportService } from "./services/content-studio/content-studio-export.service";
+import { ContentStudioImageService } from "./services/content-studio/content-studio-image.service";
 
 dotenv.config();
 
@@ -82,6 +85,13 @@ function createWindow(): void {
     contentStudioSettingsService,
     contentStudioDebateService
   );
+  const contentStudioImageService = new ContentStudioImageService(
+    contentStudioSettingsService,
+    openCliCommandRunner,
+    settingsService
+  );
+  const contentStudioLayoutService = new ContentStudioLayoutService(contentStudioTaskStore, contentStudioImageService);
+  const contentStudioExportService = new ContentStudioExportService(contentStudioTaskStore);
   registerIpcHandlers(
     mainWindow,
     postService,
@@ -93,7 +103,9 @@ function createWindow(): void {
     imageEditService,
     articleRewriteService,
     contentStudioSettingsService,
-    contentStudioService
+    contentStudioService,
+    contentStudioLayoutService,
+    contentStudioExportService
   );
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {

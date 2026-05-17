@@ -26,6 +26,8 @@ import type {
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
   TestContentStudioModelOptions,
+  ContentStudioParagraphImagePlanUpdate,
+  ContentStudioGenerateImageOptions,
   TaskProgress,
   TopicCreateInput,
   LicenseStatus,
@@ -104,6 +106,30 @@ const desktopApi: DesktopApi = {
   deleteContentStudioTask: async (taskId: string): Promise<void> => ipcRenderer.invoke("content-studio-task:delete", taskId),
   runContentStudioTopic: async (options: TopicCreateInput): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-topic:run", options),
+  saveContentStudioImagePlan: async (
+    taskId: string,
+    updates: ContentStudioParagraphImagePlanUpdate[]
+  ): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:save-image-plan", taskId, updates),
+  addContentStudioLocalImage: async (taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:add-local-image", taskId, sourceImagePath),
+  bindContentStudioImage: async (taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:bind-image", taskId, paragraphId, assetId),
+  unbindContentStudioImage: async (taskId: string, paragraphId: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:unbind-image", taskId, paragraphId),
+  deleteContentStudioImage: async (taskId: string, assetId: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:delete-image", taskId, assetId),
+  buildContentStudioPublishDraft: async (taskId: string): Promise<string> =>
+    ipcRenderer.invoke("content-studio-layout:build-publish-draft", taskId),
+  generateContentStudioAiImage: async (
+    taskId: string,
+    options: ContentStudioGenerateImageOptions
+  ): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-layout:generate-ai-image", taskId, options),
+  exportContentStudioWord: async (taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke("content-studio-layout:export-word", taskId),
+  exportContentStudioImages: async (taskId: string): Promise<string | null> =>
+    ipcRenderer.invoke("content-studio-layout:export-images", taskId),
   getWebToPostSettings: async (): Promise<WebToPostSettings> => ipcRenderer.invoke("web-to-post-settings:get"),
   saveWebToPostSettings: async (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     ipcRenderer.invoke("web-to-post-settings:save", settings),

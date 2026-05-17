@@ -13,6 +13,8 @@ import type {
   ContentStudioTask,
   ContentStudioTaskSummary,
   ContentStudioTopicProgress,
+  ContentStudioParagraphImagePlanUpdate,
+  ContentStudioGenerateImageOptions,
   TestContentStudioModelOptions,
   TopicCreateInput,
   ConfirmWebRecordBodyOptions,
@@ -49,6 +51,8 @@ import { LicenseService } from "./services/license.service";
 import { ArticleRewriteService } from "./services/article-rewrite.service";
 import { ContentStudioSettingsService } from "./services/content-studio/content-studio-settings.service";
 import { ContentStudioService } from "./services/content-studio/content-studio.service";
+import { ContentStudioLayoutService } from "./services/content-studio/content-studio-layout.service";
+import { ContentStudioExportService } from "./services/content-studio/content-studio-export.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -65,7 +69,9 @@ export function registerIpcHandlers(
   imageEditService: ImageEditService,
   articleRewriteService: ArticleRewriteService,
   contentStudioSettingsService: ContentStudioSettingsService,
-  contentStudioService: ContentStudioService
+  contentStudioService: ContentStudioService,
+  contentStudioLayoutService: ContentStudioLayoutService,
+  contentStudioExportService: ContentStudioExportService
 ): void {
   const licenseService = new LicenseService();
   const getActiveWebTaskService = async (): Promise<WebTaskService | OpenCliWebTaskService> => {
@@ -186,6 +192,57 @@ export function registerIpcHandlers(
       mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
     })
   );
+  ipcMain.handle(
+    "content-studio-layout:save-image-plan",
+    async (_event, taskId: string, updates: ContentStudioParagraphImagePlanUpdate[]): Promise<ContentStudioTask> =>
+      contentStudioLayoutService.saveImagePlan(taskId, updates)
+  );
+  ipcMain.handle("content-studio-layout:add-local-image", async (_event, taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
+    contentStudioLayoutService.addLocalImage(taskId, sourceImagePath)
+  );
+  ipcMain.handle("content-studio-layout:bind-image", async (_event, taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
+    contentStudioLayoutService.bindImage(taskId, paragraphId, assetId)
+  );
+  ipcMain.handle("content-studio-layout:unbind-image", async (_event, taskId: string, paragraphId: string): Promise<ContentStudioTask> =>
+    contentStudioLayoutService.unbindImage(taskId, paragraphId)
+  );
+  ipcMain.handle("content-studio-layout:delete-image", async (_event, taskId: string, assetId: string): Promise<ContentStudioTask> =>
+    contentStudioLayoutService.deleteImage(taskId, assetId)
+  );
+  ipcMain.handle("content-studio-layout:build-publish-draft", async (_event, taskId: string): Promise<string> =>
+    contentStudioLayoutService.buildPublishDraft(taskId)
+  );
+  ipcMain.handle(
+    "content-studio-layout:generate-ai-image",
+    async (_event, taskId: string, options: ContentStudioGenerateImageOptions): Promise<ContentStudioTask> =>
+      contentStudioLayoutService.generateAiImage(taskId, options)
+  );
+  ipcMain.handle("content-studio-layout:export-word", async (_event, taskId: string): Promise<string | null> => {
+    const task = await contentStudioService.getTaskById(taskId);
+    const defaultFileName = `${sanitizeFileName(task.result?.title || task.title || "图文编排稿")}.docx`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出 Word 文档",
+      defaultPath: defaultFileName,
+      filters: [{ name: "Word Document", extensions: ["docx"] }]
+    });
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+    return contentStudioExportService.exportWord(taskId, result.filePath);
+  });
+  ipcMain.handle("content-studio-layout:export-images", async (_event, taskId: string): Promise<string | null> => {
+    const task = await contentStudioService.getTaskById(taskId);
+    const defaultFileName = `${sanitizeFileName(task.result?.title || task.title || "图文编排稿")}_配图.zip`;
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "导出图片压缩包",
+      defaultPath: defaultFileName,
+      filters: [{ name: "ZIP Archive", extensions: ["zip"] }]
+    });
+    if (result.canceled || !result.filePath) {
+      return null;
+    }
+    return contentStudioExportService.exportImages(taskId, result.filePath);
+  });
   ipcMain.handle("web-to-post-settings:get", async (): Promise<WebToPostSettings> => settingsService.getWebToPostSettings());
   ipcMain.handle("web-to-post-settings:save", async (_event, settings: WebToPostSettings): Promise<WebToPostSettings> =>
     settingsService.saveWebToPostSettings(settings)

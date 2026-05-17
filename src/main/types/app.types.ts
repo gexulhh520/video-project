@@ -1,4 +1,36 @@
-﻿export type TranscriptSegment = {
+import type {
+  ContentStudioArticle,
+  ContentStudioConfigStatus,
+  ContentStudioDebateStep,
+  ContentStudioModelConfig,
+  ContentStudioModelRole,
+  ContentStudioSettings,
+  ContentStudioTabConfigStatus,
+  ContentStudioTabKey,
+  ContentStudioTabModelSettings,
+  ContentStudioTask,
+  ContentStudioTaskSummary,
+  TestContentStudioModelOptions,
+  TopicCreateInput,
+} from "./content-studio.types";
+
+export type {
+  ContentStudioArticle,
+  ContentStudioConfigStatus,
+  ContentStudioDebateStep,
+  ContentStudioModelConfig,
+  ContentStudioModelRole,
+  ContentStudioSettings,
+  ContentStudioTabConfigStatus,
+  ContentStudioTabKey,
+  ContentStudioTabModelSettings,
+  ContentStudioTask,
+  ContentStudioTaskSummary,
+  TestContentStudioModelOptions,
+  TopicCreateInput,
+} from "./content-studio.types";
+
+export type TranscriptSegment = {
   segmentId: string;
   start: number;
   end: number;
@@ -445,6 +477,16 @@ export type DesktopApi = {
   getArticleRewriteSettings: () => Promise<ArticleRewriteSettings>;
   saveArticleRewriteSettings: (settings: ArticleRewriteSettings) => Promise<ArticleRewriteSettings>;
   getArticleRewriteConfigStatus: () => Promise<ArticleRewriteConfigStatus>;
+  getContentStudioSettings: () => Promise<ContentStudioSettings>;
+  saveContentStudioSettings: (settings: ContentStudioSettings) => Promise<ContentStudioSettings>;
+  getContentStudioConfigStatus: () => Promise<ContentStudioConfigStatus>;
+  checkContentStudioOpenCliHealth: (command?: string) => Promise<OpenCliRuntimeHealthStatus>;
+  repairContentStudioOpenCliRuntime: (command?: string) => Promise<OpenCliRuntimeHealthStatus>;
+  testContentStudioModel: (options: TestContentStudioModelOptions) => Promise<OpenCliProviderStatus>;
+  listContentStudioTasks: () => Promise<ContentStudioTaskSummary[]>;
+  getContentStudioTaskById: (taskId: string) => Promise<ContentStudioTask>;
+  deleteContentStudioTask: (taskId: string) => Promise<void>;
+  runContentStudioTopic: (options: TopicCreateInput) => Promise<ContentStudioTask>;
   getWebToPostSettings: () => Promise<WebToPostSettings>;
   saveWebToPostSettings: (settings: WebToPostSettings) => Promise<WebToPostSettings>;
   getWebToPostConfigStatus: () => Promise<WebToPostConfigStatus>;

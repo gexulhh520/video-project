@@ -5,6 +5,10 @@ import type {
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
+  ContentStudioConfigStatus,
+  ContentStudioSettings,
+  ContentStudioTask,
+  ContentStudioTaskSummary,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
   DeleteWebRewriteHistoryOptions,
@@ -21,7 +25,9 @@ import type {
   RewriteParagraphOptions,
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
+  TestContentStudioModelOptions,
   TaskProgress,
+  TopicCreateInput,
   VideoToPostConfigStatus,
   VideoToPostSettings,
   WebCrawlStartOptions,
@@ -76,6 +82,21 @@ export const desktopApi = {
   saveArticleRewriteSettings: (settings: ArticleRewriteSettings): Promise<ArticleRewriteSettings> =>
     window.desktopApi.saveArticleRewriteSettings(toPlainObject(settings)),
   getArticleRewriteConfigStatus: (): Promise<ArticleRewriteConfigStatus> => window.desktopApi.getArticleRewriteConfigStatus(),
+  getContentStudioSettings: (): Promise<ContentStudioSettings> => window.desktopApi.getContentStudioSettings(),
+  saveContentStudioSettings: (settings: ContentStudioSettings): Promise<ContentStudioSettings> =>
+    window.desktopApi.saveContentStudioSettings(toPlainObject(settings)),
+  getContentStudioConfigStatus: (): Promise<ContentStudioConfigStatus> => window.desktopApi.getContentStudioConfigStatus(),
+  checkContentStudioOpenCliHealth: (command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+    window.desktopApi.checkContentStudioOpenCliHealth(command),
+  repairContentStudioOpenCliRuntime: (command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+    window.desktopApi.repairContentStudioOpenCliRuntime(command),
+  testContentStudioModel: (options: TestContentStudioModelOptions): Promise<OpenCliProviderStatus> =>
+    window.desktopApi.testContentStudioModel(toPlainObject(options)),
+  listContentStudioTasks: (): Promise<ContentStudioTaskSummary[]> => window.desktopApi.listContentStudioTasks(),
+  getContentStudioTaskById: (taskId: string): Promise<ContentStudioTask> => window.desktopApi.getContentStudioTaskById(taskId),
+  deleteContentStudioTask: (taskId: string): Promise<void> => window.desktopApi.deleteContentStudioTask(taskId),
+  runContentStudioTopic: (options: TopicCreateInput): Promise<ContentStudioTask> =>
+    window.desktopApi.runContentStudioTopic(toPlainObject(options)),
   getWebToPostSettings: (): Promise<WebToPostSettings> => window.desktopApi.getWebToPostSettings(),
   saveWebToPostSettings: (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     window.desktopApi.saveWebToPostSettings(toPlainObject(settings)),

@@ -20,6 +20,11 @@ import { OpenCliBrowserService } from "./services/opencli/opencli-browser.servic
 import { OpenCliWebLlmService } from "./services/opencli/opencli-web-llm.service";
 import { OpenCliImageDownloader } from "./services/opencli/opencli-image-downloader";
 import { OpenCliWebTaskService } from "./services/opencli/opencli-web-task.service";
+import { ContentStudioDebateService } from "./services/content-studio/content-studio-debate.service";
+import { ContentStudioOpenCliClient } from "./services/content-studio/content-studio-opencli-client";
+import { ContentStudioSettingsService } from "./services/content-studio/content-studio-settings.service";
+import { ContentStudioTaskStore } from "./services/content-studio/content-studio-task-store";
+import { ContentStudioService } from "./services/content-studio/content-studio.service";
 
 dotenv.config();
 
@@ -68,6 +73,15 @@ function createWindow(): void {
     openCliImageDownloader
   );
   const articleRewriteService = new ArticleRewriteService(settingsService, llmService);
+  const contentStudioSettingsService = new ContentStudioSettingsService(settingsService, openCliWebLlmService);
+  const contentStudioTaskStore = new ContentStudioTaskStore(settingsService);
+  const contentStudioOpenCliClient = new ContentStudioOpenCliClient(openCliWebLlmService);
+  const contentStudioDebateService = new ContentStudioDebateService(contentStudioOpenCliClient);
+  const contentStudioService = new ContentStudioService(
+    contentStudioTaskStore,
+    contentStudioSettingsService,
+    contentStudioDebateService
+  );
   registerIpcHandlers(
     mainWindow,
     postService,
@@ -77,7 +91,9 @@ function createWindow(): void {
     openCliRuntimeService,
     openCliWebLlmService,
     imageEditService,
-    articleRewriteService
+    articleRewriteService,
+    contentStudioSettingsService,
+    contentStudioService
   );
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {

@@ -3,6 +3,7 @@ import HomePage from "../pages/HomePage.vue";
 import ArticleRewritePage from "../pages/ArticleRewritePage.vue";
 import VideoToPostPage from "../pages/VideoToPostPage.vue";
 import WebToPostPage from "../pages/WebToPostPage.vue";
+import ContentStudioPage from "../pages/ContentStudioPage.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -26,6 +27,11 @@ export const router = createRouter({
       path: "/tools/article-rewrite",
       name: "article-rewrite",
       component: ArticleRewritePage
+    },
+    {
+      path: "/tools/content-studio",
+      name: "content-studio",
+      component: ContentStudioPage
     }
   ]
 });

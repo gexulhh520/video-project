@@ -5,6 +5,8 @@ import type {
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
+  ContentStudioConfigStatus,
+  ContentStudioSettings,
   VideoToPostConfigStatus,
   VideoToPostSettings,
   WebToPostConfigStatus,
@@ -13,6 +15,7 @@ import type {
 import { desktopApi } from "../api/desktop-api";
 import AppSettingsModal from "../components/AppSettingsModal.vue";
 import ArticleRewriteSettingsModal from "../components/ArticleRewriteSettingsModal.vue";
+import ContentStudioSettingsModal from "../components/content-studio/ContentStudioSettingsModal.vue";
 import ToolCard from "../components/ToolCard.vue";
 import VideoToPostSettingsModal from "../components/VideoToPostSettingsModal.vue";
 import WebToPostSettingsModal from "../components/WebToPostSettingsModal.vue";
@@ -37,6 +40,10 @@ const articleToolSettingsOpen = ref(false);
 const articleToolSettingsSaving = ref(false);
 const articleToolSettings = ref<ArticleRewriteSettings | null>(null);
 const articleToolConfigStatus = ref<ArticleRewriteConfigStatus | null>(null);
+const contentStudioSettingsOpen = ref(false);
+const contentStudioSettingsSaving = ref(false);
+const contentStudioSettings = ref<ContentStudioSettings | null>(null);
+const contentStudioConfigStatus = ref<ContentStudioConfigStatus | null>(null);
 const homeNotice = ref("");
 
 const tools = computed(() => [
@@ -60,6 +67,18 @@ const tools = computed(() => [
     blockedReason: (videoToolConfigStatus.value?.ready ?? false)
       ? ""
       : `未完成工具配置，缺失：${videoToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
+    actionLabel: "工具配置"
+  },
+  {
+    title: "内容创作工作台",
+    description: "聚合话题成文、素材二创、热点成文、图文排版，支持每个选项卡独立配置双模型。",
+    status: "available" as const,
+    route: "/tools/content-studio",
+    blocked: !(contentStudioConfigStatus.value?.ready ?? false),
+    clickableWhenBlocked: true,
+    blockedReason: (contentStudioConfigStatus.value?.ready ?? false)
+      ? ""
+      : `未完成配置：${contentStudioConfigStatus.value?.missingItems.join("、") || "请先配置 OpenCLI 和双模型"}（可直接进入工作台完成模型配置）`,
     actionLabel: "工具配置"
   },
   {
@@ -94,6 +113,7 @@ onMounted(() => {
   void loadSettings();
   void loadWebToolConfig();
   void loadVideoToolConfig();
+  void loadContentStudioConfig();
   void loadArticleToolConfig();
 });
 
@@ -111,6 +131,10 @@ async function loadVideoToolConfig(): Promise<void> {
 
 async function loadArticleToolConfig(): Promise<void> {
   articleToolConfigStatus.value = await desktopApi.getArticleRewriteConfigStatus();
+}
+
+async function loadContentStudioConfig(): Promise<void> {
+  contentStudioConfigStatus.value = await desktopApi.getContentStudioConfigStatus();
 }
 
 async function openSettings(): Promise<void> {
@@ -134,6 +158,12 @@ async function openArticleToolSettings(): Promise<void> {
   articleToolSettings.value = await desktopApi.getArticleRewriteSettings();
   articleToolConfigStatus.value = await desktopApi.getArticleRewriteConfigStatus();
   articleToolSettingsOpen.value = true;
+}
+
+async function openContentStudioSettings(): Promise<void> {
+  contentStudioSettings.value = await desktopApi.getContentStudioSettings();
+  contentStudioConfigStatus.value = await desktopApi.getContentStudioConfigStatus();
+  contentStudioSettingsOpen.value = true;
 }
 
 async function browseWorkspaceDir(): Promise<void> {
@@ -192,6 +222,18 @@ async function saveArticleToolSettings(nextSettings: ArticleRewriteSettings): Pr
   }
 }
 
+async function saveContentStudioSettings(nextSettings: ContentStudioSettings): Promise<void> {
+  contentStudioSettingsSaving.value = true;
+  try {
+    contentStudioSettings.value = await desktopApi.saveContentStudioSettings(nextSettings);
+    contentStudioConfigStatus.value = await desktopApi.getContentStudioConfigStatus();
+    contentStudioSettingsOpen.value = false;
+    homeNotice.value = "内容创作工作台配置已保存。";
+  } finally {
+    contentStudioSettingsSaving.value = false;
+  }
+}
+
 function handleToolClick(tool: (typeof tools.value)[number]): void {
   homeNotice.value = "";
 
@@ -211,7 +253,6 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
     homeNotice.value = tool.blockedReason || "请先完成图文改写工具配置后再进入。";
     return;
   }
-
   void router.push(tool.route);
 }
 </script>
@@ -242,8 +283,9 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
         :status="tool.status"
         :blocked="tool.blocked"
         :blocked-reason="tool.blockedReason"
-        :action-label="tool.route === '/tools/web-to-post' || tool.route === '/tools/video-to-post' || tool.route === '/tools/article-rewrite' ? tool.actionLabel : undefined"
-        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : tool.route === '/tools/video-to-post' ? openVideoToolSettings() : tool.route === '/tools/article-rewrite' ? openArticleToolSettings() : undefined"
+        :clickable-when-blocked="tool.clickableWhenBlocked"
+        :action-label="tool.route === '/tools/web-to-post' || tool.route === '/tools/video-to-post' || tool.route === '/tools/article-rewrite' || tool.route === '/tools/content-studio' ? tool.actionLabel : undefined"
+        @action="tool.route === '/tools/web-to-post' ? openWebToolSettings() : tool.route === '/tools/video-to-post' ? openVideoToolSettings() : tool.route === '/tools/article-rewrite' ? openArticleToolSettings() : tool.route === '/tools/content-studio' ? openContentStudioSettings() : undefined"
         @click="handleToolClick(tool)"
       />
     </div>
@@ -279,6 +321,14 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
       :saving="articleToolSettingsSaving"
       @close="articleToolSettingsOpen = false"
       @save="saveArticleToolSettings"
+    />
+
+    <ContentStudioSettingsModal
+      :open="contentStudioSettingsOpen"
+      :settings="contentStudioSettings"
+      :saving="contentStudioSettingsSaving"
+      @close="contentStudioSettingsOpen = false"
+      @save="saveContentStudioSettings"
     />
   </section>
 </template>

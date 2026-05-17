@@ -6,6 +6,7 @@ const props = defineProps<{
   blocked?: boolean;
   blockedReason?: string;
   actionLabel?: string;
+  clickableWhenBlocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -14,7 +15,11 @@ const emit = defineEmits<{
 }>();
 
 function handleCardClick(): void {
-  if (props.status !== "available" || props.blocked) {
+  if (props.status !== "available") {
+    return;
+  }
+
+  if (props.blocked && !props.clickableWhenBlocked) {
     return;
   }
   emit("click");

@@ -8,6 +8,12 @@ import type {
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
+  ContentStudioConfigStatus,
+  ContentStudioSettings,
+  ContentStudioTask,
+  ContentStudioTaskSummary,
+  TestContentStudioModelOptions,
+  TopicCreateInput,
   ConfirmWebRecordBodyOptions,
   DeleteWebRewriteHistoryOptions,
   DeleteWebRecordOptions,
@@ -40,6 +46,8 @@ import { OpenCliWebLlmService } from "./services/opencli/opencli-web-llm.service
 import { ImageEditService } from "./services/image-edit.service";
 import { LicenseService } from "./services/license.service";
 import { ArticleRewriteService } from "./services/article-rewrite.service";
+import { ContentStudioSettingsService } from "./services/content-studio/content-studio-settings.service";
+import { ContentStudioService } from "./services/content-studio/content-studio.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -53,7 +61,9 @@ export function registerIpcHandlers(
   openCliRuntimeService: OpenCliRuntimeService,
   openCliWebLlmService: OpenCliWebLlmService,
   imageEditService: ImageEditService,
-  articleRewriteService: ArticleRewriteService
+  articleRewriteService: ArticleRewriteService,
+  contentStudioSettingsService: ContentStudioSettingsService,
+  contentStudioService: ContentStudioService
 ): void {
   const licenseService = new LicenseService();
   const getActiveWebTaskService = async (): Promise<WebTaskService | OpenCliWebTaskService> => {
@@ -133,6 +143,44 @@ export function registerIpcHandlers(
   );
   ipcMain.handle("article-rewrite-settings:status", async (): Promise<ArticleRewriteConfigStatus> =>
     settingsService.getArticleRewriteConfigStatus()
+  );
+  ipcMain.handle("content-studio-settings:get", async (): Promise<ContentStudioSettings> =>
+    contentStudioSettingsService.getSettings()
+  );
+  ipcMain.handle(
+    "content-studio-settings:save",
+    async (_event, settings: ContentStudioSettings): Promise<ContentStudioSettings> =>
+      contentStudioSettingsService.saveSettings(settings)
+  );
+  ipcMain.handle("content-studio-settings:status", async (): Promise<ContentStudioConfigStatus> =>
+    contentStudioSettingsService.getConfigStatus()
+  );
+  ipcMain.handle(
+    "content-studio-settings:opencli-health-check",
+    async (_event, command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+      contentStudioSettingsService.checkOpenCliHealth(command)
+  );
+  ipcMain.handle(
+    "content-studio-settings:opencli-health-repair",
+    async (_event, command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+      contentStudioSettingsService.repairOpenCliRuntime(command)
+  );
+  ipcMain.handle(
+    "content-studio-settings:test-model",
+    async (_event, options: TestContentStudioModelOptions): Promise<OpenCliProviderStatus> =>
+      contentStudioSettingsService.testModel(options)
+  );
+  ipcMain.handle("content-studio-task:list", async (): Promise<ContentStudioTaskSummary[]> =>
+    contentStudioService.listTasks()
+  );
+  ipcMain.handle("content-studio-task:get", async (_event, taskId: string): Promise<ContentStudioTask> =>
+    contentStudioService.getTaskById(taskId)
+  );
+  ipcMain.handle("content-studio-task:delete", async (_event, taskId: string): Promise<void> =>
+    contentStudioService.deleteTask(taskId)
+  );
+  ipcMain.handle("content-studio-topic:run", async (_event, options: TopicCreateInput): Promise<ContentStudioTask> =>
+    contentStudioService.runTopicCreate(options)
   );
   ipcMain.handle("web-to-post-settings:get", async (): Promise<WebToPostSettings> => settingsService.getWebToPostSettings());
   ipcMain.handle("web-to-post-settings:save", async (_event, settings: WebToPostSettings): Promise<WebToPostSettings> =>

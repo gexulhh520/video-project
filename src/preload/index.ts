@@ -3,6 +3,10 @@ import type {
   ArticleRewriteConfigStatus,
   ArticleRewriteSettings,
   AppSettings,
+  ContentStudioConfigStatus,
+  ContentStudioSettings,
+  ContentStudioTask,
+  ContentStudioTaskSummary,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
   DeleteWebRewriteHistoryOptions,
@@ -10,6 +14,7 @@ import type {
   DraftSummary,
   FramePreviewResult,
   GeneratePostOptions,
+  OpenCliRuntimeHealthStatus,
   PostDraft,
   ReplaceFrameAssetOptions,
   RewriteDraftOptions,
@@ -19,7 +24,9 @@ import type {
   RewriteParagraphOptions,
   SaveEditedFrameOptions,
   SaveWebRewriteResultOptions,
+  TestContentStudioModelOptions,
   TaskProgress,
+  TopicCreateInput,
   LicenseStatus,
   VideoToPostConfigStatus,
   VideoToPostSettings,
@@ -77,6 +84,24 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("article-rewrite-settings:save", settings),
   getArticleRewriteConfigStatus: async (): Promise<ArticleRewriteConfigStatus> =>
     ipcRenderer.invoke("article-rewrite-settings:status"),
+  getContentStudioSettings: async (): Promise<ContentStudioSettings> =>
+    ipcRenderer.invoke("content-studio-settings:get"),
+  saveContentStudioSettings: async (settings: ContentStudioSettings): Promise<ContentStudioSettings> =>
+    ipcRenderer.invoke("content-studio-settings:save", settings),
+  getContentStudioConfigStatus: async (): Promise<ContentStudioConfigStatus> =>
+    ipcRenderer.invoke("content-studio-settings:status"),
+  checkContentStudioOpenCliHealth: async (command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+    ipcRenderer.invoke("content-studio-settings:opencli-health-check", command),
+  repairContentStudioOpenCliRuntime: async (command?: string): Promise<OpenCliRuntimeHealthStatus> =>
+    ipcRenderer.invoke("content-studio-settings:opencli-health-repair", command),
+  testContentStudioModel: async (options: TestContentStudioModelOptions) =>
+    ipcRenderer.invoke("content-studio-settings:test-model", options),
+  listContentStudioTasks: async (): Promise<ContentStudioTaskSummary[]> => ipcRenderer.invoke("content-studio-task:list"),
+  getContentStudioTaskById: async (taskId: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-task:get", taskId),
+  deleteContentStudioTask: async (taskId: string): Promise<void> => ipcRenderer.invoke("content-studio-task:delete", taskId),
+  runContentStudioTopic: async (options: TopicCreateInput): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-topic:run", options),
   getWebToPostSettings: async (): Promise<WebToPostSettings> => ipcRenderer.invoke("web-to-post-settings:get"),
   saveWebToPostSettings: async (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     ipcRenderer.invoke("web-to-post-settings:save", settings),

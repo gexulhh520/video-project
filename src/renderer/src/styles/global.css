@@ -34,6 +34,16 @@ select {
   font: inherit;
 }
 
+select {
+  color-scheme: dark;
+}
+
+option,
+optgroup {
+  background-color: #0f1726;
+  color: #edf5ff;
+}
+
 img {
   max-width: 100%;
 }

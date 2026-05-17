@@ -64,10 +64,31 @@ export class ContentStudioService {
       status: "running"
     });
 
-    const planPrompt = buildTopicPlanPrompt(normalizedInput);
-    const reviewPrompt = buildTopicReviewPrompt(normalizedInput, "请基于上一轮模型A输出进行审稿。保持 JSON 输出。");
-    const rewritePrompt = buildTopicRewritePrompt(normalizedInput, "请基于上一轮模型A初稿进行重写。", "请基于上一轮模型B审稿意见进行修正。");
-    const finalReviewPrompt = buildTopicFinalReviewPrompt(normalizedInput, "请基于上一轮模型A重写稿进行终审并修正。");
+    const promptRoles = {
+      modelARoleName: tabSettings.modelA.roleName,
+      modelBRoleName: tabSettings.modelB.roleName
+    };
+    const planPrompt = buildTopicPlanPrompt(normalizedInput, promptRoles);
+    const reviewPrompt = buildTopicReviewPrompt(
+      normalizedInput,
+      "请基于上一轮模型A输出进行审稿。保持 JSON 输出。",
+      promptRoles
+    );
+    const rewritePrompt = buildTopicRewritePrompt(
+      normalizedInput,
+      "请基于上一轮模型A初稿进行重写。",
+      "请基于上一轮模型B审稿意见进行修正。",
+      promptRoles
+    );
+    const finalReviewPrompt = buildTopicFinalReviewPrompt(
+      normalizedInput,
+      "请基于模型A当前稿件进行终审并修正。",
+      promptRoles
+    );
+    const reviewRounds = normalizedInput.reviewRounds ?? 2;
+    const totalDebateSteps = Math.max(2, reviewRounds * 2);
+    const stepOrderMap = new Map<string, number>();
+    let nextStepOrder = 0;
 
     try {
       const debateResult = await this.debateService.runDebate({
@@ -82,23 +103,22 @@ export class ContentStudioService {
           finalReviewPrompt
         }
       }, (step) => {
-        const progressMap: Record<typeof step.name, number> = {
-          plan: 18,
-          review: 38,
-          rewrite: 62,
-          final_review: 82
-        };
-        const stepLabelMap: Record<typeof step.name, string> = {
-          plan: "模型A：选题策划",
-          review: "模型B：反方审稿",
-          rewrite: "模型A：重构初稿",
-          final_review: "模型B：终审"
-        };
+        const stepOrder = stepOrderMap.get(step.stepId) ?? (() => {
+          nextStepOrder += 1;
+          stepOrderMap.set(step.stepId, nextStepOrder);
+          return nextStepOrder;
+        })();
+        const progressBase = 10;
+        const progressSpan = 76;
+        const dynamicProgress = Math.min(
+          90,
+          progressBase + Math.floor((Math.min(stepOrder, totalDebateSteps) / totalDebateSteps) * progressSpan)
+        );
         const stateText = step.status === "running" ? "正在调用" : step.status === "success" ? "已完成" : "失败";
         this.emitTopicProgress(onProgress, task.taskId, {
           status: step.status === "failed" ? "failed" : "running_step",
-          progress: progressMap[step.name],
-          message: `${stateText}${stepLabelMap[step.name]}`,
+          progress: dynamicProgress,
+          message: `${stateText}${step.displayName}`,
           stepName: step.name,
           role: step.role,
           provider: step.provider,
@@ -153,10 +173,18 @@ export class ContentStudioService {
     return {
       ...input,
       topic,
+      reviewRounds: this.normalizeReviewRounds(input.reviewRounds),
       targetReader: input.targetReader?.trim() || undefined,
       writingStyle: input.writingStyle?.trim() || undefined,
       wordRange: input.wordRange?.trim() || undefined
     };
+  }
+
+  private normalizeReviewRounds(value: number | undefined): number {
+    if (typeof value !== "number" || Number.isNaN(value) || value <= 0) {
+      return 2;
+    }
+    return Math.min(5, Math.max(1, Math.floor(value)));
   }
 
   private parseArticleResult(rawOutput: string, fallbackTitle: string): ContentStudioArticle {

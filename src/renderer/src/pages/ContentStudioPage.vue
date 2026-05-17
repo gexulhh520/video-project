@@ -53,6 +53,7 @@ const topicRunning = ref(false);
 const latestTopicTask = ref<ContentStudioTask | null>(null);
 const topicProgress = ref<ContentStudioTopicProgress | null>(null);
 const topicAdvancedSettings = ref({
+  reviewRounds: 2,
   targetReader: "",
   writingStyle: "",
   wordRange: "1200-1800字",
@@ -179,6 +180,7 @@ function openTopicAdvancedSettings(): void {
 }
 
 function saveTopicAdvancedSettings(nextSettings: {
+  reviewRounds: number;
   targetReader: string;
   writingStyle: string;
   wordRange: string;
@@ -219,6 +221,7 @@ async function startTopicCreate(payload: {
     topic: payload.topic,
     platform: payload.platform,
     articleType: payload.articleType,
+    reviewRounds: topicAdvancedSettings.value.reviewRounds,
     targetReader: topicAdvancedSettings.value.targetReader || undefined,
     writingStyle: topicAdvancedSettings.value.writingStyle || undefined,
     wordRange: topicAdvancedSettings.value.wordRange || undefined,
@@ -274,7 +277,7 @@ function formatRunLogDescription(task: ContentStudioTask): string {
   }
 
   const lines = task.debateSteps.map((step, index) => [
-    `${index + 1}. ${step.name} [${step.role}] ${step.status}`,
+    `${index + 1}. ${step.displayName} (${step.name}) [${step.role}] ${step.status}`,
     `provider/profile: ${step.provider} / ${step.profile}`,
     `startedAt: ${step.startedAt}`,
     step.finishedAt ? `finishedAt: ${step.finishedAt}` : "",
@@ -297,6 +300,7 @@ function rerunTopicFromDrawer(): void {
   }
   const input = latestTopicTask.value.input as TopicCreateInput;
   topicAdvancedSettings.value = {
+    reviewRounds: input.reviewRounds ?? 2,
     targetReader: input.targetReader || "",
     writingStyle: input.writingStyle || "",
     wordRange: input.wordRange || "",

@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 
 type TopicAdvancedSettings = {
+  reviewRounds: number;
   targetReader: string;
   writingStyle: string;
   wordRange: string;
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 }>();
 
 const form = ref<TopicAdvancedSettings>({
+  reviewRounds: 2,
   targetReader: "",
   writingStyle: "",
   wordRange: "",
@@ -37,8 +39,16 @@ watch(
   { immediate: true }
 );
 
+function normalizeReviewRounds(value: number): number {
+  if (!Number.isFinite(value) || Number.isNaN(value)) {
+    return 2;
+  }
+  return Math.min(5, Math.max(1, Math.floor(value)));
+}
+
 function handleSave(): void {
   emit("save", {
+    reviewRounds: normalizeReviewRounds(form.value.reviewRounds),
     targetReader: form.value.targetReader.trim(),
     writingStyle: form.value.writingStyle.trim(),
     wordRange: form.value.wordRange.trim(),
@@ -58,6 +68,14 @@ function handleSave(): void {
       </header>
 
       <div class="form-grid">
+        <label class="field">
+          <span>审稿轮次</span>
+          <input v-model.number="form.reviewRounds" type="number" min="1" max="5" step="1" />
+          <small class="hint">
+            审稿轮次表示模型 B 审查次数；每增加 1 次审稿，系统会增加一次 A 重写与 B 再审稿。默认 2，范围 1-5。
+          </small>
+        </label>
+
         <label class="field">
           <span>目标读者</span>
           <input v-model="form.targetReader" type="text" placeholder="例如：创业公司运营负责人" />
@@ -149,6 +167,12 @@ function handleSave(): void {
   border: 1px solid rgba(149, 181, 255, 0.16);
   background: rgba(255, 255, 255, 0.03);
   color: #edf5ff;
+}
+
+.hint {
+  color: #9cb3d7;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .switch-field {

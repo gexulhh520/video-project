@@ -37,6 +37,7 @@ export type TopicCreateInput = {
   topic: string;
   platform: "公众号" | "今日头条" | "小红书" | "知乎";
   articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文";
+  reviewRounds?: number;
   targetReader?: string;
   writingStyle?: string;
   wordRange?: string;
@@ -74,6 +75,7 @@ export type ContentStudioDebateStep = {
   stepId: string;
   role: ContentStudioModelRole;
   name: "plan" | "review" | "rewrite" | "final_review";
+  displayName: string;
   provider: OpenCliProvider;
   profile: string;
   prompt: string;

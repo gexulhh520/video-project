@@ -148,10 +148,8 @@ function handleTest(role: ContentStudioModelRole): void {
 
         <section class="group">
           <h4>讨论设置</h4>
-          <label class="field">
-            <span>讨论轮数</span>
-            <input v-model.number="form.debateRounds" type="number" min="1" max="6" step="1" />
-          </label>
+          <p class="hint">阶段 2 当前为固定四步流程（A策划 → B审稿 → A重写 → B终审），讨论轮数暂不开放编辑。</p>
+          <p class="hint">预留轮数字段：{{ form.debateRounds }}</p>
           <label class="field">
             <span>轮询间隔 (ms)</span>
             <input v-model.number="form.pollIntervalMs" type="number" min="1000" step="500" />

@@ -1,7 +1,17 @@
-﻿import type { TopicCreateInput } from "../../types/content-studio.types";
+import type { TopicCreateInput } from "../../types/content-studio.types";
+
+type TopicPromptRoles = {
+  modelARoleName?: string;
+  modelBRoleName?: string;
+};
 
 function boolLabel(value: boolean | undefined, whenTrue: string, whenFalse: string): string {
   return value ? whenTrue : whenFalse;
+}
+
+function resolveRoleName(roleName: string | undefined, fallback: string): string {
+  const value = String(roleName || "").trim();
+  return value || fallback;
 }
 
 function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
@@ -40,6 +50,7 @@ function buildTopicContext(input: TopicCreateInput): string {
     `话题：${input.topic}`,
     `平台：${input.platform}`,
     `文章类型：${input.articleType}`,
+    `审稿轮次：${input.reviewRounds ?? 2}`,
     `目标读者：${input.targetReader?.trim() || "未指定"}`,
     `写作风格：${input.writingStyle?.trim() || "未指定"}`,
     `字数范围：${input.wordRange?.trim() || "未指定"}`,
@@ -49,9 +60,10 @@ function buildTopicContext(input: TopicCreateInput): string {
   ].join("\n");
 }
 
-export function buildTopicPlanPrompt(input: TopicCreateInput): string {
+export function buildTopicPlanPrompt(input: TopicCreateInput, roles?: TopicPromptRoles): string {
+  const modelARole = resolveRoleName(roles?.modelARoleName, "选题策划编辑");
   return [
-    "你是内容创作工作台中的模型A，角色是选题策划编辑。",
+    `你是内容创作工作台中的模型A，角色是${modelARole}。`,
     "目标：根据用户输入给出可执行的文章方向，并产出第一版完整文章 JSON。",
     buildTopicOutputSchemaNotice(input),
     "要求：",
@@ -63,9 +75,10 @@ export function buildTopicPlanPrompt(input: TopicCreateInput): string {
   ].join("\n\n");
 }
 
-export function buildTopicReviewPrompt(input: TopicCreateInput, planJson: string): string {
+export function buildTopicReviewPrompt(input: TopicCreateInput, planJson: string, roles?: TopicPromptRoles): string {
+  const modelBRole = resolveRoleName(roles?.modelBRoleName, "反方审稿总编");
   return [
-    "你是内容创作工作台中的模型B，角色是反方审稿总编。",
+    `你是内容创作工作台中的模型B，角色是${modelBRole}。`,
     "任务：审查模型A输出草稿，重点找出逻辑漏洞、事实风险、平台不匹配、标题钩子不足。",
     "只输出 JSON，不要输出 Markdown，不要解释。",
     "输出字段：{ verdict: \"pass|revise\", mustFix: string[], niceToHave: string[], riskNotes: string[] }",
@@ -76,9 +89,16 @@ export function buildTopicReviewPrompt(input: TopicCreateInput, planJson: string
   ].join("\n\n");
 }
 
-export function buildTopicRewritePrompt(input: TopicCreateInput, planJson: string, reviewJson: string): string {
+export function buildTopicRewritePrompt(
+  input: TopicCreateInput,
+  planJson: string,
+  reviewJson: string,
+  roles?: TopicPromptRoles
+): string {
+  const modelARole = resolveRoleName(roles?.modelARoleName, "选题策划编辑");
+  const modelBRole = resolveRoleName(roles?.modelBRoleName, "反方审稿总编");
   return [
-    "你是内容创作工作台中的模型A，请根据模型B审稿意见重写并给出改进版。",
+    `你是内容创作工作台中的模型A，角色是${modelARole}。请根据模型B（${modelBRole}）审稿意见重写并给出改进版。`,
     buildTopicOutputSchemaNotice(input),
     "重写要求：优先修复 mustFix，并确保可读性与平台风格。",
     "用户输入：",
@@ -90,9 +110,15 @@ export function buildTopicRewritePrompt(input: TopicCreateInput, planJson: strin
   ].join("\n\n");
 }
 
-export function buildTopicFinalReviewPrompt(input: TopicCreateInput, rewrittenJson: string): string {
+export function buildTopicFinalReviewPrompt(
+  input: TopicCreateInput,
+  rewrittenJson: string,
+  roles?: TopicPromptRoles
+): string {
+  const modelARole = resolveRoleName(roles?.modelARoleName, "选题策划编辑");
+  const modelBRole = resolveRoleName(roles?.modelBRoleName, "反方审稿总编");
   return [
-    "你是内容创作工作台中的模型B，请做终审并输出最终可发布版本。",
+    `你是内容创作工作台中的模型B，角色是${modelBRole}。请对模型A（${modelARole}）重写稿做终审并输出最终可发布版本。`,
     buildTopicOutputSchemaNotice(input),
     "如果存在风险，请在 riskNotes 中明确给出。",
     "用户输入：",

@@ -46,7 +46,21 @@ const fullText = computed(() => {
   if (!article.value) {
     return "";
   }
-  return article.value.paragraphs.map((paragraph) => paragraph.text).join("\n\n");
+  const lines: string[] = [];
+  if (article.value.title?.trim()) {
+    lines.push(article.value.title.trim());
+  }
+  if (article.value.coverText?.trim()) {
+    lines.push(`封面主文案：${article.value.coverText.trim()}`);
+  }
+  if (article.value.coverSubText?.trim()) {
+    lines.push(`封面副文案：${article.value.coverSubText.trim()}`);
+  }
+  const body = article.value.paragraphs.map((paragraph) => paragraph.text).filter((text) => text.trim());
+  if (body.length) {
+    lines.push(...body);
+  }
+  return lines.join("\n\n");
 });
 
 async function copyText(text: string): Promise<void> {

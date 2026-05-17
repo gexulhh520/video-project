@@ -32,12 +32,14 @@ export class ContentStudioDebateService {
   ): Promise<ContentStudioDebateResult> {
     const steps: ContentStudioDebateStep[] = [];
     const [modelA, modelB] = this.resolveModels(options.settings);
+    const reviewRounds = this.resolveReviewRounds(options.input);
 
     try {
       const planResponse = await this.runStep({
         steps,
         role: modelA.role,
         name: "plan",
+        displayName: "模型 A：策划初稿",
         provider: modelA.provider,
         profile: modelA.profile,
         prompt: options.workflow.planPrompt,
@@ -45,35 +47,47 @@ export class ContentStudioDebateService {
         onStepProgress
       });
 
-      const reviewResponse = await this.runStep({
-        steps,
-        role: modelB.role,
-        name: "review",
-        provider: modelB.provider,
-        profile: modelB.profile,
-        prompt: `${options.workflow.reviewPrompt}\n\n[模型A输出]\n${planResponse}`,
-        settings: options.settings,
-        onStepProgress
-      });
+      let currentDraft = planResponse;
+      let latestReview = "";
 
-      const rewriteResponse = await this.runStep({
-        steps,
-        role: modelA.role,
-        name: "rewrite",
-        provider: modelA.provider,
-        profile: modelA.profile,
-        prompt: `${options.workflow.rewritePrompt}\n\n[模型A初稿]\n${planResponse}\n\n[模型B审稿]\n${reviewResponse}`,
-        settings: options.settings,
-        onStepProgress
-      });
+      for (let reviewIndex = 1; reviewIndex < reviewRounds; reviewIndex += 1) {
+        latestReview = await this.runStep({
+          steps,
+          role: modelB.role,
+          name: "review",
+          displayName: `模型 B：第 ${reviewIndex} 次审稿`,
+          provider: modelB.provider,
+          profile: modelB.profile,
+          prompt: `${options.workflow.reviewPrompt}\n\n[模型A当前稿件]\n${currentDraft}`,
+          settings: options.settings,
+          onStepProgress
+        });
 
+        currentDraft = await this.runStep({
+          steps,
+          role: modelA.role,
+          name: "rewrite",
+          displayName: `模型 A：第 ${reviewIndex} 次重写`,
+          provider: modelA.provider,
+          profile: modelA.profile,
+          prompt: `${options.workflow.rewritePrompt}\n\n[模型A当前稿件]\n${currentDraft}\n\n[模型B审稿]\n${latestReview}`,
+          settings: options.settings,
+          onStepProgress
+        });
+      }
+
+      const finalPromptParts = [options.workflow.finalReviewPrompt, `[模型A当前稿件]\n${currentDraft}`];
+      if (latestReview) {
+        finalPromptParts.push(`[最近一次模型B审稿]\n${latestReview}`);
+      }
       const finalResponse = await this.runStep({
         steps,
         role: modelB.role,
         name: "final_review",
+        displayName: "模型 B：终审",
         provider: modelB.provider,
         profile: modelB.profile,
-        prompt: `${options.workflow.finalReviewPrompt}\n\n[模型A重写稿]\n${rewriteResponse}`,
+        prompt: finalPromptParts.join("\n\n"),
         settings: options.settings,
         onStepProgress
       });
@@ -93,6 +107,7 @@ export class ContentStudioDebateService {
     steps: ContentStudioDebateStep[];
     role: ContentStudioModelRole;
     name: ContentStudioDebateStep["name"];
+    displayName: string;
     provider: ResolvedModel["provider"];
     profile: string;
     prompt: string;
@@ -103,6 +118,7 @@ export class ContentStudioDebateService {
       stepId: randomUUID(),
       role: options.role,
       name: options.name,
+      displayName: options.displayName,
       provider: options.provider,
       profile: options.profile,
       prompt: options.prompt,
@@ -166,5 +182,16 @@ export class ContentStudioDebateService {
     }
 
     return [enabledModels[0], enabledModels[1]];
+  }
+
+  private resolveReviewRounds(input: unknown): number {
+    if (!input || typeof input !== "object") {
+      return 2;
+    }
+    const raw = Number((input as { reviewRounds?: unknown }).reviewRounds);
+    if (!Number.isFinite(raw)) {
+      return 2;
+    }
+    return Math.min(5, Math.max(1, Math.floor(raw)));
   }
 }

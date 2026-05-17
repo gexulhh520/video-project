@@ -10,6 +10,7 @@ import type {
   ContentStudioTabModelSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioTopicProgress,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -26,6 +27,7 @@ export type {
   ContentStudioTabModelSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioTopicProgress,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -524,4 +526,5 @@ export type DesktopApi = {
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;
+  onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void) => () => void;
 };

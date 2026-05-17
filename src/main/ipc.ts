@@ -12,6 +12,7 @@ import type {
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioTopicProgress,
   TestContentStudioModelOptions,
   TopicCreateInput,
   ConfirmWebRecordBodyOptions,
@@ -51,6 +52,7 @@ import { ContentStudioService } from "./services/content-studio/content-studio.s
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
+export const CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL = "content-studio-topic:progress";
 
 export function registerIpcHandlers(
   mainWindow: BrowserWindow,
@@ -180,7 +182,9 @@ export function registerIpcHandlers(
     contentStudioService.deleteTask(taskId)
   );
   ipcMain.handle("content-studio-topic:run", async (_event, options: TopicCreateInput): Promise<ContentStudioTask> =>
-    contentStudioService.runTopicCreate(options)
+    contentStudioService.runTopicCreate(options, (progress: ContentStudioTopicProgress): void => {
+      mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
+    })
   );
   ipcMain.handle("web-to-post-settings:get", async (): Promise<WebToPostSettings> => settingsService.getWebToPostSettings());
   ipcMain.handle("web-to-post-settings:save", async (_event, settings: WebToPostSettings): Promise<WebToPostSettings> =>

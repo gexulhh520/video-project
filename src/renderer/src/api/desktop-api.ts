@@ -9,6 +9,7 @@ import type {
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioTopicProgress,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
   DeleteWebRewriteHistoryOptions,
@@ -156,5 +157,7 @@ export const desktopApi = {
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback),
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void): (() => void) =>
-    window.desktopApi.onWebTaskProgress(callback)
+    window.desktopApi.onWebTaskProgress(callback),
+  onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void): (() => void) =>
+    window.desktopApi.onContentStudioTopicProgress(callback)
 };

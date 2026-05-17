@@ -45,12 +45,12 @@ export type TopicCreateInput = {
   generateImagePlan?: boolean;
 };
 
-export type ContentStudioImagePlanType = "real" | "ai" | "infographic" | "screenshot" | "none";
+export type ContentStudioImagePlanType = "source_image" | "ai_generated" | "infographic" | "none";
 
 export type ContentStudioImagePlan = {
   type: ContentStudioImagePlanType;
-  description: string;
-  aiPrompt?: string;
+  prompt?: string;
+  caption?: string;
 };
 
 export type ContentStudioArticleParagraph = {
@@ -61,7 +61,10 @@ export type ContentStudioArticleParagraph = {
 
 export type ContentStudioArticle = {
   title: string;
+  titleCandidates?: string[];
   coverText?: string;
+  coverSubText?: string;
+  coverStyleSuggestion?: string;
   paragraphs: ContentStudioArticleParagraph[];
   tags?: string[];
   riskNotes?: string[];
@@ -125,6 +128,26 @@ export type ContentStudioTaskSummary = {
   title: string;
   status: ContentStudioTaskStatus;
   createdAt: string;
+  updatedAt: string;
+};
+
+export type ContentStudioTopicProgressStatus =
+  | "queued"
+  | "running_step"
+  | "parsing_result"
+  | "completed"
+  | "failed";
+
+export type ContentStudioTopicProgress = {
+  taskId: string;
+  tab: "topic";
+  status: ContentStudioTopicProgressStatus;
+  progress: number;
+  message: string;
+  stepName?: ContentStudioDebateStep["name"];
+  role?: ContentStudioModelRole;
+  provider?: OpenCliProvider;
+  profile?: string;
   updatedAt: string;
 };
 

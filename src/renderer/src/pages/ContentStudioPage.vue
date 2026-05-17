@@ -1,11 +1,12 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type {
   ContentStudioConfigStatus,
   ContentStudioModelRole,
   ContentStudioSettings,
   ContentStudioTask,
+  ContentStudioTopicProgress,
   ContentStudioTabKey,
   ContentStudioTabModelSettings,
   OpenCliProvider,
@@ -45,13 +46,12 @@ const resultDrawerOpen = ref(false);
 const topicAdvancedModalOpen = ref(false);
 const runLogTitle = ref("运行记录");
 const runLogDescription = ref("阶段 1 已预留运行记录弹窗入口，后续阶段会接入任务历史与详细日志。");
-const resultDrawerTitle = ref("结果抽屉");
-const resultDrawerSummary = ref("阶段 1 已预留结果抽屉，后续阶段会展示任务结果详情与导出入口。");
 const testingRole = ref<ContentStudioModelRole | null>(null);
 const testMessage = ref("");
 const pageNotice = ref("");
 const topicRunning = ref(false);
 const latestTopicTask = ref<ContentStudioTask | null>(null);
+const topicProgress = ref<ContentStudioTopicProgress | null>(null);
 const topicAdvancedSettings = ref({
   targetReader: "",
   writingStyle: "",
@@ -75,8 +75,17 @@ const currentModelSettings = computed<ContentStudioTabModelSettings | null>(() =
   return settings.value.tabs[modelSettingsTab.value];
 });
 
+let unsubscribeTopicProgress: (() => void) | null = null;
+
 onMounted(() => {
+  unsubscribeTopicProgress = desktopApi.onContentStudioTopicProgress((progress) => {
+    topicProgress.value = progress;
+  });
   void bootstrap();
+});
+
+onBeforeUnmount(() => {
+  unsubscribeTopicProgress?.();
 });
 
 async function bootstrap(): Promise<void> {
@@ -198,30 +207,6 @@ function reopenLatestTopicResult(): void {
     return;
   }
 
-  if (latestTopicTask.value.status === "completed" && latestTopicTask.value.result) {
-    const previewParagraphs = latestTopicTask.value.result.paragraphs
-      .slice(0, 3)
-      .map((paragraph) => `- ${paragraph.text}`)
-      .join("\n");
-    resultDrawerTitle.value = `话题成文 - ${latestTopicTask.value.result.title}`;
-    resultDrawerSummary.value = [
-      `任务ID：${latestTopicTask.value.taskId}`,
-      latestTopicTask.value.result.coverText ? `封面文案：${latestTopicTask.value.result.coverText}` : "",
-      "正文预览：",
-      previewParagraphs || "- （暂无段落）",
-      latestTopicTask.value.result.riskNotes?.length
-        ? `风险提示：${latestTopicTask.value.result.riskNotes.join("；")}`
-        : ""
-    ]
-      .filter((item) => Boolean(item))
-      .join("\n");
-  } else {
-    resultDrawerTitle.value = "话题成文 - 最近任务";
-    resultDrawerSummary.value = `任务ID：${latestTopicTask.value.taskId}\n状态：${latestTopicTask.value.status}\n${
-      latestTopicTask.value.error ? `说明：${latestTopicTask.value.error}` : ""
-    }`;
-  }
-
   resultDrawerOpen.value = true;
 }
 
@@ -230,43 +215,32 @@ async function startTopicCreate(payload: {
   platform: TopicCreateInput["platform"];
   articleType: TopicCreateInput["articleType"];
 }): Promise<void> {
+  const topicInput: TopicCreateInput = {
+    topic: payload.topic,
+    platform: payload.platform,
+    articleType: payload.articleType,
+    targetReader: topicAdvancedSettings.value.targetReader || undefined,
+    writingStyle: topicAdvancedSettings.value.writingStyle || undefined,
+    wordRange: topicAdvancedSettings.value.wordRange || undefined,
+    generateTitleCandidates: topicAdvancedSettings.value.generateTitleCandidates,
+    generateCoverText: topicAdvancedSettings.value.generateCoverText,
+    generateImagePlan: topicAdvancedSettings.value.generateImagePlan
+  };
+  await executeTopicCreate(topicInput);
+}
+
+async function executeTopicCreate(topicInput: TopicCreateInput): Promise<void> {
   topicRunning.value = true;
   pageNotice.value = "";
+  topicProgress.value = null;
 
   try {
-    const topicInput: TopicCreateInput = {
-      topic: payload.topic,
-      platform: payload.platform,
-      articleType: payload.articleType,
-      targetReader: topicAdvancedSettings.value.targetReader || undefined,
-      writingStyle: topicAdvancedSettings.value.writingStyle || undefined,
-      wordRange: topicAdvancedSettings.value.wordRange || undefined,
-      generateTitleCandidates: topicAdvancedSettings.value.generateTitleCandidates,
-      generateCoverText: topicAdvancedSettings.value.generateCoverText,
-      generateImagePlan: topicAdvancedSettings.value.generateImagePlan
-    };
     const task = await desktopApi.runContentStudioTopic(topicInput);
     latestTopicTask.value = task;
 
     if (task.status === "completed" && task.result) {
-      const previewParagraphs = task.result.paragraphs
-        .slice(0, 3)
-        .map((paragraph) => `- ${paragraph.text}`)
-        .join("\n");
-      resultDrawerTitle.value = `话题成文 - ${task.result.title}`;
-      resultDrawerSummary.value = [
-        `任务ID：${task.taskId}`,
-        task.result.coverText ? `封面文案：${task.result.coverText}` : "",
-        "正文预览：",
-        previewParagraphs || "- （暂无段落）",
-        task.result.riskNotes?.length ? `风险提示：${task.result.riskNotes.join("；")}` : ""
-      ]
-        .filter((item) => Boolean(item))
-        .join("\n");
       pageNotice.value = "话题成文已完成，结果已写入任务并展示在结果抽屉。";
     } else {
-      resultDrawerTitle.value = "话题成文 - 执行失败";
-      resultDrawerSummary.value = `任务ID：${task.taskId}\n失败原因：${task.error || "未知错误"}`;
       pageNotice.value = "话题成文执行失败，可在运行记录查看详细步骤。";
     }
 
@@ -280,17 +254,57 @@ async function startTopicCreate(payload: {
   }
 }
 
+const topicProgressLabel = computed(() => {
+  if (!topicProgress.value) {
+    return "";
+  }
+  const statusMap: Record<ContentStudioTopicProgress["status"], string> = {
+    queued: "排队中",
+    running_step: "执行中",
+    parsing_result: "结果解析中",
+    completed: "已完成",
+    failed: "失败"
+  };
+  return `${statusMap[topicProgress.value.status]} · ${topicProgress.value.progress}% · ${topicProgress.value.message}`;
+});
+
 function formatRunLogDescription(task: ContentStudioTask): string {
   if (!task.debateSteps.length) {
     return `任务ID：${task.taskId}\n当前无讨论步骤记录。`;
   }
 
-  const lines = task.debateSteps.map((step, index) => {
-    const preview = step.response.replace(/\s+/g, " ").slice(0, 80);
-    return `${index + 1}. ${step.name} [${step.role}] ${step.status}${preview ? `：${preview}` : ""}`;
-  });
+  const lines = task.debateSteps.map((step, index) => [
+    `${index + 1}. ${step.name} [${step.role}] ${step.status}`,
+    `provider/profile: ${step.provider} / ${step.profile}`,
+    `startedAt: ${step.startedAt}`,
+    step.finishedAt ? `finishedAt: ${step.finishedAt}` : "",
+    `prompt: ${step.prompt}`,
+    `response: ${step.response}`,
+    step.error ? `error: ${step.error}` : ""
+  ].filter((item) => Boolean(item)).join("\n"));
 
   return `任务ID：${task.taskId}\n${lines.join("\n")}`;
+}
+
+function openRunLogFromDrawer(): void {
+  openTopicRunLog();
+}
+
+function rerunTopicFromDrawer(): void {
+  if (!latestTopicTask.value) {
+    pageNotice.value = "暂无可重新生成的任务。";
+    return;
+  }
+  const input = latestTopicTask.value.input as TopicCreateInput;
+  topicAdvancedSettings.value = {
+    targetReader: input.targetReader || "",
+    writingStyle: input.writingStyle || "",
+    wordRange: input.wordRange || "",
+    generateTitleCandidates: input.generateTitleCandidates ?? true,
+    generateCoverText: input.generateCoverText ?? true,
+    generateImagePlan: input.generateImagePlan ?? true
+  };
+  void executeTopicCreate(input);
 }
 </script>
 
@@ -312,6 +326,7 @@ function formatRunLogDescription(task: ContentStudioTask): string {
     </header>
 
     <p v-if="pageNotice" class="notice">{{ pageNotice }}</p>
+    <p v-if="topicProgressLabel" class="progress-line">{{ topicProgressLabel }}</p>
     <p v-if="loading" class="hint">加载中...</p>
     <p v-else-if="configStatus && !configStatus.ready" class="warning">
       当前配置未完成：{{ configStatus.missingItems.join("、") || "请先配置" }}
@@ -399,8 +414,10 @@ function formatRunLogDescription(task: ContentStudioTask): string {
 
     <StudioResultDrawer
       :open="resultDrawerOpen"
-      :title="resultDrawerTitle"
-      :summary="resultDrawerSummary"
+      :task="latestTopicTask"
+      :running="topicRunning"
+      @view-run-log="openRunLogFromDrawer"
+      @rerun="rerunTopicFromDrawer"
       @close="resultDrawerOpen = false"
     />
   </section>
@@ -475,6 +492,11 @@ function formatRunLogDescription(task: ContentStudioTask): string {
 
 .notice {
   color: #9de3c8;
+}
+
+.progress-line {
+  margin: 0;
+  color: #7bd0ff;
 }
 
 .hint {

@@ -21,6 +21,7 @@ type OpenCliReadMessage = {
   Index?: number;
   Role?: string;
   Text?: string;
+  [key: string]: unknown;
 };
 
 type ExtractArticleOptions = {
@@ -276,6 +277,11 @@ export class OpenCliWebLlmService {
     const startedAt = Date.now();
     let lastAssistant = "";
     let stableRounds = 0;
+    let lastJsonNormalized = "";
+    let lastJsonRaw = "";
+    let jsonStableRounds = 0;
+    let lastJsonChangedAt = 0;
+    const minJsonSettleMs = Math.max(intervalMs * 3, 6000);
 
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -292,9 +298,33 @@ export class OpenCliWebLlmService {
         stableRounds = 0;
       }
 
+      // JSON responses may evolve in-place across polling rounds.
+      // Return only when the parsed JSON payload is stable for multiple rounds
+      // and remains unchanged for a short settle window.
+      const normalizedJson = this.normalizeJsonText(latestAssistant);
+      if (normalizedJson) {
+        if (normalizedJson === lastJsonNormalized) {
+          jsonStableRounds += 1;
+          const settled = Date.now() - lastJsonChangedAt >= minJsonSettleMs;
+          if (jsonStableRounds >= 2 && stableRounds >= 2 && settled) {
+            return latestAssistant;
+          }
+        } else {
+          lastJsonNormalized = normalizedJson;
+          jsonStableRounds = 0;
+          lastJsonChangedAt = Date.now();
+        }
+        lastJsonRaw = latestAssistant;
+        continue;
+      }
+
       if (stableRounds >= 2) {
         return latestAssistant;
       }
+    }
+
+    if (lastJsonRaw) {
+      return lastJsonRaw;
     }
 
     if (lastAssistant) {
@@ -327,43 +357,129 @@ export class OpenCliWebLlmService {
   }
 
   private extractMessages(payload: unknown): OpenCliReadMessage[] {
-    if (Array.isArray(payload)) {
-      return payload.filter((item) => !!item && typeof item === "object") as OpenCliReadMessage[];
-    }
-
-    if (payload && typeof payload === "object") {
-      const record = payload as Record<string, unknown>;
-      if (Array.isArray(record.data)) {
-        return record.data.filter((item) => !!item && typeof item === "object") as OpenCliReadMessage[];
-      }
-      if (Array.isArray(record.rows)) {
-        return record.rows.filter((item) => !!item && typeof item === "object") as OpenCliReadMessage[];
-      }
-      if (Array.isArray(record.messages)) {
-        return record.messages.filter((item) => !!item && typeof item === "object") as OpenCliReadMessage[];
-      }
-    }
-
-    return [];
+    return this.collectMessageCandidates(payload);
   }
 
   private getLatestAssistantText(messages: OpenCliReadMessage[]): string {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const role = String(messages[i].Role || "").toLowerCase();
-      if (role !== "assistant") {
+      if (!role.includes("assistant")) {
         continue;
       }
       const text = String(messages[i].Text || "").trim();
       if (!text) {
         continue;
       }
-      if (/thinking|正在思考|生成中/i.test(text)) {
+      if (/thinking|正在思考|思考中/i.test(text)) {
         continue;
       }
       return text;
     }
 
     return "";
+  }
+
+  private collectMessageCandidates(payload: unknown, depth = 0): OpenCliReadMessage[] {
+    if (depth > 6 || payload == null) {
+      return [];
+    }
+
+    if (Array.isArray(payload)) {
+      return payload.flatMap((item) => this.collectMessageCandidates(item, depth + 1));
+    }
+
+    if (typeof payload !== "object") {
+      return [];
+    }
+
+    const normalized = this.normalizeMessageCandidate(payload as Record<string, unknown>);
+    if (normalized) {
+      return [normalized];
+    }
+
+    const record = payload as Record<string, unknown>;
+    const nestedKeys = [
+      "data",
+      "rows",
+      "messages",
+      "items",
+      "results",
+      "events",
+      "output",
+      "conversation",
+      "history"
+    ];
+    const nestedValues = nestedKeys
+      .map((key) => record[key] ?? record[key.toLowerCase()] ?? record[key.toUpperCase()])
+      .filter((value) => value != null);
+
+    return nestedValues.flatMap((value) => this.collectMessageCandidates(value, depth + 1));
+  }
+
+  private normalizeMessageCandidate(value: Record<string, unknown>): OpenCliReadMessage | null {
+    const role = this.pickFirstString(value, ["Role", "role", "senderRole", "sender_role", "type"]);
+    const text = this.extractMessageText(value);
+
+    if (!role || !text) {
+      return null;
+    }
+
+    return {
+      Index: Number(value.Index ?? value.index ?? 0) || undefined,
+      Role: role,
+      Text: text
+    };
+  }
+
+  private extractMessageText(value: Record<string, unknown>): string {
+    const direct = this.pickFirstString(value, ["Text", "text", "message", "Message", "content", "Content"]);
+    if (direct) {
+      return direct.trim();
+    }
+
+    const content = value.content ?? value.Content;
+    if (Array.isArray(content)) {
+      const fragments = content
+        .map((item) => {
+          if (typeof item === "string") {
+            return item;
+          }
+          if (!item || typeof item !== "object") {
+            return "";
+          }
+          const record = item as Record<string, unknown>;
+          return this.pickFirstString(record, ["text", "Text", "value", "content", "Content"]) || "";
+        })
+        .map((item) => item.trim())
+        .filter(Boolean);
+      return fragments.join("\n").trim();
+    }
+
+    return "";
+  }
+
+  private pickFirstString(record: Record<string, unknown>, keys: string[]): string {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value;
+      }
+    }
+    return "";
+  }
+
+  private normalizeJsonText(text: string): string {
+    const normalized = String(text || "").trim();
+    if (!normalized) {
+      return "";
+    }
+
+    try {
+      const parsed = parseOpenCliJson(normalized);
+      return JSON.stringify(parsed);
+    } catch {
+      return "";
+    }
   }
 
   private async writeDebugPrompt(prompt: string, workingDir?: string): Promise<string> {

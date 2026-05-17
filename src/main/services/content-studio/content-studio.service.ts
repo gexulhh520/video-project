@@ -2,6 +2,7 @@
 import type {
   ContentStudioArticle,
   ContentStudioArticleParagraph,
+  ContentStudioTopicProgress,
   ContentStudioTask,
   ContentStudioTaskSummary,
   TopicCreateInput
@@ -39,7 +40,10 @@ export class ContentStudioService {
     await this.taskStore.deleteTask(taskId);
   }
 
-  async runTopicCreate(input: TopicCreateInput): Promise<ContentStudioTask> {
+  async runTopicCreate(
+    input: TopicCreateInput,
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
     const normalizedInput = this.normalizeTopicInput(input);
     const configStatus = await this.settingsService.getConfigStatus();
     if (!configStatus.tabs.topic.ready) {
@@ -50,6 +54,11 @@ export class ContentStudioService {
     const tabSettings = studioSettings.tabs.topic;
 
     let task = await this.taskStore.createTask("topic", normalizedInput.topic, normalizedInput, tabSettings);
+    this.emitTopicProgress(onProgress, task.taskId, {
+      status: "queued",
+      progress: 2,
+      message: "任务已创建，准备开始双模型讨论。"
+    });
     task = await this.taskStore.saveTask({
       ...task,
       status: "running"
@@ -72,8 +81,36 @@ export class ContentStudioService {
           rewritePrompt,
           finalReviewPrompt
         }
+      }, (step) => {
+        const progressMap: Record<typeof step.name, number> = {
+          plan: 18,
+          review: 38,
+          rewrite: 62,
+          final_review: 82
+        };
+        const stepLabelMap: Record<typeof step.name, string> = {
+          plan: "模型A：选题策划",
+          review: "模型B：反方审稿",
+          rewrite: "模型A：重构初稿",
+          final_review: "模型B：终审"
+        };
+        const stateText = step.status === "running" ? "正在调用" : step.status === "success" ? "已完成" : "失败";
+        this.emitTopicProgress(onProgress, task.taskId, {
+          status: step.status === "failed" ? "failed" : "running_step",
+          progress: progressMap[step.name],
+          message: `${stateText}${stepLabelMap[step.name]}`,
+          stepName: step.name,
+          role: step.role,
+          provider: step.provider,
+          profile: step.profile
+        });
       });
 
+      this.emitTopicProgress(onProgress, task.taskId, {
+        status: "parsing_result",
+        progress: 92,
+        message: "正在解析最终文章 JSON。"
+      });
       const article = this.parseArticleResult(debateResult.finalResponse, normalizedInput.topic);
 
       task = await this.taskStore.saveTask({
@@ -82,6 +119,11 @@ export class ContentStudioService {
         debateSteps: debateResult.steps,
         result: article,
         error: undefined
+      });
+      this.emitTopicProgress(onProgress, task.taskId, {
+        status: "completed",
+        progress: 100,
+        message: "话题成文完成。"
       });
 
       return task;
@@ -92,6 +134,11 @@ export class ContentStudioService {
         status: "failed",
         debateSteps,
         error: error instanceof Error ? error.message : "话题成文执行失败"
+      });
+      this.emitTopicProgress(onProgress, task.taskId, {
+        status: "failed",
+        progress: 100,
+        message: task.error || "话题成文执行失败。"
       });
       return task;
     }
@@ -113,17 +160,43 @@ export class ContentStudioService {
   }
 
   private parseArticleResult(rawOutput: string, fallbackTitle: string): ContentStudioArticle {
+    const candidates = this.collectArticleJsonCandidates(rawOutput);
+    let best: { article: ContentStudioArticle; score: number } | null = null;
+    let firstErrorMessage = "";
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = parseOpenCliJson<Partial<ContentStudioArticle>>(candidate);
+        const article = this.normalizeArticle(parsed, fallbackTitle);
+        const score = this.scoreArticle(article);
+        if (!best || score > best.score) {
+          best = { article, score };
+        }
+      } catch (error) {
+        if (!firstErrorMessage) {
+          firstErrorMessage = error instanceof Error ? error.message : "JSON 解析失败";
+        }
+      }
+    }
+
+    if (best) {
+      return best.article;
+    }
+
     try {
       const parsed = parseOpenCliJson<Partial<ContentStudioArticle>>(rawOutput);
       return this.normalizeArticle(parsed, fallbackTitle);
-    } catch {
-      return this.fallbackArticleFromText(rawOutput, fallbackTitle);
+    } catch (error) {
+      const message = firstErrorMessage || (error instanceof Error ? error.message : "JSON 解析失败");
+      throw new Error(`最终文章 JSON 解析失败：${message}`);
     }
   }
 
   private normalizeArticle(article: Partial<ContentStudioArticle>, fallbackTitle: string): ContentStudioArticle {
     const title = String(article.title || "").trim() || fallbackTitle;
     const coverText = String(article.coverText || "").trim() || undefined;
+    const coverSubText = String(article.coverSubText || "").trim() || undefined;
+    const coverStyleSuggestion = String(article.coverStyleSuggestion || "").trim() || undefined;
     const paragraphs = Array.isArray(article.paragraphs)
       ? article.paragraphs
           .map((paragraph, index) => {
@@ -137,9 +210,19 @@ export class ContentStudioService {
               text,
               imagePlan: paragraph?.imagePlan
                 ? {
-                    type: paragraph.imagePlan.type || "none",
-                    description: String(paragraph.imagePlan.description || "").trim() || "配图待补充",
-                    aiPrompt: paragraph.imagePlan.aiPrompt?.trim() || undefined
+                    type: this.normalizeImagePlanType(String(paragraph.imagePlan.type || "").trim()),
+                    caption:
+                      String(
+                        paragraph.imagePlan.caption ||
+                        (paragraph.imagePlan as { description?: string }).description ||
+                        ""
+                      ).trim() || undefined,
+                    prompt:
+                      String(
+                        paragraph.imagePlan.prompt ||
+                        (paragraph.imagePlan as { aiPrompt?: string }).aiPrompt ||
+                        ""
+                      ).trim() || undefined
                   }
                 : undefined
             } as ContentStudioArticleParagraph;
@@ -148,9 +231,12 @@ export class ContentStudioService {
       : [];
 
     if (!paragraphs.length) {
-      return this.fallbackArticleFromText(JSON.stringify(article), title);
+      throw new Error("最终文章缺少有效正文段落");
     }
 
+    const titleCandidates = Array.isArray(article.titleCandidates)
+      ? article.titleCandidates.map((item) => String(item || "").trim()).filter((item) => Boolean(item))
+      : undefined;
     const tags = Array.isArray(article.tags)
       ? article.tags.map((item) => String(item || "").trim()).filter((item) => Boolean(item))
       : undefined;
@@ -160,30 +246,143 @@ export class ContentStudioService {
 
     return {
       title,
+      titleCandidates: titleCandidates?.length ? titleCandidates : undefined,
       coverText,
+      coverSubText,
+      coverStyleSuggestion,
       paragraphs,
       tags: tags?.length ? tags : undefined,
       riskNotes: riskNotes?.length ? riskNotes : undefined
     };
   }
 
-  private fallbackArticleFromText(rawOutput: string, fallbackTitle: string): ContentStudioArticle {
-    const lines = String(rawOutput || "")
-      .replace(/```json|```/gi, "")
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter((line) => Boolean(line));
+  private normalizeImagePlanType(type: string): "source_image" | "ai_generated" | "infographic" | "none" {
+    if (type === "source_image" || type === "ai_generated" || type === "infographic" || type === "none") {
+      return type;
+    }
 
-    const paragraphs = (lines.length ? lines : ["模型返回非结构化文本，请手动整理后发布。"])
-      .map((text, index) => ({
-        paragraphId: `p${index + 1}`,
-        text
-      }));
+    if (type === "real") {
+      return "source_image";
+    }
 
-    return {
-      title: fallbackTitle,
-      paragraphs,
-      riskNotes: ["模型输出未完全结构化，建议人工校对后发布。"]
+    if (type === "ai") {
+      return "ai_generated";
+    }
+
+    if (type === "screenshot") {
+      return "source_image";
+    }
+
+    return "none";
+  }
+
+  private emitTopicProgress(
+    onProgress: ((progress: ContentStudioTopicProgress) => void) | undefined,
+    taskId: string,
+    payload: Omit<ContentStudioTopicProgress, "taskId" | "tab" | "updatedAt">
+  ): void {
+    onProgress?.({
+      taskId,
+      tab: "topic",
+      updatedAt: new Date().toISOString(),
+      ...payload
+    });
+  }
+
+  private collectArticleJsonCandidates(rawOutput: string): string[] {
+    const text = String(rawOutput || "").trim();
+    if (!text) {
+      return [];
+    }
+
+    const candidates: string[] = [];
+    const pushUnique = (value: string) => {
+      const normalized = String(value || "").trim();
+      if (!normalized) {
+        return;
+      }
+      if (!candidates.includes(normalized)) {
+        candidates.push(normalized);
+      }
     };
+
+    pushUnique(text);
+
+    const fencedMatches = text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi);
+    for (const match of fencedMatches) {
+      pushUnique(match[1] || "");
+    }
+
+    for (const slice of this.extractJsonObjectSlices(text, 40)) {
+      pushUnique(slice);
+    }
+
+    return candidates;
+  }
+
+  private extractJsonObjectSlices(text: string, maxCount: number): string[] {
+    const slices: string[] = [];
+    let start = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (char === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (char === "\"") {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === "\"") {
+        inString = true;
+        continue;
+      }
+
+      if (char === "{") {
+        if (depth === 0) {
+          start = i;
+        }
+        depth += 1;
+        continue;
+      }
+
+      if (char === "}" && depth > 0) {
+        depth -= 1;
+        if (depth === 0 && start >= 0) {
+          slices.push(text.slice(start, i + 1));
+          if (slices.length >= maxCount) {
+            return slices;
+          }
+          start = -1;
+        }
+      }
+    }
+
+    return slices;
+  }
+
+  private scoreArticle(article: ContentStudioArticle): number {
+    const paragraphChars = article.paragraphs.reduce((sum, paragraph) => sum + paragraph.text.length, 0);
+    const imagePlanCount = article.paragraphs.reduce((sum, paragraph) => (paragraph.imagePlan ? sum + 1 : sum), 0);
+    return (
+      article.paragraphs.length * 100 +
+      Math.min(paragraphChars, 6000) +
+      (article.title ? 20 : 0) +
+      (article.tags?.length || 0) * 3 +
+      (article.riskNotes?.length || 0) * 2 +
+      imagePlanCount * 2
+    );
   }
 }

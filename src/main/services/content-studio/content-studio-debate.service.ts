@@ -21,10 +21,15 @@ export class ContentStudioDebateError extends Error {
   }
 }
 
+export type ContentStudioDebateProgressCallback = (step: ContentStudioDebateStep) => void;
+
 export class ContentStudioDebateService {
   constructor(private readonly openCliClient: ContentStudioOpenCliClient) {}
 
-  async runDebate(options: ContentStudioDebateOptions): Promise<ContentStudioDebateResult> {
+  async runDebate(
+    options: ContentStudioDebateOptions,
+    onStepProgress?: ContentStudioDebateProgressCallback
+  ): Promise<ContentStudioDebateResult> {
     const steps: ContentStudioDebateStep[] = [];
     const [modelA, modelB] = this.resolveModels(options.settings);
 
@@ -36,7 +41,8 @@ export class ContentStudioDebateService {
         provider: modelA.provider,
         profile: modelA.profile,
         prompt: options.workflow.planPrompt,
-        settings: options.settings
+        settings: options.settings,
+        onStepProgress
       });
 
       const reviewResponse = await this.runStep({
@@ -46,7 +52,8 @@ export class ContentStudioDebateService {
         provider: modelB.provider,
         profile: modelB.profile,
         prompt: `${options.workflow.reviewPrompt}\n\n[模型A输出]\n${planResponse}`,
-        settings: options.settings
+        settings: options.settings,
+        onStepProgress
       });
 
       const rewriteResponse = await this.runStep({
@@ -56,7 +63,8 @@ export class ContentStudioDebateService {
         provider: modelA.provider,
         profile: modelA.profile,
         prompt: `${options.workflow.rewritePrompt}\n\n[模型A初稿]\n${planResponse}\n\n[模型B审稿]\n${reviewResponse}`,
-        settings: options.settings
+        settings: options.settings,
+        onStepProgress
       });
 
       const finalResponse = await this.runStep({
@@ -66,7 +74,8 @@ export class ContentStudioDebateService {
         provider: modelB.provider,
         profile: modelB.profile,
         prompt: `${options.workflow.finalReviewPrompt}\n\n[模型A重写稿]\n${rewriteResponse}`,
-        settings: options.settings
+        settings: options.settings,
+        onStepProgress
       });
 
       return {
@@ -88,6 +97,7 @@ export class ContentStudioDebateService {
     profile: string;
     prompt: string;
     settings: ContentStudioTabModelSettings;
+    onStepProgress?: ContentStudioDebateProgressCallback;
   }): Promise<string> {
     const step: ContentStudioDebateStep = {
       stepId: randomUUID(),
@@ -101,6 +111,7 @@ export class ContentStudioDebateService {
       status: "running"
     };
     options.steps.push(step);
+    options.onStepProgress?.(step);
 
     try {
       const response = await this.openCliClient.ask({
@@ -114,11 +125,13 @@ export class ContentStudioDebateService {
       step.response = response;
       step.status = "success";
       step.finishedAt = new Date().toISOString();
+      options.onStepProgress?.(step);
       return response;
     } catch (error) {
       step.status = "failed";
       step.finishedAt = new Date().toISOString();
       step.error = error instanceof Error ? error.message : "调用失败";
+      options.onStepProgress?.(step);
       throw error;
     }
   }

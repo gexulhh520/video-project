@@ -1,28 +1,243 @@
 ﻿<script setup lang="ts">
+import { computed } from "vue";
+import type { ContentStudioTask, TopicCreateInput } from "../../../../main/types/app.types";
+
 const props = defineProps<{
   open: boolean;
-  title: string;
-  summary: string;
+  task: ContentStudioTask | null;
+  running?: boolean;
 }>();
-const emit = defineEmits<{ close: [] }>();
+
+const emit = defineEmits<{
+  close: [];
+  viewRunLog: [];
+  rerun: [];
+}>();
+
+const article = computed(() => props.task?.result);
+const topicInput = computed(() => (props.task?.input || null) as TopicCreateInput | null);
+const statusLabel = computed(() => {
+  if (props.running) return "生成中";
+  if (!props.task) return "未开始";
+  if (props.task.status === "completed") return "成功";
+  if (props.task.status === "failed") return "失败";
+  return "生成中";
+});
+
+const modelALabel = computed(() => {
+  const task = props.task;
+  if (!task) return "-";
+  const modelA = task.settingsSnapshot.modelA;
+  return `${modelA.provider} / ${modelA.profile || "未填写"}`;
+});
+
+const modelBLabel = computed(() => {
+  const task = props.task;
+  if (!task) return "-";
+  const modelB = task.settingsSnapshot.modelB;
+  return `${modelB.provider} / ${modelB.profile || "未填写"}`;
+});
+
+const shouldShowTitleCandidates = computed(() => Boolean(topicInput.value?.generateTitleCandidates));
+const shouldShowCover = computed(() => Boolean(topicInput.value?.generateCoverText));
+const shouldShowImagePlan = computed(() => Boolean(topicInput.value?.generateImagePlan));
+
+const fullText = computed(() => {
+  if (!article.value) {
+    return "";
+  }
+  return article.value.paragraphs.map((paragraph) => paragraph.text).join("\n\n");
+});
+
+async function copyText(text: string): Promise<void> {
+  if (!text.trim()) {
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}
 </script>
 
 <template>
   <aside v-if="open" class="drawer-mask" @click.self="emit('close')">
     <section class="drawer">
-      <header>
-        <h3>{{ title }}</h3>
+      <header class="drawer-header">
+        <div>
+          <h3>话题成文结果</h3>
+          <p class="meta">状态：{{ statusLabel }}</p>
+          <p class="meta">生成时间：{{ props.task?.updatedAt || "-" }}</p>
+          <p class="meta">模型A：{{ modelALabel }}</p>
+          <p class="meta">模型B：{{ modelBLabel }}</p>
+        </div>
         <button class="close-btn" @click="emit('close')">关闭</button>
       </header>
-      <p>{{ summary }}</p>
+
+      <div class="toolbar">
+        <button class="ghost-btn" :disabled="!fullText" @click="copyText(fullText)">复制全文</button>
+        <button class="ghost-btn" :disabled="!article?.title" @click="copyText(article?.title || '')">复制标题</button>
+        <button class="ghost-btn" :disabled="!article?.coverText" @click="copyText(article?.coverText || '')">复制封面文案</button>
+        <button class="ghost-btn" :disabled="!props.task?.debateSteps.length" @click="emit('viewRunLog')">查看讨论记录</button>
+        <button class="ghost-btn" :disabled="props.running" @click="emit('rerun')">重新生成</button>
+      </div>
+
+      <p v-if="props.task?.status === 'failed'" class="error-text">{{ props.task.error || "任务执行失败" }}</p>
+
+      <template v-if="article">
+        <section class="section">
+          <h4>标题</h4>
+          <p class="title">{{ article.title }}</p>
+          <template v-if="shouldShowTitleCandidates">
+            <h5>标题候选</h5>
+            <ol v-if="article.titleCandidates?.length" class="list">
+              <li v-for="(item, index) in article.titleCandidates" :key="`${index}-${item}`">{{ item }}</li>
+            </ol>
+            <p v-else class="muted">未生成标题候选</p>
+          </template>
+        </section>
+
+        <section v-if="shouldShowCover" class="section">
+          <h4>封面文案</h4>
+          <p><strong>主文案：</strong>{{ article.coverText || "未生成" }}</p>
+          <p><strong>副文案：</strong>{{ article.coverSubText || "未生成" }}</p>
+          <p><strong>风格建议：</strong>{{ article.coverStyleSuggestion || "未生成" }}</p>
+        </section>
+
+        <section class="section">
+          <h4>正文段落</h4>
+          <article v-for="(paragraph, index) in article.paragraphs" :key="paragraph.paragraphId" class="paragraph-card">
+            <div class="paragraph-head">
+              <strong>段落 {{ index + 1 }}</strong>
+              <button class="tiny-btn" @click="copyText(paragraph.text)">复制单段</button>
+            </div>
+            <p>{{ paragraph.text }}</p>
+            <p v-if="paragraph.imagePlan?.caption"><strong>配图建议：</strong>{{ paragraph.imagePlan.caption }}</p>
+          </article>
+        </section>
+
+        <section v-if="shouldShowImagePlan" class="section">
+          <h4>配图计划</h4>
+          <div v-for="(paragraph, index) in article.paragraphs" :key="`${paragraph.paragraphId}-plan`" class="plan-card">
+            <strong>第 {{ index + 1 }} 段配图</strong>
+            <p>类型：{{ paragraph.imagePlan?.type || "none" }}</p>
+            <p>说明：{{ paragraph.imagePlan?.caption || "未提供" }}</p>
+            <p>提示词：{{ paragraph.imagePlan?.prompt || "未提供" }}</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <h4>风险提示与标签</h4>
+          <p><strong>风险提示：</strong>{{ article.riskNotes?.join("；") || "无" }}</p>
+          <p><strong>标签：</strong>{{ article.tags?.join("、") || "无" }}</p>
+        </section>
+      </template>
+      <p v-else class="muted">暂无可展示结果。</p>
     </section>
   </aside>
 </template>
 
 <style scoped>
-.drawer-mask { position: fixed; inset: 0; z-index: 67; display: flex; justify-content: flex-end; background: rgba(5,10,20,0.5); }
-.drawer { width: min(560px, calc(100vw - 24px)); height: 100%; padding: 20px; background: #0e1626; border-left: 1px solid rgba(149,181,255,0.16); }
-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.close-btn { min-height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(140,173,247,0.14); background: rgba(255,255,255,0.03); color: #eaf3ff; cursor: pointer; }
-p { color: #9cb3d7; }
+.drawer-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 67;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(5, 10, 20, 0.5);
+}
+
+.drawer {
+  width: min(760px, calc(100vw - 24px));
+  height: 100%;
+  padding: 18px;
+  overflow: auto;
+  background: #0e1626;
+  border-left: 1px solid rgba(149, 181, 255, 0.16);
+  display: grid;
+  gap: 14px;
+}
+
+.drawer-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.drawer-header h3 {
+  margin: 0;
+}
+
+.meta {
+  margin: 4px 0 0;
+  color: #9cb3d7;
+  font-size: 12px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.close-btn,
+.ghost-btn,
+.tiny-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(140, 173, 247, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #eaf3ff;
+  cursor: pointer;
+}
+
+.tiny-btn {
+  min-height: 28px;
+  font-size: 12px;
+}
+
+.section {
+  border: 1px solid rgba(149, 181, 255, 0.14);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.section h4,
+.section h5 {
+  margin: 0 0 8px;
+}
+
+.title {
+  margin: 0;
+  color: #edf5ff;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.paragraph-card,
+.plan-card {
+  border: 1px solid rgba(149, 181, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.paragraph-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.muted {
+  color: #9cb3d7;
+}
+
+.error-text {
+  color: #ffb7b7;
+  margin: 0;
+}
 </style>

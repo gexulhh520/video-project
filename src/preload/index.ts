@@ -7,6 +7,7 @@ import type {
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioTopicProgress,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
   DeleteWebRewriteHistoryOptions,
@@ -38,6 +39,7 @@ import type {
   WebToPostSettings
 } from "../main/types/app.types";
 import { TASK_PROGRESS_CHANNEL, WEB_TASK_PROGRESS_CHANNEL } from "../main/ipc";
+import { CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL } from "../main/ipc";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
@@ -176,6 +178,16 @@ const desktopApi: DesktopApi = {
     ipcRenderer.on(WEB_TASK_PROGRESS_CHANNEL, listener);
     return () => {
       ipcRenderer.removeListener(WEB_TASK_PROGRESS_CHANNEL, listener);
+    };
+  },
+  onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: ContentStudioTopicProgress): void => {
+      callback(progress);
+    };
+
+    ipcRenderer.on(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, listener);
     };
   }
 };

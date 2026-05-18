@@ -128,6 +128,10 @@ export class ContentStudioSettingsService {
     return normalized;
   }
 
+  async getWorkspaceDir(): Promise<string> {
+    return (await this.settingsService.getSettings()).workspaceDir;
+  }
+
   async getConfigStatus(): Promise<ContentStudioConfigStatus> {
     const settings = await this.getSettings();
     const hasOpenCliCommand = Boolean(settings.openCliCommand.trim());

@@ -84,6 +84,7 @@ function createWindow(): void {
   const contentStudioResourceService = new ContentStudioResourceService(
     openCliBrowserService,
     openCliImageDownloader,
+    openCliRuntimeService,
     settingsService,
     contentStudioSettingsService
   );

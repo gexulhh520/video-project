@@ -4,12 +4,14 @@ import type { ContentStudioImageAsset } from "../../types/content-studio.types";
 import { SettingsService } from "../settings.service";
 import { OpenCliBrowserService } from "../opencli/opencli-browser.service";
 import { OpenCliImageDownloader } from "../opencli/opencli-image-downloader";
+import { OpenCliRuntimeService } from "../opencli/opencli-runtime.service";
 import { ContentStudioSettingsService } from "./content-studio-settings.service";
 
 export class ContentStudioResourceService {
   constructor(
     private readonly openCliBrowserService: OpenCliBrowserService,
     private readonly openCliImageDownloader: OpenCliImageDownloader,
+    private readonly openCliRuntimeService: OpenCliRuntimeService,
     private readonly settingsService: SettingsService,
     private readonly contentStudioSettingsService: ContentStudioSettingsService
   ) {}
@@ -36,6 +38,7 @@ export class ContentStudioResourceService {
     const sessionName = `material_${randomUUID().replace(/-/g, "")}`;
     let title = targetUrl;
     try {
+      await this.openCliRuntimeService.ensureHealthy();
       await this.openCliBrowserService.open(profile, sessionName, targetUrl, workspaceDir);
       await this.openCliBrowserService.wait(profile, sessionName, 3, workspaceDir);
       title = await this.openCliBrowserService.getTitle(profile, sessionName, workspaceDir).catch(() => targetUrl);

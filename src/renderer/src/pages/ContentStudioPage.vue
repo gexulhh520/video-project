@@ -254,6 +254,11 @@ function changeTaskHistoryPage(nextPage: number): void {
 
 async function openTaskFromHistory(taskId: string): Promise<void> {
   const task = await desktopApi.getContentStudioTaskById(taskId);
+  if (task.tab === "material") {
+    latestMaterialTask.value = task;
+  } else {
+    latestTopicTask.value = task;
+  }
   latestTopicTask.value = task;
   runLogTitle.value = task.tab === "material" ? "素材二创 - 运行记录" : "话题成文 - 运行记录";
   runLogDescription.value = formatRunLogDescription(task);
@@ -300,7 +305,9 @@ async function loadLayoutArticleCandidates(): Promise<void> {
   layoutArticleLoading.value = true;
   try {
     const tasks = await desktopApi.listContentStudioTasks();
-    const candidateSummaries = tasks.filter((task) => task.tab === "topic" && task.status === "completed");
+    const candidateSummaries = tasks.filter(
+      (task) => (task.tab === "topic" || task.tab === "material") && task.status === "completed"
+    );
     const candidateTasks = await Promise.all(
       candidateSummaries.map((task) => desktopApi.getContentStudioTaskById(task.taskId))
     );

@@ -149,9 +149,10 @@ function buildMaterialContext(input: MaterialRewriteInput): string {
 }
 
 function buildMaterialSourceDigest(materialPack: ContentStudioMaterialPack): string {
+  const maxCharsPerSource = 6000;
   return materialPack.sources
     .map((source, index) => {
-      const body = source.body.replace(/\s+/g, " ").slice(0, 1000);
+      const body = source.body.replace(/\s+/g, " ").slice(0, maxCharsPerSource);
       return [
         `素材 ${index + 1}`,
         `sourceId: ${source.sourceId}`,

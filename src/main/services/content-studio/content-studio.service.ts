@@ -102,7 +102,8 @@ export class ContentStudioService {
       throw new Error("Word 文件路径不能为空");
     }
     const sourceId = this.createSourceId();
-    const outputImageDir = join(process.cwd(), "content-studio", "word-import", sourceId);
+    const workspaceDir = await this.settingsService.getWorkspaceDir();
+    const outputImageDir = join(workspaceDir, "content-studio", "word-import", sourceId);
     await mkdir(outputImageDir, { recursive: true });
     const { stdout } = await runPythonTool("import_word_docx", "import_word_docx.py", [filePath, outputImageDir], {
       ...process.env,
@@ -267,14 +268,12 @@ export class ContentStudioService {
           `模型B：第${i}轮正文审稿`,
           buildMaterialArticleReviewPrompt(normalizedInput, materialPack, articleDraft, tabSettings.modelB.roleName)
         );
-        if (i < articleRounds) {
-          articleDraft = await runStep(
-            "modelA",
-            "article_rewrite",
-            `模型A：第${i}轮正文改稿`,
-            buildMaterialArticleRewritePrompt(normalizedInput, materialPack, articleDraft, latestArticleReview, tabSettings.modelA.roleName)
-          );
-        }
+        articleDraft = await runStep(
+          "modelA",
+          "article_rewrite",
+          `模型A：第${i}轮正文改稿`,
+          buildMaterialArticleRewritePrompt(normalizedInput, materialPack, articleDraft, latestArticleReview, tabSettings.modelA.roleName)
+        );
       }
 
       const finalReviewRaw = await runStep(
@@ -292,6 +291,13 @@ export class ContentStudioService {
 
       const article = this.parseArticleResult(articleDraft, normalizedInput.topic || "素材二创");
       const finalReview = this.parseFinalReview(finalReviewRaw);
+      const sourceImageAssets = materialPack.sources.flatMap((source) =>
+        (source.images || []).map((asset) => ({
+          ...asset,
+          sourceType: "source" as const,
+          sourceRef: asset.sourceRef || source.sourceId
+        }))
+      );
       task = await this.taskStore.saveTask({
         ...task,
         status: "completed",
@@ -299,6 +305,7 @@ export class ContentStudioService {
         debateSteps: steps,
         result: article,
         finalReview,
+        imageAssets: [...(task.imageAssets || []), ...sourceImageAssets],
         error: undefined
       });
       this.emitMaterialProgress(onProgress, task.taskId, {

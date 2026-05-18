@@ -60,6 +60,31 @@ export function parseOpenCliJson<T = unknown>(output: string): T {
   throw new Error("OpenCLI output is not valid JSON.");
 }
 
+export function repairWebLlmJsonText(text: string): string {
+  return String(text || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\\\[/g, "[")
+    .replace(/\\\]/g, "]")
+    .replace(/\\_/g, "_")
+    .trim();
+}
+
+export function parseOpenCliModelJson<T = unknown>(output: string): T {
+  const text = sanitizeModelJsonText(output);
+  const candidates = [text, ...extractJsonCandidates(text)];
+
+  for (const candidate of candidates) {
+    try {
+      return parseJsonMaybeString<T>(candidate);
+    } catch {
+      // Continue trying more candidates.
+    }
+  }
+
+  throw new Error("OpenCLI model output is not valid JSON.");
+}
+
 export function parseOpenCliMessages(payload: unknown): OpenCliChatMessage[] {
   if (Array.isArray(payload)) {
     return payload.filter((item): item is OpenCliChatMessage => typeof item === "object" && item !== null);
@@ -114,6 +139,28 @@ function sanitizeJsonText(output: string): string {
   }
 
   return trimmed;
+}
+
+function sanitizeModelJsonText(output: string): string {
+  const repaired = repairWebLlmJsonText(output);
+  if (!repaired) return "";
+
+  const codeBlockMatch = repaired.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch?.[1]) {
+    return repairWebLlmJsonText(codeBlockMatch[1]);
+  }
+
+  return repaired;
+}
+
+function parseJsonMaybeString<T = unknown>(candidate: string): T {
+  const first = JSON.parse(candidate);
+
+  if (typeof first === "string") {
+    return JSON.parse(repairWebLlmJsonText(first)) as T;
+  }
+
+  return first as T;
 }
 
 function extractJsonCandidates(text: string): string[] {

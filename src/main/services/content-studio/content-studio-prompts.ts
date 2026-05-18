@@ -1,4 +1,4 @@
-import type { ContentStudioMaterialPack, MaterialRewriteInput, TopicCreateInput } from "../../types/content-studio.types";
+﻿import type { ContentStudioMaterialPack, MaterialRewriteInput, TopicCreateInput } from "../../types/content-studio.types";
 
 type TopicPromptRoles = {
   modelARoleName?: string;
@@ -35,12 +35,17 @@ function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
   }
 
   if (input.generateImagePlan) {
-    lines.push(
-      "用户已开启配图计划：请尽量为每段输出 imagePlan，结构为 {type,prompt?,caption?}，type 仅允许 source_image|ai_generated|infographic|none。"
-    );
+    lines.push("用户已开启配图计划：尽量为每段输出 imagePlan，结构为 {type,prompt?,caption?}，type 仅允许 source_image|ai_generated|infographic|none。");
   } else {
     lines.push("用户关闭配图计划：不要输出 imagePlan 字段。");
   }
+
+  lines.push("回复必须以 { 开头，以 } 结尾。");
+  lines.push("不要把 JSON 当成字符串输出。");
+  lines.push("不要对 [ ] _ 进行反斜杠转义。");
+  lines.push("数组必须直接写成 []，不能写成 \\[ \\]。");
+  lines.push("字段值 source_image、ai_generated、infographic、none 必须原样输出，不能写成 source\\_image 或 ai\\_generated。");
+  lines.push("riskNotes 必须输出字符串数组，例如 [\"风险1\", \"风险2\"]，不要输出单个字符串。");
 
   return lines.join("\n");
 }
@@ -67,7 +72,7 @@ export function buildTopicPlanPrompt(input: TopicCreateInput, roles?: TopicPromp
     "目标：根据用户输入给出可执行的文章方向，并产出第一版完整文章 JSON。",
     buildTopicOutputSchemaNotice(input),
     "要求：",
-    "1. 段落不少于5段，结构完整，有开头钩子、主体分析、结尾观点。",
+    "1. 段落不少于 3 段，结构完整，有开头钩子、主体分析、结尾观点。",
     "2. 所有观点要有事实边界，不夸大、不造数据。",
     "3. paragraphId 依次使用 p1/p2/p3...",
     "用户输入：",
@@ -138,7 +143,7 @@ function buildMaterialContext(input: MaterialRewriteInput): string {
     `生成标题候选：${boolLabel(input.generateTitleCandidates, "是", "否")}`,
     `生成封面文案：${boolLabel(input.generateCoverText, "是", "否")}`,
     `生成配图计划：${boolLabel(input.generateImagePlan, "是", "否")}`,
-    `选题评判轮次：${input.topicReviewRounds ?? 2}`,
+    `选题评审轮次：${input.topicReviewRounds ?? 2}`,
     `正文评审轮次：${input.articleReviewRounds ?? 2}`
   ].join("\n");
 }

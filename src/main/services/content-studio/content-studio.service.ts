@@ -1,4 +1,4 @@
-﻿import { parseOpenCliJson } from "../opencli/opencli-output-parser";
+﻿import { parseOpenCliJson, parseOpenCliModelJson, repairWebLlmJsonText } from "../opencli/opencli-output-parser";
 import type {
   ContentStudioArticle,
   ContentStudioArticleParagraph,
@@ -566,7 +566,7 @@ export class ContentStudioService {
 
     for (const candidate of candidates) {
       try {
-        const parsed = parseOpenCliJson<Partial<ContentStudioArticle>>(candidate);
+        const parsed = parseOpenCliModelJson<Partial<ContentStudioArticle>>(candidate);
         const article = this.normalizeArticle(parsed, fallbackTitle);
         const score = this.scoreArticle(article);
         if (!best || score > best.score) {
@@ -584,11 +584,14 @@ export class ContentStudioService {
     }
 
     try {
-      const parsed = parseOpenCliJson<Partial<ContentStudioArticle>>(rawOutput);
+      const parsed = parseOpenCliModelJson<Partial<ContentStudioArticle>>(rawOutput);
       return this.normalizeArticle(parsed, fallbackTitle);
     } catch (error) {
       const message = firstErrorMessage || (error instanceof Error ? error.message : "JSON 解析失败");
-      throw new Error(`最终文章 JSON 解析失败：${message}`);
+      const preview = String(rawOutput || "")
+        .slice(0, 500)
+        .replace(/\s+/g, " ");
+      throw new Error(`最终文章 JSON 解析失败：${message}。原始输出前500字：${preview}`);
     }
   }
 
@@ -640,9 +643,12 @@ export class ContentStudioService {
     const tags = Array.isArray(article.tags)
       ? article.tags.map((item) => String(item || "").trim()).filter((item) => Boolean(item))
       : undefined;
-    const riskNotes = Array.isArray(article.riskNotes)
-      ? article.riskNotes.map((item) => String(item || "").trim()).filter((item) => Boolean(item))
-      : undefined;
+    const rawRiskNotes = article.riskNotes as unknown;
+    const riskNotes = Array.isArray(rawRiskNotes)
+      ? rawRiskNotes.map((item) => String(item || "").trim()).filter((item) => Boolean(item))
+      : typeof rawRiskNotes === "string" && rawRiskNotes.trim()
+        ? [rawRiskNotes.trim()]
+        : undefined;
 
     return {
       title,
@@ -690,7 +696,7 @@ export class ContentStudioService {
   }
 
   private collectArticleJsonCandidates(rawOutput: string): string[] {
-    const text = String(rawOutput || "").trim();
+    const text = repairWebLlmJsonText(String(rawOutput || "").trim());
     if (!text) {
       return [];
     }
@@ -786,3 +792,6 @@ export class ContentStudioService {
     );
   }
 }
+
+
+

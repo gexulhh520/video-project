@@ -6,7 +6,7 @@
 } from "../../types/app.types";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseOpenCliJson } from "./opencli-output-parser";
+import { parseOpenCliJson, parseOpenCliModelJson } from "./opencli-output-parser";
 import { OpenCliCommandRunner } from "./opencli-command-runner";
 
 type AskOptions = {
@@ -481,7 +481,7 @@ export class OpenCliWebLlmService {
     }
 
     try {
-      const parsed = parseOpenCliJson(normalized);
+      const parsed = parseOpenCliModelJson(normalized);
       return JSON.stringify(parsed);
     } catch {
       return "";

@@ -46,6 +46,44 @@ export type TopicCreateInput = {
   generateImagePlan?: boolean;
 };
 
+export type MaterialSourceType = "text" | "url" | "word";
+
+export type MaterialRewriteInput = {
+  topic?: string;
+  platform: "公众号" | "今日头条" | "小红书" | "知乎" | "CSDN";
+  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文";
+  targetReader?: string;
+  writingStyle?: string;
+  wordRange?: string;
+  generateTitleCandidates?: boolean;
+  generateCoverText?: boolean;
+  generateImagePlan?: boolean;
+  topicReviewRounds?: number;
+  articleReviewRounds?: number;
+  collectImagesFromUrl?: boolean;
+  maxSourceCount?: number;
+  sources: Array<{
+    sourceId: string;
+    type: MaterialSourceType;
+    title?: string;
+    url?: string;
+    body: string;
+    images?: ContentStudioImageAsset[];
+  }>;
+};
+
+export type ContentStudioMaterialPack = {
+  topic?: string;
+  sources: Array<{
+    sourceId: string;
+    type: MaterialSourceType;
+    title?: string;
+    url?: string;
+    body: string;
+    images: ContentStudioImageAsset[];
+  }>;
+};
+
 export type ContentStudioImagePlanType = "source_image" | "ai_generated" | "infographic" | "none";
 
 export type ContentStudioImagePlan = {
@@ -101,7 +139,20 @@ export type ContentStudioArticle = {
 export type ContentStudioDebateStep = {
   stepId: string;
   role: ContentStudioModelRole;
-  name: "plan" | "review" | "rewrite" | "final_review";
+  name:
+    | "plan"
+    | "review"
+    | "rewrite"
+    | "final_review"
+    | "source_analysis"
+    | "topic_generate"
+    | "topic_review"
+    | "topic_rewrite"
+    | "topic_final_decision"
+    | "article_draft"
+    | "article_review"
+    | "article_rewrite"
+    | "article_final_review";
   displayName: string;
   provider: OpenCliProvider;
   profile: string;
@@ -145,8 +196,17 @@ export type ContentStudioTask = {
   updatedAt: string;
   input: unknown;
   settingsSnapshot: ContentStudioTabModelSettings;
+  materialPack?: ContentStudioMaterialPack;
   debateSteps: ContentStudioDebateStep[];
   result?: ContentStudioArticle;
+  finalReview?: {
+    verdict: "pass" | "revise";
+    publishable?: boolean;
+    originalityScore?: number;
+    viralPotentialScore?: number;
+    similarityRisk?: "low" | "medium" | "high";
+    riskNotes?: string[];
+  };
   imageAssets: ContentStudioImageAsset[];
   imageBindings?: ContentStudioParagraphImageBinding[];
   error?: string;
@@ -172,6 +232,27 @@ export type ContentStudioTopicProgress = {
   taskId: string;
   tab: "topic";
   status: ContentStudioTopicProgressStatus;
+  progress: number;
+  message: string;
+  stepName?: ContentStudioDebateStep["name"];
+  role?: ContentStudioModelRole;
+  provider?: OpenCliProvider;
+  profile?: string;
+  updatedAt: string;
+};
+
+export type ContentStudioMaterialProgressStatus =
+  | "queued"
+  | "collecting_sources"
+  | "running_step"
+  | "parsing_result"
+  | "completed"
+  | "failed";
+
+export type ContentStudioMaterialProgress = {
+  taskId: string;
+  tab: "material";
+  status: ContentStudioMaterialProgressStatus;
   progress: number;
   message: string;
   stepName?: ContentStudioDebateStep["name"];

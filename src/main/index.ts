@@ -28,6 +28,7 @@ import { ContentStudioService } from "./services/content-studio/content-studio.s
 import { ContentStudioLayoutService } from "./services/content-studio/content-studio-layout.service";
 import { ContentStudioExportService } from "./services/content-studio/content-studio-export.service";
 import { ContentStudioImageService } from "./services/content-studio/content-studio-image.service";
+import { ContentStudioResourceService } from "./services/content-studio/content-studio-resource.service";
 
 dotenv.config();
 
@@ -80,10 +81,17 @@ function createWindow(): void {
   const contentStudioTaskStore = new ContentStudioTaskStore(settingsService);
   const contentStudioOpenCliClient = new ContentStudioOpenCliClient(openCliWebLlmService);
   const contentStudioDebateService = new ContentStudioDebateService(contentStudioOpenCliClient);
+  const contentStudioResourceService = new ContentStudioResourceService(
+    openCliBrowserService,
+    openCliImageDownloader,
+    settingsService,
+    contentStudioSettingsService
+  );
   const contentStudioService = new ContentStudioService(
     contentStudioTaskStore,
     contentStudioSettingsService,
-    contentStudioDebateService
+    contentStudioDebateService,
+    contentStudioResourceService
   );
   const contentStudioImageService = new ContentStudioImageService(
     contentStudioSettingsService,

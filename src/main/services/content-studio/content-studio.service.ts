@@ -2,30 +2,279 @@
 import type {
   ContentStudioArticle,
   ContentStudioArticleParagraph,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioTopicProgress,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  MaterialRewriteInput,
+  MaterialSourceType,
   TopicCreateInput
 } from "../../types/content-studio.types";
 import { ContentStudioTaskStore } from "./content-studio-task-store";
 import { ContentStudioDebateError, ContentStudioDebateService } from "./content-studio-debate.service";
 import { ContentStudioSettingsService } from "./content-studio-settings.service";
 import {
+  buildMaterialArticleDraftPrompt,
+  buildMaterialArticleReviewPrompt,
+  buildMaterialArticleRewritePrompt,
+  buildMaterialFinalReviewPrompt,
+  buildMaterialFinalTopicDecisionPrompt,
+  buildMaterialSourceAnalysisPrompt,
+  buildMaterialTopicGeneratePrompt,
+  buildMaterialTopicReviewPrompt,
+  buildMaterialTopicRewritePrompt,
   buildTopicFinalReviewPrompt,
   buildTopicPlanPrompt,
   buildTopicReviewPrompt,
   buildTopicRewritePrompt
 } from "./content-studio-prompts";
+import { ContentStudioResourceService } from "./content-studio-resource.service";
 
 export class ContentStudioService {
   constructor(
     private readonly taskStore: ContentStudioTaskStore,
     private readonly settingsService: ContentStudioSettingsService,
-    private readonly debateService: ContentStudioDebateService
+    private readonly debateService: ContentStudioDebateService,
+    private readonly resourceService: ContentStudioResourceService
   ) {}
 
   async listTasks(): Promise<ContentStudioTaskSummary[]> {
     return this.taskStore.listTasks();
+  }
+
+  async addMaterialText(options: {
+    topic?: string;
+    title?: string;
+    body: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> {
+    const body = String(options.body || "").trim();
+    if (!body) {
+      throw new Error("文本素材不能为空");
+    }
+    return this.pushMaterialSource(options.current, {
+      sourceId: this.createSourceId(),
+      type: "text",
+      title: String(options.title || "").trim() || this.detectTitleFromBody(body),
+      body,
+      images: []
+    }, options.maxSourceCount);
+  }
+
+  async addMaterialUrl(options: {
+    url: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    collectImagesFromUrl?: boolean;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> {
+    const targetUrl = String(options.url || "").trim();
+    if (!targetUrl) {
+      throw new Error("URL 不能为空");
+    }
+    const collected = await this.resourceService.collectFromUrl(targetUrl, {
+      collectImages: options.collectImagesFromUrl ?? true
+    });
+    return this.pushMaterialSource(options.current, {
+      sourceId: this.createSourceId(),
+      type: "url",
+      title: String(options.title || "").trim() || collected.title || targetUrl,
+      url: targetUrl,
+      body: collected.body,
+      images: collected.images
+    }, options.maxSourceCount);
+  }
+
+  async addMaterialWord(options: {
+    filePath: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> {
+    throw new Error("Word 导入将在下一步接入，当前请先使用文本粘贴或 URL 采集。");
+  }
+
+  async runMaterialRewrite(
+    input: MaterialRewriteInput,
+    onProgress?: (progress: ContentStudioMaterialProgress) => void
+  ): Promise<ContentStudioTask> {
+    const normalizedInput = this.normalizeMaterialInput(input);
+    const configStatus = await this.settingsService.getConfigStatus();
+    if (!configStatus.tabs.material.ready) {
+      throw new Error(`素材二创配置未完成：${configStatus.tabs.material.missingItems.join("、") || "请先完成模型配置"}`);
+    }
+    const studioSettings = await this.settingsService.getSettings();
+    const tabSettings = studioSettings.tabs.material;
+    const materialPack = this.buildMaterialPack(normalizedInput);
+    let task = await this.taskStore.createTask("material", normalizedInput.topic || "素材二创", normalizedInput, tabSettings);
+    task = await this.taskStore.saveTask({
+      ...task,
+      status: "running",
+      materialPack
+    });
+    this.emitMaterialProgress(onProgress, task.taskId, {
+      status: "queued",
+      progress: 2,
+      message: "素材任务已创建。"
+    });
+
+    const [modelA, modelB] = this.debateService.resolveEnabledModels(tabSettings);
+    const steps: ContentStudioTask["debateSteps"] = [];
+    const runStep = async (
+      role: "modelA" | "modelB",
+      name: ContentStudioTask["debateSteps"][number]["name"],
+      displayName: string,
+      prompt: string
+    ): Promise<string> => {
+      const model = role === "modelA" ? modelA : modelB;
+      const response = await this.debateService.runAdHocStep({
+        steps,
+        role,
+        name,
+        displayName,
+        provider: model.provider,
+        profile: model.profile,
+        prompt,
+        settings: tabSettings,
+        onStepProgress: (step) => {
+          const progressMap: Record<string, number> = {
+            source_analysis: 10,
+            topic_generate: 20,
+            topic_review: 30,
+            topic_rewrite: 40,
+            topic_final_decision: 52,
+            article_draft: 62,
+            article_review: 74,
+            article_rewrite: 84,
+            article_final_review: 94
+          };
+          this.emitMaterialProgress(onProgress, task.taskId, {
+            status: step.status === "failed" ? "failed" : "running_step",
+            progress: progressMap[step.name] || 30,
+            message: `${step.status === "running" ? "正在执行" : step.status === "success" ? "完成" : "失败"}${step.displayName}`,
+            stepName: step.name,
+            role: step.role,
+            provider: step.provider,
+            profile: step.profile
+          });
+        }
+      });
+      task = await this.taskStore.saveTask({ ...task, debateSteps: steps });
+      return response;
+    };
+
+    try {
+      const sourceAnalysis = await runStep(
+        "modelA",
+        "source_analysis",
+        "模型A：原文分析",
+        buildMaterialSourceAnalysisPrompt(normalizedInput, materialPack, tabSettings.modelA.roleName)
+      );
+      let topicAngles = await runStep(
+        "modelA",
+        "topic_generate",
+        "模型A：生成5个选题",
+        buildMaterialTopicGeneratePrompt(normalizedInput, materialPack, sourceAnalysis, tabSettings.modelA.roleName)
+      );
+
+      let latestTopicReview = "";
+      const topicRounds = this.normalizeReviewRounds(normalizedInput.topicReviewRounds);
+      for (let i = 1; i <= topicRounds; i += 1) {
+        latestTopicReview = await runStep(
+          "modelB",
+          "topic_review",
+          `模型B：第${i}轮选题评审`,
+          buildMaterialTopicReviewPrompt(normalizedInput, sourceAnalysis, topicAngles, tabSettings.modelB.roleName)
+        );
+        if (i < topicRounds) {
+          topicAngles = await runStep(
+            "modelA",
+            "topic_rewrite",
+            `模型A：第${i}轮选题优化`,
+            buildMaterialTopicRewritePrompt(normalizedInput, topicAngles, latestTopicReview, tabSettings.modelA.roleName)
+          );
+        }
+      }
+
+      const finalTopic = await runStep(
+        "modelB",
+        "topic_final_decision",
+        "模型B：最终选题定稿",
+        buildMaterialFinalTopicDecisionPrompt(normalizedInput, topicAngles, tabSettings.modelB.roleName)
+      );
+
+      let articleDraft = await runStep(
+        "modelA",
+        "article_draft",
+        "模型A：正文初稿",
+        buildMaterialArticleDraftPrompt(normalizedInput, materialPack, finalTopic, tabSettings.modelA.roleName)
+      );
+      let latestArticleReview = "";
+      const articleRounds = this.normalizeReviewRounds(normalizedInput.articleReviewRounds);
+      for (let i = 1; i <= articleRounds; i += 1) {
+        latestArticleReview = await runStep(
+          "modelB",
+          "article_review",
+          `模型B：第${i}轮正文审稿`,
+          buildMaterialArticleReviewPrompt(normalizedInput, materialPack, articleDraft, tabSettings.modelB.roleName)
+        );
+        if (i < articleRounds) {
+          articleDraft = await runStep(
+            "modelA",
+            "article_rewrite",
+            `模型A：第${i}轮正文改稿`,
+            buildMaterialArticleRewritePrompt(normalizedInput, materialPack, articleDraft, latestArticleReview, tabSettings.modelA.roleName)
+          );
+        }
+      }
+
+      const finalReviewRaw = await runStep(
+        "modelB",
+        "article_final_review",
+        "模型B：最终验收",
+        buildMaterialFinalReviewPrompt(normalizedInput, materialPack, articleDraft, tabSettings.modelB.roleName)
+      );
+
+      this.emitMaterialProgress(onProgress, task.taskId, {
+        status: "parsing_result",
+        progress: 97,
+        message: "正在解析最终文章和验收结果。"
+      });
+
+      const article = this.parseArticleResult(articleDraft, normalizedInput.topic || "素材二创");
+      const finalReview = this.parseFinalReview(finalReviewRaw);
+      task = await this.taskStore.saveTask({
+        ...task,
+        status: "completed",
+        materialPack,
+        debateSteps: steps,
+        result: article,
+        finalReview,
+        error: undefined
+      });
+      this.emitMaterialProgress(onProgress, task.taskId, {
+        status: "completed",
+        progress: 100,
+        message: "素材二创完成。"
+      });
+      return task;
+    } catch (error) {
+      task = await this.taskStore.saveTask({
+        ...task,
+        status: "failed",
+        materialPack,
+        debateSteps: steps,
+        error: error instanceof Error ? error.message : "素材二创执行失败"
+      });
+      this.emitMaterialProgress(onProgress, task.taskId, {
+        status: "failed",
+        progress: 100,
+        message: task.error || "素材二创执行失败。"
+      });
+      return task;
+    }
   }
 
   async getTaskById(taskId: string): Promise<ContentStudioTask> {
@@ -185,6 +434,129 @@ export class ContentStudioService {
       return 2;
     }
     return Math.min(5, Math.max(1, Math.floor(value)));
+  }
+
+  private normalizeMaterialInput(input: MaterialRewriteInput): MaterialRewriteInput {
+    const normalizedSources = (input.sources || [])
+      .map((source) => ({
+        sourceId: String(source.sourceId || "").trim() || this.createSourceId(),
+        type: (source.type || "text") as MaterialSourceType,
+        title: String(source.title || "").trim() || undefined,
+        url: String(source.url || "").trim() || undefined,
+        body: String(source.body || "").trim(),
+        images: Array.isArray(source.images) ? source.images : []
+      }))
+      .filter((source) => Boolean(source.body));
+    if (!normalizedSources.length) {
+      throw new Error("请先添加至少一条素材");
+    }
+    return {
+      ...input,
+      topic: String(input.topic || "").trim() || undefined,
+      targetReader: String(input.targetReader || "").trim() || undefined,
+      writingStyle: String(input.writingStyle || "").trim() || undefined,
+      wordRange: String(input.wordRange || "").trim() || undefined,
+      topicReviewRounds: this.normalizeReviewRounds(input.topicReviewRounds),
+      articleReviewRounds: this.normalizeReviewRounds(input.articleReviewRounds),
+      maxSourceCount: Math.min(10, Math.max(1, Math.floor(Number(input.maxSourceCount || 5)))),
+      sources: normalizedSources
+    };
+  }
+
+  private buildMaterialPack(input: MaterialRewriteInput): ContentStudioMaterialPack {
+    return {
+      topic: input.topic,
+      sources: input.sources.map((source) => ({
+        sourceId: source.sourceId,
+        type: source.type,
+        title: source.title,
+        url: source.url,
+        body: source.body,
+        images: source.images || []
+      }))
+    };
+  }
+
+  private pushMaterialSource(
+    current: ContentStudioMaterialPack | undefined,
+    source: ContentStudioMaterialPack["sources"][number],
+    maxSourceCount?: number
+  ): ContentStudioMaterialPack {
+    const limit = Math.min(10, Math.max(1, Math.floor(Number(maxSourceCount || 5))));
+    const nextSources = [...(current?.sources || []), { ...source, images: source.images || [] }];
+    if (nextSources.length > limit) {
+      throw new Error(`素材数量已达上限（${limit}）`);
+    }
+    return {
+      topic: current?.topic,
+      sources: nextSources
+    };
+  }
+
+  private createSourceId(): string {
+    return `source_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private detectTitleFromBody(body: string): string {
+    const first = body.split(/\r?\n/).map((line) => line.trim()).find((line) => line.length >= 6);
+    return first ? first.slice(0, 40) : "文本素材";
+  }
+
+  private parseFinalReview(rawOutput: string): {
+    verdict: "pass" | "revise";
+    publishable?: boolean;
+    originalityScore?: number;
+    viralPotentialScore?: number;
+    similarityRisk?: "low" | "medium" | "high";
+    riskNotes?: string[];
+  } {
+    const candidates = this.collectArticleJsonCandidates(rawOutput);
+    for (const candidate of candidates) {
+      try {
+        const parsed = parseOpenCliJson<Record<string, unknown>>(candidate);
+        const verdictRaw = String(parsed.verdict || "").trim().toLowerCase();
+        const verdict = verdictRaw === "pass" ? "pass" : "revise";
+        const similarityRaw = String(parsed.similarityRisk || "").trim().toLowerCase();
+        const similarityRisk = similarityRaw === "low" || similarityRaw === "medium" || similarityRaw === "high"
+          ? similarityRaw
+          : undefined;
+        const riskNotes = Array.isArray(parsed.riskNotes)
+          ? parsed.riskNotes.map((item) => String(item || "").trim()).filter(Boolean)
+          : undefined;
+        return {
+          verdict,
+          publishable: typeof parsed.publishable === "boolean" ? parsed.publishable : undefined,
+          originalityScore: this.normalizeOptionalScore(parsed.originalityScore),
+          viralPotentialScore: this.normalizeOptionalScore(parsed.viralPotentialScore),
+          similarityRisk,
+          riskNotes: riskNotes?.length ? riskNotes : undefined
+        };
+      } catch {
+        // Continue.
+      }
+    }
+    return { verdict: "revise", riskNotes: ["最终验收 JSON 解析失败"] };
+  }
+
+  private normalizeOptionalScore(value: unknown): number | undefined {
+    const score = Number(value);
+    if (!Number.isFinite(score)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  private emitMaterialProgress(
+    onProgress: ((progress: ContentStudioMaterialProgress) => void) | undefined,
+    taskId: string,
+    payload: Omit<ContentStudioMaterialProgress, "taskId" | "tab" | "updatedAt">
+  ): void {
+    onProgress?.({
+      taskId,
+      tab: "material",
+      updatedAt: new Date().toISOString(),
+      ...payload
+    });
   }
 
   private parseArticleResult(rawOutput: string, fallbackTitle: string): ContentStudioArticle {

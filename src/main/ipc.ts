@@ -13,9 +13,12 @@ import type {
   ContentStudioTask,
   ContentStudioTaskSummary,
   ContentStudioTopicProgress,
+  ContentStudioMaterialProgress,
+  ContentStudioMaterialPack,
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioGenerateImageOptions,
   TestContentStudioModelOptions,
+  MaterialRewriteInput,
   TopicCreateInput,
   ConfirmWebRecordBodyOptions,
   DeleteWebRewriteHistoryOptions,
@@ -57,6 +60,7 @@ import { ContentStudioExportService } from "./services/content-studio/content-st
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
 export const CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL = "content-studio-topic:progress";
+export const CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL = "content-studio-material:progress";
 
 export function registerIpcHandlers(
   mainWindow: BrowserWindow,
@@ -191,6 +195,49 @@ export function registerIpcHandlers(
     contentStudioService.runTopicCreate(options, (progress: ContentStudioTopicProgress): void => {
       mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
     })
+  );
+  ipcMain.handle("content-studio-material:run", async (_event, options: MaterialRewriteInput): Promise<ContentStudioTask> =>
+    contentStudioService.runMaterialRewrite(options, (progress: ContentStudioMaterialProgress): void => {
+      mainWindow.webContents.send(CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, progress);
+    })
+  );
+  ipcMain.handle(
+    "content-studio-material:add-text",
+    async (
+      _event,
+      options: {
+        topic?: string;
+        title?: string;
+        body: string;
+        current?: ContentStudioMaterialPack;
+        maxSourceCount?: number;
+      }
+    ): Promise<ContentStudioMaterialPack> => contentStudioService.addMaterialText(options)
+  );
+  ipcMain.handle(
+    "content-studio-material:add-url",
+    async (
+      _event,
+      options: {
+        url: string;
+        title?: string;
+        current?: ContentStudioMaterialPack;
+        collectImagesFromUrl?: boolean;
+        maxSourceCount?: number;
+      }
+    ): Promise<ContentStudioMaterialPack> => contentStudioService.addMaterialUrl(options)
+  );
+  ipcMain.handle(
+    "content-studio-material:add-word",
+    async (
+      _event,
+      options: {
+        filePath: string;
+        title?: string;
+        current?: ContentStudioMaterialPack;
+        maxSourceCount?: number;
+      }
+    ): Promise<ContentStudioMaterialPack> => contentStudioService.addMaterialWord(options)
   );
   ipcMain.handle(
     "content-studio-layout:save-image-plan",

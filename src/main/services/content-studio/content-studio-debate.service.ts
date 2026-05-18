@@ -152,6 +152,24 @@ export class ContentStudioDebateService {
     }
   }
 
+  async runAdHocStep(options: {
+    steps: ContentStudioDebateStep[];
+    role: ContentStudioModelRole;
+    name: ContentStudioDebateStep["name"];
+    displayName: string;
+    provider: ResolvedModel["provider"];
+    profile: string;
+    prompt: string;
+    settings: ContentStudioTabModelSettings;
+    onStepProgress?: ContentStudioDebateProgressCallback;
+  }): Promise<string> {
+    return this.runStep(options);
+  }
+
+  resolveEnabledModels(settings: ContentStudioTabModelSettings): [ResolvedModel, ResolvedModel] {
+    return this.resolveModels(settings);
+  }
+
   private resolveModels(settings: ContentStudioTabModelSettings): [ResolvedModel, ResolvedModel] {
     const enabledModels: ResolvedModel[] = [];
     const modelAProfile = settings.modelA.profile.trim();

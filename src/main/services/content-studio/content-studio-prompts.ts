@@ -1,4 +1,4 @@
-import type { TopicCreateInput } from "../../types/content-studio.types";
+import type { ContentStudioMaterialPack, MaterialRewriteInput, TopicCreateInput } from "../../types/content-studio.types";
 
 type TopicPromptRoles = {
   modelARoleName?: string;
@@ -125,5 +125,192 @@ export function buildTopicFinalReviewPrompt(
     buildTopicContext(input),
     "待终审JSON：",
     rewrittenJson
+  ].join("\n\n");
+}
+
+function buildMaterialContext(input: MaterialRewriteInput): string {
+  return [
+    `平台：${input.platform}`,
+    `文章类型：${input.articleType}`,
+    `目标读者：${input.targetReader?.trim() || "未指定"}`,
+    `写作风格：${input.writingStyle?.trim() || "未指定"}`,
+    `字数范围：${input.wordRange?.trim() || "未指定"}`,
+    `生成标题候选：${boolLabel(input.generateTitleCandidates, "是", "否")}`,
+    `生成封面文案：${boolLabel(input.generateCoverText, "是", "否")}`,
+    `生成配图计划：${boolLabel(input.generateImagePlan, "是", "否")}`,
+    `选题评判轮次：${input.topicReviewRounds ?? 2}`,
+    `正文评审轮次：${input.articleReviewRounds ?? 2}`
+  ].join("\n");
+}
+
+function buildMaterialSourceDigest(materialPack: ContentStudioMaterialPack): string {
+  return materialPack.sources
+    .map((source, index) => {
+      const body = source.body.replace(/\s+/g, " ").slice(0, 1000);
+      return [
+        `素材 ${index + 1}`,
+        `sourceId: ${source.sourceId}`,
+        `type: ${source.type}`,
+        `title: ${source.title || "无"}`,
+        `url: ${source.url || "无"}`,
+        `body: ${body}`,
+        `images: ${(source.images || []).length}`
+      ].join("\n");
+    })
+    .join("\n\n");
+}
+
+export function buildMaterialSourceAnalysisPrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "素材重组编辑");
+  return [
+    `你是模型A，角色是${role}。请分析原始素材并输出 JSON。`,
+    "输出字段：sourceAnalysis，包含 originalTheme/originalMainPoints/originalStructure/rewriteRisk。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack)
+  ].join("\n\n");
+}
+
+export function buildMaterialTopicGeneratePrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  sourceAnalysisJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "素材重组编辑");
+  return [
+    `你是模型A，角色是${role}。基于 sourceAnalysis 生成 5 个不同新选题。`,
+    "输出字段：newTopicAngles（固定 5 个），每个含 topicId/title/coreAngle/coreThesis/readerPainPoint/hook/valuePromise/articleStructure/differenceFromOriginal/viralPotential/riskNotes。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack),
+    sourceAnalysisJson
+  ].join("\n\n");
+}
+
+export function buildMaterialTopicReviewPrompt(
+  input: MaterialRewriteInput,
+  sourceAnalysisJson: string,
+  topicJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "相似度与事实审稿人");
+  return [
+    `你是模型B，角色是${role}。请评审 5 个选题并给出排名与修改建议。`,
+    "输出字段：overallVerdict/ranking/detailedReview/bestTopicRecommendation/topicsToAvoid/finalSuggestionsForModelA。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    sourceAnalysisJson,
+    topicJson
+  ].join("\n\n");
+}
+
+export function buildMaterialTopicRewritePrompt(
+  input: MaterialRewriteInput,
+  topicJson: string,
+  topicReviewJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "素材重组编辑");
+  return [
+    `你是模型A，角色是${role}。请根据模型B建议优化 5 个选题。`,
+    "保持 topicId 不变，输出 newTopicAngles 数量必须仍为 5。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    topicJson,
+    topicReviewJson
+  ].join("\n\n");
+}
+
+export function buildMaterialFinalTopicDecisionPrompt(
+  input: MaterialRewriteInput,
+  optimizedTopicJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "相似度与事实审稿人");
+  return [
+    `你是模型B，角色是${role}。请最终只选 1 个最佳选题。`,
+    "输出字段：bestTopicRecommendation（selectedTopicId/selectedTitle/reason/suggestedNewTitle/suggestedCoreThesis/suggestedArticleDirection）。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    optimizedTopicJson
+  ].join("\n\n");
+}
+
+export function buildMaterialArticleDraftPrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  finalTopicJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "素材重组编辑");
+  const imagePlanRule = input.generateImagePlan
+    ? "开启了配图计划：段落尽量输出 imagePlan，type 仅允许 source_image|ai_generated|infographic|none。"
+    : "关闭了配图计划：不要输出 imagePlan。";
+  return [
+    `你是模型A，角色是${role}。请基于最终选题写完整原创文章 JSON。`,
+    "输出结构：title/titleCandidates?/coverText?/coverSubText?/coverStyleSuggestion?/paragraphs/tags?/riskNotes?。",
+    imagePlanRule,
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack),
+    finalTopicJson
+  ].join("\n\n");
+}
+
+export function buildMaterialArticleReviewPrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  draftJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "相似度与事实审稿人");
+  return [
+    `你是模型B，角色是${role}。请评审文章并输出可执行修改意见。`,
+    "输出字段：verdict/publishable/originalityScore/similarityRisk/viralPotentialScore/contentDepthScore/platformFitScore/wordCountFitScore/styleFitScore/imagePlanFitScore/mustFix/niceToHave/riskNotes/revisionInstructionForA。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack),
+    draftJson
+  ].join("\n\n");
+}
+
+export function buildMaterialArticleRewritePrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  draftJson: string,
+  reviewJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "素材重组编辑");
+  return [
+    `你是模型A，角色是${role}。请根据模型B审稿意见重写文章 JSON。`,
+    "必须优先修复 mustFix，保留可发布结构。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack),
+    draftJson,
+    reviewJson
+  ].join("\n\n");
+}
+
+export function buildMaterialFinalReviewPrompt(
+  input: MaterialRewriteInput,
+  materialPack: ContentStudioMaterialPack,
+  finalArticleJson: string,
+  roleName?: string
+): string {
+  const role = resolveRoleName(roleName, "相似度与事实审稿人");
+  return [
+    `你是模型B，角色是${role}。请做最终验收并输出 JSON。`,
+    "输出字段：verdict/publishable/originalityScore/similarityRisk/viralPotentialScore/riskNotes。",
+    "只输出 JSON，不要 markdown。",
+    buildMaterialContext(input),
+    buildMaterialSourceDigest(materialPack),
+    finalArticleJson
   ].join("\n\n");
 }

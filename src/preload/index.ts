@@ -7,6 +7,8 @@ import type {
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioTopicProgress,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
@@ -29,6 +31,7 @@ import type {
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioGenerateImageOptions,
   TaskProgress,
+  MaterialRewriteInput,
   TopicCreateInput,
   LicenseStatus,
   VideoToPostConfigStatus,
@@ -41,7 +44,7 @@ import type {
   WebToPostSettings
 } from "../main/types/app.types";
 import { TASK_PROGRESS_CHANNEL, WEB_TASK_PROGRESS_CHANNEL } from "../main/ipc";
-import { CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL } from "../main/ipc";
+import { CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL } from "../main/ipc";
 
 const desktopApi: DesktopApi = {
   selectVideo: async () => ipcRenderer.invoke("video:select"),
@@ -106,6 +109,28 @@ const desktopApi: DesktopApi = {
   deleteContentStudioTask: async (taskId: string): Promise<void> => ipcRenderer.invoke("content-studio-task:delete", taskId),
   runContentStudioTopic: async (options: TopicCreateInput): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-topic:run", options),
+  runContentStudioMaterial: async (options: MaterialRewriteInput): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-material:run", options),
+  addContentStudioMaterialText: async (options: {
+    topic?: string;
+    title?: string;
+    body: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => ipcRenderer.invoke("content-studio-material:add-text", options),
+  addContentStudioMaterialUrl: async (options: {
+    url: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    collectImagesFromUrl?: boolean;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => ipcRenderer.invoke("content-studio-material:add-url", options),
+  addContentStudioMaterialWord: async (options: {
+    filePath: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => ipcRenderer.invoke("content-studio-material:add-word", options),
   saveContentStudioImagePlan: async (
     taskId: string,
     updates: ContentStudioParagraphImagePlanUpdate[]
@@ -214,6 +239,16 @@ const desktopApi: DesktopApi = {
     ipcRenderer.on(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, listener);
     return () => {
       ipcRenderer.removeListener(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, listener);
+    };
+  },
+  onContentStudioMaterialProgress: (callback: (progress: ContentStudioMaterialProgress) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: ContentStudioMaterialProgress): void => {
+      callback(progress);
+    };
+
+    ipcRenderer.on(CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, listener);
+    return () => {
+      ipcRenderer.removeListener(CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, listener);
     };
   }
 };

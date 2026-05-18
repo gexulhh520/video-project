@@ -6,6 +6,8 @@ import type {
   ContentStudioGenerateImageOptions,
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioModelRole,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioSettings,
   ContentStudioTabConfigStatus,
   ContentStudioTabKey,
@@ -13,6 +15,8 @@ import type {
   ContentStudioTask,
   ContentStudioTaskSummary,
   ContentStudioTopicProgress,
+  MaterialRewriteInput,
+  MaterialSourceType,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -25,6 +29,8 @@ export type {
   ContentStudioGenerateImageOptions,
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioModelRole,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioSettings,
   ContentStudioTabConfigStatus,
   ContentStudioTabKey,
@@ -32,6 +38,8 @@ export type {
   ContentStudioTask,
   ContentStudioTaskSummary,
   ContentStudioTopicProgress,
+  MaterialRewriteInput,
+  MaterialSourceType,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -493,6 +501,27 @@ export type DesktopApi = {
   getContentStudioTaskById: (taskId: string) => Promise<ContentStudioTask>;
   deleteContentStudioTask: (taskId: string) => Promise<void>;
   runContentStudioTopic: (options: TopicCreateInput) => Promise<ContentStudioTask>;
+  runContentStudioMaterial: (options: MaterialRewriteInput) => Promise<ContentStudioTask>;
+  addContentStudioMaterialText: (options: {
+    topic?: string;
+    title?: string;
+    body: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }) => Promise<ContentStudioMaterialPack>;
+  addContentStudioMaterialUrl: (options: {
+    url: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    collectImagesFromUrl?: boolean;
+    maxSourceCount?: number;
+  }) => Promise<ContentStudioMaterialPack>;
+  addContentStudioMaterialWord: (options: {
+    filePath: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }) => Promise<ContentStudioMaterialPack>;
   saveContentStudioImagePlan: (
     taskId: string,
     updates: ContentStudioParagraphImagePlanUpdate[]
@@ -543,4 +572,5 @@ export type DesktopApi = {
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;
   onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void) => () => void;
+  onContentStudioMaterialProgress: (callback: (progress: ContentStudioMaterialProgress) => void) => () => void;
 };

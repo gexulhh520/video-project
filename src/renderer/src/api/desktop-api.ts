@@ -9,6 +9,8 @@ import type {
   ContentStudioSettings,
   ContentStudioTask,
   ContentStudioTaskSummary,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioTopicProgress,
   ConfirmWebRecordBodyOptions,
   DeleteWebRecordOptions,
@@ -30,6 +32,7 @@ import type {
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioGenerateImageOptions,
   TaskProgress,
+  MaterialRewriteInput,
   TopicCreateInput,
   VideoToPostConfigStatus,
   VideoToPostSettings,
@@ -100,6 +103,28 @@ export const desktopApi = {
   deleteContentStudioTask: (taskId: string): Promise<void> => window.desktopApi.deleteContentStudioTask(taskId),
   runContentStudioTopic: (options: TopicCreateInput): Promise<ContentStudioTask> =>
     window.desktopApi.runContentStudioTopic(toPlainObject(options)),
+  runContentStudioMaterial: (options: MaterialRewriteInput): Promise<ContentStudioTask> =>
+    window.desktopApi.runContentStudioMaterial(toPlainObject(options)),
+  addContentStudioMaterialText: (options: {
+    topic?: string;
+    title?: string;
+    body: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => window.desktopApi.addContentStudioMaterialText(toPlainObject(options)),
+  addContentStudioMaterialUrl: (options: {
+    url: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    collectImagesFromUrl?: boolean;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => window.desktopApi.addContentStudioMaterialUrl(toPlainObject(options)),
+  addContentStudioMaterialWord: (options: {
+    filePath: string;
+    title?: string;
+    current?: ContentStudioMaterialPack;
+    maxSourceCount?: number;
+  }): Promise<ContentStudioMaterialPack> => window.desktopApi.addContentStudioMaterialWord(toPlainObject(options)),
   saveContentStudioImagePlan: (taskId: string, updates: ContentStudioParagraphImagePlanUpdate[]): Promise<ContentStudioTask> =>
     window.desktopApi.saveContentStudioImagePlan(taskId, toPlainObject(updates)),
   addContentStudioLocalImage: (taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
@@ -179,5 +204,7 @@ export const desktopApi = {
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void): (() => void) =>
     window.desktopApi.onWebTaskProgress(callback),
   onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void): (() => void) =>
-    window.desktopApi.onContentStudioTopicProgress(callback)
+    window.desktopApi.onContentStudioTopicProgress(callback),
+  onContentStudioMaterialProgress: (callback: (progress: ContentStudioMaterialProgress) => void): (() => void) =>
+    window.desktopApi.onContentStudioMaterialProgress(callback)
 };

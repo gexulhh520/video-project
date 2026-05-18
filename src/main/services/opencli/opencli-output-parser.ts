@@ -72,7 +72,11 @@ export function repairWebLlmJsonText(text: string): string {
 
 export function parseOpenCliModelJson<T = unknown>(output: string): T {
   const text = sanitizeModelJsonText(output);
-  const candidates = [text, ...extractJsonCandidates(text)];
+  const codeBlockText = extractCodeBlockJsonText(text);
+  const firstObject = extractFirstCompleteJsonObject(text);
+  const candidates = [text, codeBlockText, firstObject, ...extractJsonCandidates(text)].filter(
+    (candidate): candidate is string => Boolean(candidate && candidate.trim())
+  );
 
   for (const candidate of candidates) {
     try {
@@ -143,13 +147,6 @@ function sanitizeJsonText(output: string): string {
 
 function sanitizeModelJsonText(output: string): string {
   const repaired = repairWebLlmJsonText(output);
-  if (!repaired) return "";
-
-  const codeBlockMatch = repaired.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (codeBlockMatch?.[1]) {
-    return repairWebLlmJsonText(codeBlockMatch[1]);
-  }
-
   return repaired;
 }
 
@@ -179,6 +176,63 @@ function extractJsonCandidates(text: string): string[] {
   }
 
   return candidates;
+}
+
+function extractCodeBlockJsonText(text: string): string | null {
+  const codeBlockMatch = String(text || "").match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (!codeBlockMatch?.[1]) {
+    return null;
+  }
+  const repaired = repairWebLlmJsonText(codeBlockMatch[1]);
+  return repaired || null;
+}
+
+function extractFirstCompleteJsonObject(text: string): string | null {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      if (depth === 0) {
+        start = i;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseProfilesSection(lines: string[]): OpenCliProfileStatus[] {

@@ -113,6 +113,15 @@ export class ContentStudioImageService {
   ): Promise<ContentStudioGeneratedImage> {
     await mkdir(browserDownloadDir, { recursive: true });
     const targetUrl = BROWSER_PROVIDER_URL[provider] || BROWSER_PROVIDER_URL.chatgpt || "https://chatgpt.com/new";
+    this.logSubmit("browser image flow start", {
+      provider,
+      profile,
+      taskId,
+      taskImagesDir,
+      browserDownloadDir,
+      timeoutMs,
+      promptLength: prompt.length
+    });
     await this.openCliRunner.run(["--profile", profile, "browser", provider, "open", targetUrl], { timeoutMs });
     if (provider === "yuanbao") {
       const directFill = await this.openCliRunner.run(
@@ -148,7 +157,7 @@ export class ContentStudioImageService {
       const oneShotScript =
         provider === "doubao"
           ? `(function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<200||(img.naturalHeight||0)<200){return false;} var isTargetAttr=String(img.alt||'').toLowerCase()==='image'&&String(img.loading||'').toLowerCase()==='lazy'; var isDoubaoSrc=src.indexOf('-flow-imagex-sign.byteimg.com')>=0||src.indexOf('byteimg.com')>=0||src.indexOf('/rc_gen_image/')>=0||/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); return isTargetAttr&&isDoubaoSrc;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; return {ok:true, src:src, name:'${dynamicDownloadName}'};})()`
-          : `(async function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<256||(img.naturalHeight||0)<256){return false;} var isChatGpt=src.indexOf('id=file_')>=0||src.indexOf('/backend-api/')>=0; var hasImageExt=/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); var isYuanbaoCos=/hunyuan-prod-\\d+\\.cos\\.ap-guangzhou\\.myqcloud\\.com/i.test(src)||/\\.cos\\.[^/]+\\.myqcloud\\.com/i.test(src); return isChatGpt||hasImageExt||isYuanbaoCos;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; var r=await fetch(src,{credentials:'include'}); if(!r.ok){throw new Error('download failed: '+r.status);} var b=await r.blob(); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='${dynamicDownloadName}'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();},3000); return {ok:true, src:src, size:b.size, type:b.type, name:'${dynamicDownloadName}'};})()`;
+          : `(function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<256||(img.naturalHeight||0)<256){return false;} var isChatGpt=src.indexOf('id=file_')>=0||src.indexOf('/backend-api/')>=0; var hasImageExt=/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); var isYuanbaoCos=/hunyuan-prod-\\d+\\.cos\\.ap-guangzhou\\.myqcloud\\.com/i.test(src)||/\\.cos\\.[^/]+\\.myqcloud\\.com/i.test(src); return isChatGpt||hasImageExt||isYuanbaoCos;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; return {ok:true, src:src, name:'${dynamicDownloadName}'};})()`;
       const evalArgs = ["--profile", profile, "browser", provider, "eval", oneShotScript];
       const evalResult = await this.openCliRunner.run(
         evalArgs,
@@ -158,9 +167,25 @@ export class ContentStudioImageService {
       const ok = Boolean((payload as { ok?: boolean }).ok);
       const src = String((payload as { src?: string }).src || "").trim();
       const name = String((payload as { name?: string }).name || "").trim();
+      this.logSubmit("poll eval result", {
+        provider,
+        pollRound,
+        code: evalResult.code,
+        ok,
+        hasSrc: Boolean(src),
+        srcPreview: src ? this.truncateText(src, 220) : "",
+        stdoutPreview: this.truncateText(evalResult.stdout || "", 220),
+        stderrPreview: this.truncateText(evalResult.stderr || "", 220)
+      });
       if (ok && src) {
         imageSrc = src;
         downloadedName = name || dynamicDownloadName;
+        this.logSubmit("image src resolved", {
+          provider,
+          pollRound,
+          downloadedName,
+          srcPreview: this.truncateText(imageSrc, 260)
+        });
         break;
       }
     }
@@ -170,8 +195,17 @@ export class ContentStudioImageService {
     }
 
     await mkdir(taskImagesDir, { recursive: true });
-    if (provider === "doubao") {
+    if (provider === "doubao" || provider === "yuanbao") {
+      this.logSubmit("direct download start", {
+        provider,
+        taskImagesDir,
+        srcPreview: this.truncateText(imageSrc, 260)
+      });
       const directPath = await this.downloadImageFromUrl(imageSrc, taskImagesDir);
+      this.logSubmit("direct download done", {
+        provider,
+        directPath
+      });
       return {
         localPath: directPath,
         prompt,
@@ -184,11 +218,21 @@ export class ContentStudioImageService {
     if (!created) {
       throw new Error(`${provider} 已返回图片，但在浏览器下载目录中未检测到新文件。请检查浏览器默认下载路径配置。`);
     }
+    this.logSubmit("browser download file detected", {
+      provider,
+      created,
+      downloadedName
+    });
 
     const extension = this.inferImageExtFromSrc(imageSrc);
     const taskFileName = `generated-${Date.now()}${extension}`;
     const targetPath = join(taskImagesDir, taskFileName);
     await copyFile(join(browserDownloadDir, created), targetPath);
+    this.logSubmit("browser download copied", {
+      provider,
+      created,
+      targetPath
+    });
 
     return {
       localPath: targetPath,
@@ -216,6 +260,11 @@ export class ContentStudioImageService {
         try {
           const info = await stat(join(browserDownloadDir, item));
           if (info.size > 0) {
+            this.logSubmit("wait download file hit", {
+              round,
+              item,
+              size: info.size
+            });
             return item;
           }
         } catch {
@@ -248,8 +297,17 @@ export class ContentStudioImageService {
   }
 
   private async downloadImageFromUrl(src: string, taskImagesDir: string): Promise<string> {
+    this.logSubmit("fetch image start", {
+      srcPreview: this.truncateText(src, 260),
+      taskImagesDir
+    });
     const response = await fetch(src);
     if (!response.ok) {
+      this.logSubmit("fetch image failed", {
+        status: response.status,
+        statusText: response.statusText,
+        srcPreview: this.truncateText(src, 260)
+      });
       throw new Error(`下载图片失败：${response.status}`);
     }
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
@@ -265,6 +323,11 @@ export class ContentStudioImageService {
     const targetPath = join(taskImagesDir, fileName);
     const bytes = Buffer.from(await response.arrayBuffer());
     await writeFile(targetPath, bytes);
+    this.logSubmit("fetch image done", {
+      contentType,
+      bytes: bytes.length,
+      targetPath
+    });
     return targetPath;
   }
 
@@ -323,6 +386,14 @@ export class ContentStudioImageService {
   private extractFileRef(src: string): string {
     const match = String(src || "").match(/id=(file_[a-zA-Z0-9]+)/);
     return match?.[1] || "";
+  }
+
+  private truncateText(text: string, maxLength: number): string {
+    const raw = String(text || "");
+    if (raw.length <= maxLength) {
+      return raw;
+    }
+    return `${raw.slice(0, maxLength)}...`;
   }
 
   private async submitPromptRobustly(provider: OpenCliProvider, profile: string, timeoutMs: number): Promise<void> {

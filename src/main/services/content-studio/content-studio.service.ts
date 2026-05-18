@@ -11,6 +11,10 @@ import type {
   MaterialSourceType,
   TopicCreateInput
 } from "../../types/content-studio.types";
+import { runPythonTool } from "../python-tool-runner";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { ContentStudioTaskStore } from "./content-studio-task-store";
 import { ContentStudioDebateError, ContentStudioDebateService } from "./content-studio-debate.service";
 import { ContentStudioSettingsService } from "./content-studio-settings.service";
@@ -93,7 +97,50 @@ export class ContentStudioService {
     current?: ContentStudioMaterialPack;
     maxSourceCount?: number;
   }): Promise<ContentStudioMaterialPack> {
-    throw new Error("Word 导入将在下一步接入，当前请先使用文本粘贴或 URL 采集。");
+    const filePath = String(options.filePath || "").trim();
+    if (!filePath) {
+      throw new Error("Word 文件路径不能为空");
+    }
+    const sourceId = this.createSourceId();
+    const outputImageDir = join(process.cwd(), "content-studio", "word-import", sourceId);
+    await mkdir(outputImageDir, { recursive: true });
+    const { stdout } = await runPythonTool("import_word_docx", "import_word_docx.py", [filePath, outputImageDir], {
+      ...process.env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    });
+    let payload: { title?: string; paragraphs?: string[]; sectionImages?: string[][] };
+    try {
+      payload = JSON.parse(stdout) as { title?: string; paragraphs?: string[]; sectionImages?: string[][] };
+    } catch (error) {
+      throw new Error(`Word 导入结果解析失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const paragraphs = Array.isArray(payload.paragraphs)
+      ? payload.paragraphs.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const body = paragraphs.join("\n\n").trim();
+    if (!body) {
+      throw new Error("Word 未检测到可用正文");
+    }
+    const images = (payload.sectionImages || [])
+      .flat()
+      .map((path) => String(path || "").trim())
+      .filter(Boolean)
+      .map((localPath) => ({
+        assetId: randomUUID(),
+        sourceType: "source" as const,
+        fileName: localPath.split(/[\\/]/).pop() || "word-image.png",
+        localPath,
+        createdAt: new Date().toISOString(),
+        sourceRef: filePath
+      }));
+    return this.pushMaterialSource(options.current, {
+      sourceId,
+      type: "word",
+      title: String(options.title || "").trim() || String(payload.title || "").trim() || "Word 素材",
+      body,
+      images
+    }, options.maxSourceCount);
   }
 
   async runMaterialRewrite(

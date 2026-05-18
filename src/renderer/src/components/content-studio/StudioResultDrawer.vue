@@ -6,6 +6,7 @@ const props = defineProps<{
   open: boolean;
   task: ContentStudioTask | null;
   running?: boolean;
+  allowRerun?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -62,6 +63,10 @@ const fullText = computed(() => {
   }
   return lines.join("\n\n");
 });
+const finalReviewJson = computed(() => {
+  if (!props.task?.finalReview) return "";
+  return JSON.stringify(props.task.finalReview, null, 2);
+});
 
 async function copyText(text: string): Promise<void> {
   if (!text.trim()) {
@@ -76,7 +81,7 @@ async function copyText(text: string): Promise<void> {
     <section class="drawer">
       <header class="drawer-header">
         <div>
-          <h3>话题成文结果</h3>
+          <h3>{{ props.task?.tab === "material" ? "素材二创结果" : "话题成文结果" }}</h3>
           <p class="meta">状态：{{ statusLabel }}</p>
           <p class="meta">生成时间：{{ props.task?.updatedAt || "-" }}</p>
           <p class="meta">模型A：{{ modelALabel }}</p>
@@ -89,8 +94,9 @@ async function copyText(text: string): Promise<void> {
         <button class="ghost-btn" :disabled="!fullText" @click="copyText(fullText)">复制全文</button>
         <button class="ghost-btn" :disabled="!article?.title" @click="copyText(article?.title || '')">复制标题</button>
         <button class="ghost-btn" :disabled="!article?.coverText" @click="copyText(article?.coverText || '')">复制封面文案</button>
+        <button class="ghost-btn" :disabled="!finalReviewJson" @click="copyText(finalReviewJson)">复制终审JSON</button>
         <button class="ghost-btn" :disabled="!props.task?.debateSteps.length" @click="emit('viewRunLog')">查看讨论记录</button>
-        <button class="ghost-btn" :disabled="props.running" @click="emit('rerun')">重新生成</button>
+        <button class="ghost-btn" :disabled="props.running || !props.allowRerun" @click="emit('rerun')">重新生成</button>
       </div>
 
       <p v-if="props.task?.status === 'failed'" class="error-text">{{ props.task.error || "任务执行失败" }}</p>
@@ -141,6 +147,16 @@ async function copyText(text: string): Promise<void> {
           <h4>风险提示与标签</h4>
           <p><strong>风险提示：</strong>{{ article.riskNotes?.join("；") || "无" }}</p>
           <p><strong>标签：</strong>{{ article.tags?.join("、") || "无" }}</p>
+        </section>
+
+        <section v-if="props.task?.tab === 'material' && props.task?.finalReview" class="section">
+          <h4>终审报告</h4>
+          <p><strong>结论：</strong>{{ props.task.finalReview.verdict }}</p>
+          <p><strong>可发布：</strong>{{ props.task.finalReview.publishable ? "是" : "否" }}</p>
+          <p><strong>原创度：</strong>{{ props.task.finalReview.originalityScore ?? "-" }}</p>
+          <p><strong>爆款潜力：</strong>{{ props.task.finalReview.viralPotentialScore ?? "-" }}</p>
+          <p><strong>相似度风险：</strong>{{ props.task.finalReview.similarityRisk || "-" }}</p>
+          <p><strong>风险备注：</strong>{{ props.task.finalReview.riskNotes?.join("；") || "无" }}</p>
         </section>
       </template>
       <p v-else class="muted">暂无可展示结果。</p>

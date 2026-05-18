@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type {
   ContentStudioConfigStatus,
+  ContentStudioMaterialPack,
+  ContentStudioMaterialProgress,
   ContentStudioModelRole,
   ContentStudioParagraphImagePlanUpdate,
   ContentStudioSettings,
@@ -11,6 +13,7 @@ import type {
   ContentStudioTabKey,
   ContentStudioTabModelSettings,
   OpenCliProvider,
+  MaterialRewriteInput,
   TopicCreateInput
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
@@ -18,6 +21,7 @@ import ContentStudioSettingsModal from "../components/content-studio/ContentStud
 import TopicCreateTab from "../components/content-studio/TopicCreateTab.vue";
 import TopicAdvancedSettingsModal from "../components/content-studio/TopicAdvancedSettingsModal.vue";
 import MaterialRewriteTab from "../components/content-studio/MaterialRewriteTab.vue";
+import MaterialSourceModal from "../components/content-studio/MaterialSourceModal.vue";
 import HotCreateTab from "../components/content-studio/HotCreateTab.vue";
 import LayoutTab from "../components/content-studio/LayoutTab.vue";
 import ArticlePickerModal from "../components/content-studio/ArticlePickerModal.vue";
@@ -52,6 +56,7 @@ const runLogOpen = ref(false);
 const taskHistoryOpen = ref(false);
 const resultDrawerOpen = ref(false);
 const topicAdvancedModalOpen = ref(false);
+const materialSourceModalOpen = ref(false);
 const runLogTitle = ref("运行记录");
 const runLogDescription = ref("阶段 1 已预留运行记录弹窗入口，后续阶段会接入任务历史与详细日志。");
 const testingRole = ref<ContentStudioModelRole | null>(null);
@@ -79,6 +84,7 @@ const taskHistoryLoading = ref(false);
 const taskHistoryDeletingTaskId = ref<string | null>(null);
 const taskHistoryPage = ref(1);
 const taskHistoryPageSize = 8;
+const taskHistoryActiveTab = ref<ContentStudioTabKey>("topic");
 const topicTaskSummaries = ref<Array<{
   taskId: string;
   tab: ContentStudioTabKey;
@@ -88,6 +94,11 @@ const topicTaskSummaries = ref<Array<{
   updatedAt: string;
 }>>([]);
 const topicProgress = ref<ContentStudioTopicProgress | null>(null);
+const materialProgress = ref<ContentStudioMaterialProgress | null>(null);
+const materialRunning = ref(false);
+const materialPack = ref<ContentStudioMaterialPack>({ sources: [] });
+const materialSourceBusy = ref(false);
+const latestMaterialTask = ref<ContentStudioTask | null>(null);
 const topicAdvancedSettings = ref({
   reviewRounds: 2,
   targetReader: "",
@@ -97,6 +108,7 @@ const topicAdvancedSettings = ref({
   generateCoverText: true,
   generateImagePlan: true
 });
+const recentResultTask = computed(() => (activeTab.value === "material" ? latestMaterialTask.value : latestTopicTask.value));
 
 const currentTabStatus = computed(() => {
   if (!configStatus.value) {
@@ -113,16 +125,21 @@ const currentModelSettings = computed<ContentStudioTabModelSettings | null>(() =
 });
 
 let unsubscribeTopicProgress: (() => void) | null = null;
+let unsubscribeMaterialProgress: (() => void) | null = null;
 
 onMounted(() => {
   unsubscribeTopicProgress = desktopApi.onContentStudioTopicProgress((progress) => {
     topicProgress.value = progress;
+  });
+  unsubscribeMaterialProgress = desktopApi.onContentStudioMaterialProgress((progress) => {
+    materialProgress.value = progress;
   });
   void bootstrap();
 });
 
 onBeforeUnmount(() => {
   unsubscribeTopicProgress?.();
+  unsubscribeMaterialProgress?.();
 });
 
 async function bootstrap(): Promise<void> {
@@ -213,6 +230,7 @@ function goHome(): void {
 
 async function openTaskHistory(): Promise<void> {
   taskHistoryOpen.value = true;
+  taskHistoryActiveTab.value = activeTab.value === "material" ? "material" : "topic";
   taskHistoryPage.value = 1;
   await loadTopicTaskSummaries();
 }
@@ -222,7 +240,7 @@ async function loadTopicTaskSummaries(): Promise<void> {
   try {
     const tasks = await desktopApi.listContentStudioTasks();
     topicTaskSummaries.value = tasks
-      .filter((task) => task.tab === "topic")
+      .filter((task) => task.tab === taskHistoryActiveTab.value)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   } finally {
     taskHistoryLoading.value = false;
@@ -237,10 +255,16 @@ function changeTaskHistoryPage(nextPage: number): void {
 async function openTaskFromHistory(taskId: string): Promise<void> {
   const task = await desktopApi.getContentStudioTaskById(taskId);
   latestTopicTask.value = task;
-  runLogTitle.value = "话题成文 - 运行记录";
+  runLogTitle.value = task.tab === "material" ? "素材二创 - 运行记录" : "话题成文 - 运行记录";
   runLogDescription.value = formatRunLogDescription(task);
   resultDrawerOpen.value = true;
   taskHistoryOpen.value = false;
+}
+
+async function changeTaskHistoryTab(tab: ContentStudioTabKey): Promise<void> {
+  taskHistoryActiveTab.value = tab === "material" ? "material" : "topic";
+  taskHistoryPage.value = 1;
+  await loadTopicTaskSummaries();
 }
 
 async function deleteTaskFromHistory(taskId: string): Promise<void> {
@@ -532,12 +556,24 @@ function openTopicRunLog(): void {
   runLogOpen.value = true;
 }
 
+function openMaterialRunLog(): void {
+  if (latestMaterialTask.value) {
+    runLogTitle.value = "素材二创 - 运行记录";
+    runLogDescription.value = formatRunLogDescription(latestMaterialTask.value);
+  } else {
+    runLogTitle.value = "素材二创 - 运行记录";
+    runLogDescription.value = "暂无素材二创运行记录。";
+  }
+  runLogOpen.value = true;
+}
+
 function reopenLatestTopicResult(): void {
-  if (!latestTopicTask.value) {
+  const task = recentResultTask.value;
+  if (!task) {
     pageNotice.value = "暂无最近结果，请先执行一次话题成文。";
     return;
   }
-
+  latestTopicTask.value = task;
   resultDrawerOpen.value = true;
 }
 
@@ -600,6 +636,115 @@ const topicProgressLabel = computed(() => {
   return `${statusMap[topicProgress.value.status]} · ${topicProgress.value.progress}% · ${topicProgress.value.message}`;
 });
 
+const materialProgressLabel = computed(() => {
+  if (!materialProgress.value) {
+    return "";
+  }
+  const statusMap: Record<ContentStudioMaterialProgress["status"], string> = {
+    queued: "排队中",
+    collecting_sources: "采集中",
+    running_step: "执行中",
+    parsing_result: "结果解析中",
+    completed: "已完成",
+    failed: "失败"
+  };
+  return `${statusMap[materialProgress.value.status]} · ${materialProgress.value.progress}% · ${materialProgress.value.message}`;
+});
+
+async function addMaterialText(payload: { title?: string; body: string }): Promise<void> {
+  materialSourceBusy.value = true;
+  try {
+    materialPack.value = await desktopApi.addContentStudioMaterialText({
+      ...payload,
+      current: materialPack.value,
+      maxSourceCount: 5
+    });
+    pageNotice.value = "文本素材已添加。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "添加文本素材失败";
+  } finally {
+    materialSourceBusy.value = false;
+  }
+}
+
+async function addMaterialUrl(payload: { url: string; title?: string }): Promise<void> {
+  materialSourceBusy.value = true;
+  try {
+    materialPack.value = await desktopApi.addContentStudioMaterialUrl({
+      ...payload,
+      current: materialPack.value,
+      collectImagesFromUrl: true,
+      maxSourceCount: 5
+    });
+    pageNotice.value = "URL 素材已采集并添加。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "添加 URL 素材失败";
+  } finally {
+    materialSourceBusy.value = false;
+  }
+}
+
+async function addMaterialWord(): Promise<void> {
+  materialSourceBusy.value = true;
+  const filePath = await desktopApi.selectWord();
+  if (!filePath) {
+    materialSourceBusy.value = false;
+    return;
+  }
+  try {
+    materialPack.value = await desktopApi.addContentStudioMaterialWord({
+      filePath,
+      current: materialPack.value,
+      maxSourceCount: 5
+    });
+    pageNotice.value = "Word 素材已导入。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "导入 Word 素材失败";
+  } finally {
+    materialSourceBusy.value = false;
+  }
+}
+
+function removeMaterialSource(sourceId: string): void {
+  materialPack.value = {
+    ...materialPack.value,
+    sources: materialPack.value.sources.filter((item) => item.sourceId !== sourceId)
+  };
+}
+
+function updateMaterialSourceBody(payload: { sourceId: string; body: string }): void {
+  materialPack.value = {
+    ...materialPack.value,
+    sources: materialPack.value.sources.map((item) =>
+      item.sourceId === payload.sourceId ? { ...item, body: payload.body } : item
+    )
+  };
+}
+
+async function startMaterialRewrite(payload: MaterialRewriteInput): Promise<void> {
+  materialRunning.value = true;
+  materialProgress.value = null;
+  pageNotice.value = "";
+  try {
+    const task = await desktopApi.runContentStudioMaterial(payload);
+    latestMaterialTask.value = task;
+    if (task.status === "completed" && task.result) {
+      pageNotice.value = "素材二创已完成，结果已写入任务。";
+      runLogTitle.value = "素材二创 - 运行记录";
+      runLogDescription.value = formatRunLogDescription(task);
+      latestTopicTask.value = task;
+      resultDrawerOpen.value = true;
+      materialPack.value = { sources: [] };
+    } else {
+      pageNotice.value = task.error || "素材二创执行失败";
+    }
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "素材二创执行失败";
+  } finally {
+    materialRunning.value = false;
+  }
+}
+
 function formatRunLogDescription(task: ContentStudioTask): string {
   if (!task.debateSteps.length) {
     return `任务ID：${task.taskId}\n当前无讨论步骤记录。`;
@@ -619,6 +764,10 @@ function formatRunLogDescription(task: ContentStudioTask): string {
 }
 
 function openRunLogFromDrawer(): void {
+  if (latestTopicTask.value?.tab === "material") {
+    openMaterialRunLog();
+    return;
+  }
   openTopicRunLog();
 }
 
@@ -653,7 +802,7 @@ function rerunTopicFromDrawer(): void {
       </div>
       <div class="header-actions">
         <button class="ghost-btn" @click="openGlobalSettings">全局配置</button>
-        <button class="ghost-btn" :disabled="!latestTopicTask" @click="reopenLatestTopicResult">最近结果</button>
+        <button class="ghost-btn" :disabled="!recentResultTask" @click="reopenLatestTopicResult">最近结果</button>
         <button class="ghost-btn" @click="openTaskHistory">历史任务</button>
       </div>
     </header>
@@ -692,8 +841,13 @@ function rerunTopicFromDrawer(): void {
         v-if="activeTab === 'material'"
         :tab-ready="currentTabStatus.ready"
         :missing-items="currentTabStatus.missingItems"
+        :running="materialRunning"
+        :material-pack="materialPack"
+        :progress-label="materialProgressLabel"
         @open-model-settings="openModelSettings('material')"
-        @open-run-log="runLogOpen = true"
+        @open-run-log="openMaterialRunLog"
+        @open-source-modal="materialSourceModalOpen = true"
+        @start-material-rewrite="startMaterialRewrite"
       />
       <HotCreateTab
         v-if="activeTab === 'hot'"
@@ -749,6 +903,18 @@ function rerunTopicFromDrawer(): void {
       @save="saveTopicAdvancedSettings"
     />
 
+    <MaterialSourceModal
+      :open="materialSourceModalOpen"
+      :material-pack="materialPack"
+      :busy="materialSourceBusy"
+      @close="materialSourceModalOpen = false"
+      @add-text="addMaterialText"
+      @add-url="addMaterialUrl"
+      @add-word="addMaterialWord"
+      @remove-source="removeMaterialSource"
+      @update-source-body="updateMaterialSourceBody"
+    />
+
     <RunLogModal
       :open="runLogOpen"
       :title="runLogTitle"
@@ -760,6 +926,7 @@ function rerunTopicFromDrawer(): void {
       :open="resultDrawerOpen"
       :task="latestTopicTask"
       :running="topicRunning"
+      :allow-rerun="latestTopicTask?.tab === 'topic'"
       @view-run-log="openRunLogFromDrawer"
       @rerun="rerunTopicFromDrawer"
       @close="resultDrawerOpen = false"
@@ -781,7 +948,9 @@ function rerunTopicFromDrawer(): void {
       :tasks="topicTaskSummaries"
       :page="taskHistoryPage"
       :page-size="taskHistoryPageSize"
+      :active-tab="taskHistoryActiveTab"
       @close="taskHistoryOpen = false"
+      @change-tab="changeTaskHistoryTab"
       @change-page="changeTaskHistoryPage"
       @delete="deleteTaskFromHistory"
       @open="openTaskFromHistory"

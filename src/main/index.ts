@@ -85,6 +85,7 @@ function createWindow(): void {
     openCliBrowserService,
     openCliImageDownloader,
     openCliRuntimeService,
+    openCliWebLlmService,
     settingsService,
     contentStudioSettingsService
   );

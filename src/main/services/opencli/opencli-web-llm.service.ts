@@ -36,6 +36,16 @@ type ExtractArticleOptions = {
   workingDir?: string;
 };
 
+type ExtractArticleFromUrlOptions = {
+  provider: OpenCliProvider;
+  profile: string;
+  url: string;
+  userPrompt?: string;
+  timeoutMs: number;
+  intervalMs?: number;
+  workingDir?: string;
+};
+
 type RewriteWebContentOptions = {
   provider: OpenCliProvider;
   profile: string;
@@ -60,6 +70,8 @@ const PROVIDER_LOGIN_URLS: Record<OpenCliProvider, string> = {
 const CONNECTION_TEST_PROMPT = "请只回复：连接成功";
 const DEFAULT_EXTRACT_PROMPT =
   "请提取网页正文，删除导航、广告、评论、页脚、推荐内容和无关信息，只输出清洗后的正文。";
+const DEFAULT_EXTRACT_FROM_URL_PROMPT =
+  "你是网页正文提取助手。请打开并读取下面这个链接，提取文章标题和完整正文。只保留标题、作者或来源、发布时间和正文段落，删除导航、广告、评论、推荐阅读、版权声明、登录提示和无关按钮文案。如果无法访问或没有正文，请输出空 body 并说明 reason。";
 const ARG_FILE_PREFIX = "__OPENCLI_ARG_FILE__:";
 const OPENCLI_PROMPT_DEBUG_DIR = ".cache/opencli-prompts";
 const MAX_REWRITE_TITLE_LENGTH = 40;
@@ -163,6 +175,43 @@ export class OpenCliWebLlmService {
     }
 
     return extracted;
+  }
+
+  async extractArticleFromUrl(
+    options: ExtractArticleFromUrlOptions
+  ): Promise<{ title: string; body: string; confidence?: number; reason?: string }> {
+    const targetUrl = String(options.url || "").trim();
+    if (!targetUrl) {
+      throw new Error("URL 不能为空。");
+    }
+
+    const userPrompt = options.userPrompt?.trim() || DEFAULT_EXTRACT_FROM_URL_PROMPT;
+    const prompt = this.buildSingleLinePrompt([
+      userPrompt,
+      "必须输出严格 JSON：{\"title\": string, \"body\": string, \"confidence\": number, \"reason\": string}",
+      `URL: ${targetUrl}`
+    ]);
+
+    const response = await this.askOnce({
+      provider: options.provider,
+      profile: options.profile,
+      prompt,
+      timeoutMs: options.timeoutMs,
+      intervalMs: options.intervalMs,
+      workingDir: options.workingDir
+    });
+
+    const parsed = parseOpenCliModelJson<Record<string, unknown>>(response);
+    const title = String(parsed.title || "").trim();
+    const body = String(parsed.body || "").trim();
+    const reason = String(parsed.reason || "").trim() || undefined;
+    const confidence = Number(parsed.confidence);
+    return {
+      title,
+      body,
+      confidence: Number.isFinite(confidence) ? confidence : undefined,
+      reason
+    };
   }
 
   async askByProvider(options: AskOptions): Promise<string> {

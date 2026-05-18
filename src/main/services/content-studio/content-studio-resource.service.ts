@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { basename, join } from "node:path";
 import type { ContentStudioImageAsset } from "../../types/content-studio.types";
 import { SettingsService } from "../settings.service";
 import { OpenCliBrowserService } from "../opencli/opencli-browser.service";
 import { OpenCliImageDownloader } from "../opencli/opencli-image-downloader";
 import { OpenCliRuntimeService } from "../opencli/opencli-runtime.service";
+import { OpenCliWebLlmService } from "../opencli/opencli-web-llm.service";
 import { ContentStudioSettingsService } from "./content-studio-settings.service";
 
 export class ContentStudioResourceService {
@@ -12,6 +13,7 @@ export class ContentStudioResourceService {
     private readonly openCliBrowserService: OpenCliBrowserService,
     private readonly openCliImageDownloader: OpenCliImageDownloader,
     private readonly openCliRuntimeService: OpenCliRuntimeService,
+    private readonly openCliWebLlmService: OpenCliWebLlmService,
     private readonly settingsService: SettingsService,
     private readonly contentStudioSettingsService: ContentStudioSettingsService
   ) {}
@@ -19,17 +21,23 @@ export class ContentStudioResourceService {
   async collectFromUrl(
     url: string,
     options?: { collectImages?: boolean; sourceId?: string }
-  ): Promise<{ title: string; body: string; images: ContentStudioImageAsset[] }> {
+  ): Promise<{
+    title: string;
+    body: string;
+    images: ContentStudioImageAsset[];
+    extractMethod: "browser_extract" | "llmweb_body_extract" | "llmweb_url_extract";
+  }> {
     const targetUrl = String(url || "").trim();
     if (!targetUrl) {
       throw new Error("URL 不能为空");
     }
     if (!/^https?:\/\//i.test(targetUrl)) {
-      throw new Error("URL 格式不正确，需以 http:// 或 https:// 开头");
+      throw new Error("URL 格式不正确，需要以 http:// 或 https:// 开头");
     }
 
     const settings = await this.contentStudioSettingsService.getSettings();
     const profile = settings.tabs.material.modelA.profile.trim() || settings.tabs.material.modelB.profile.trim();
+    const provider = settings.tabs.material.modelA.provider;
     if (!profile) {
       throw new Error("素材二创模型未配置 Profile，无法进行 URL 采集");
     }
@@ -37,19 +45,89 @@ export class ContentStudioResourceService {
     const workspaceDir = (await this.settingsService.getSettings()).workspaceDir;
     const sessionName = `material_${randomUUID().replace(/-/g, "")}`;
     let title = targetUrl;
+    let browserOpenSucceeded = false;
+    let browserBody = "";
+    let images: ContentStudioImageAsset[] = [];
+
     try {
       await this.openCliRuntimeService.ensureHealthy();
-      await this.openCliBrowserService.open(profile, sessionName, targetUrl, workspaceDir);
-      await this.openCliBrowserService.wait(profile, sessionName, 3, workspaceDir);
-      title = await this.openCliBrowserService.getTitle(profile, sessionName, workspaceDir).catch(() => targetUrl);
-      const body = await this.openCliBrowserService.extract(profile, sessionName, targetUrl, 8000, workspaceDir);
-      const images = options?.collectImages
-        ? await this.collectImages(profile, sessionName, workspaceDir, options?.sourceId)
-        : [];
-      return { title: String(title || targetUrl).trim(), body: body.trim(), images };
+
+      try {
+        await this.openCliBrowserService.open(profile, sessionName, targetUrl, workspaceDir);
+        browserOpenSucceeded = true;
+        await this.openCliBrowserService.wait(profile, sessionName, 3, workspaceDir);
+        title = await this.openCliBrowserService.getTitle(profile, sessionName, workspaceDir).catch(() => targetUrl);
+        browserBody = await this.openCliBrowserService.extract(profile, sessionName, targetUrl, 8000, workspaceDir);
+        images = options?.collectImages
+          ? await this.collectImages(profile, sessionName, workspaceDir, options?.sourceId)
+          : [];
+      } catch {
+        browserOpenSucceeded = false;
+      }
+
+      if (this.isGoodBody(browserBody)) {
+        return {
+          title: String(title || targetUrl).trim(),
+          body: browserBody.trim(),
+          images,
+          extractMethod: "browser_extract"
+        };
+      }
+
+      if (browserOpenSucceeded && browserBody.trim()) {
+        try {
+          const cleaned = await this.openCliWebLlmService.extractArticleFromBody({
+            provider,
+            profile,
+            title: String(title || targetUrl).trim(),
+            body: browserBody.trim(),
+            timeoutMs: settings.tabs.material.timeoutMs,
+            intervalMs: settings.tabs.material.pollIntervalMs,
+            workingDir: workspaceDir
+          });
+          if (this.isGoodBody(cleaned)) {
+            return {
+              title: String(title || targetUrl).trim(),
+              body: cleaned.trim(),
+              images,
+              extractMethod: "llmweb_body_extract"
+            };
+          }
+        } catch {
+          // Continue to URL-level fallback.
+        }
+      }
+
+      const urlExtract = await this.openCliWebLlmService.extractArticleFromUrl({
+        provider,
+        profile,
+        url: targetUrl,
+        timeoutMs: settings.tabs.material.timeoutMs,
+        intervalMs: settings.tabs.material.pollIntervalMs,
+        workingDir: workspaceDir
+      });
+
+      if (this.isGoodBody(urlExtract.body)) {
+        return {
+          title: String(urlExtract.title || title || targetUrl).trim(),
+          body: String(urlExtract.body || "").trim(),
+          images,
+          extractMethod: "llmweb_url_extract"
+        };
+      }
+
+      throw new Error(urlExtract.reason || "网页正文提取失败，可手动粘贴正文");
     } finally {
       await this.openCliBrowserService.close(profile, sessionName, workspaceDir).catch(() => undefined);
     }
+  }
+
+  private isGoodBody(body: string): boolean {
+    const normalized = String(body || "").trim();
+    if (normalized.length < 120) {
+      return false;
+    }
+    return normalized.replace(/\s+/g, "").length >= 80;
   }
 
   private async collectImages(

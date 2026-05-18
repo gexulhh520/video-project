@@ -708,7 +708,15 @@ async function addMaterialUrl(payload: { url: string; title?: string }): Promise
       collectImagesFromUrl: true,
       maxSourceCount: 5
     });
-    pageNotice.value = "URL 素材已采集并添加。";
+    const latest = materialPack.value.sources[materialPack.value.sources.length - 1];
+    const method = latest?.extractMethod;
+    if (method === "llmweb_url_extract") {
+      pageNotice.value = "URL 素材已添加（通过模型链接兜底提取正文）。";
+    } else if (method === "llmweb_body_extract") {
+      pageNotice.value = "URL 素材已添加（通过模型清洗正文提取）。";
+    } else {
+      pageNotice.value = "URL 素材已采集并添加。";
+    }
   } catch (error) {
     pageNotice.value = error instanceof Error ? error.message : "添加 URL 素材失败";
   } finally {

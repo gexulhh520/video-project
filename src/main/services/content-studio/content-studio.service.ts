@@ -63,6 +63,7 @@ export class ContentStudioService {
       type: "text",
       title: String(options.title || "").trim() || this.detectTitleFromBody(body),
       body,
+      extractMethod: "manual",
       images: []
     }, options.maxSourceCount);
   }
@@ -87,6 +88,7 @@ export class ContentStudioService {
       title: String(options.title || "").trim() || collected.title || targetUrl,
       url: targetUrl,
       body: collected.body,
+      extractMethod: collected.extractMethod,
       images: collected.images
     }, options.maxSourceCount);
   }
@@ -140,6 +142,7 @@ export class ContentStudioService {
       type: "word",
       title: String(options.title || "").trim() || String(payload.title || "").trim() || "Word 素材",
       body,
+      extractMethod: "manual",
       images
     }, options.maxSourceCount);
   }
@@ -498,6 +501,7 @@ export class ContentStudioService {
         title: String(source.title || "").trim() || undefined,
         url: String(source.url || "").trim() || undefined,
         body: String(source.body || "").trim(),
+        extractMethod: source.extractMethod,
         images: Array.isArray(source.images) ? source.images : []
       }))
       .filter((source) => Boolean(source.body));
@@ -526,6 +530,7 @@ export class ContentStudioService {
         title: source.title,
         url: source.url,
         body: source.body,
+        extractMethod: source.extractMethod,
         images: source.images || []
       }))
     };

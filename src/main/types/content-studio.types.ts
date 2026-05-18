@@ -47,6 +47,7 @@ export type TopicCreateInput = {
 };
 
 export type MaterialSourceType = "text" | "url" | "word";
+export type MaterialExtractMethod = "manual" | "browser_extract" | "llmweb_body_extract" | "llmweb_url_extract";
 
 export type MaterialRewriteInput = {
   topic?: string;
@@ -68,6 +69,7 @@ export type MaterialRewriteInput = {
     title?: string;
     url?: string;
     body: string;
+    extractMethod?: MaterialExtractMethod;
     images?: ContentStudioImageAsset[];
   }>;
 };
@@ -80,6 +82,7 @@ export type ContentStudioMaterialPack = {
     title?: string;
     url?: string;
     body: string;
+    extractMethod?: MaterialExtractMethod;
     images: ContentStudioImageAsset[];
   }>;
 };

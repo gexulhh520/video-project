@@ -1,5 +1,5 @@
 ﻿import { extname, isAbsolute, join } from "node:path";
-import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import type { OpenCliProvider } from "../../types/app.types";
 import type { ContentStudioGenerateImageOptions } from "../../types/content-studio.types";
 import { ContentStudioSettingsService } from "./content-studio-settings.service";
@@ -13,11 +13,12 @@ export type ContentStudioGeneratedImage = {
   sourceRef?: string;
 };
 
-const IMAGE_SUPPORTED_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "gemini", "claude", "grok", "yuanbao"]);
-const BROWSER_IMAGE_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "yuanbao"]);
+const IMAGE_SUPPORTED_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "gemini", "claude", "grok", "yuanbao", "doubao"]);
+const BROWSER_IMAGE_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "yuanbao", "doubao"]);
 const BROWSER_PROVIDER_URL: Partial<Record<OpenCliProvider, string>> = {
   chatgpt: "https://chatgpt.com/new",
-  yuanbao: "https://yuanbao.tencent.com/chat"
+  yuanbao: "https://yuanbao.tencent.com/chat",
+  doubao: "https://www.doubao.com/chat/"
 };
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 export class ContentStudioImageService {
@@ -40,7 +41,7 @@ export class ContentStudioImageService {
 
     const provider = settings.image.provider as OpenCliProvider;
     if (!IMAGE_SUPPORTED_PROVIDERS.has(provider)) {
-      throw new Error(`当前 provider 不支持生图：${provider}。请切换为 chatgpt/gemini/claude/grok/yuanbao`);
+      throw new Error(`当前 provider 不支持生图：${provider}。请切换为 chatgpt/gemini/claude/grok/yuanbao/doubao`);
     }
 
     const profile = String(settings.image.profile || "").trim();
@@ -125,8 +126,9 @@ export class ContentStudioImageService {
         );
       }
     } else {
+      const inputSelector = provider === "doubao" ? "textarea[placeholder='发消息...']" : "textarea";
       await this.openCliRunner.run(
-        ["--profile", profile, "browser", provider, "fill", "textarea", `生成图片：${prompt}`],
+        ["--profile", profile, "browser", provider, "fill", inputSelector, `生成图片：${prompt}`],
         { timeoutMs }
       );
     }
@@ -144,7 +146,9 @@ export class ContentStudioImageService {
       pollRound += 1;
       await new Promise((resolve) => setTimeout(resolve, 2500));
       const oneShotScript =
-        `(async function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<256||(img.naturalHeight||0)<256){return false;} var isChatGpt=src.indexOf('id=file_')>=0||src.indexOf('/backend-api/')>=0; var hasImageExt=/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); var isYuanbaoCos=/hunyuan-prod-\\d+\\.cos\\.ap-guangzhou\\.myqcloud\\.com/i.test(src)||/\\.cos\\.[^/]+\\.myqcloud\\.com/i.test(src); return isChatGpt||hasImageExt||isYuanbaoCos;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; var r=await fetch(src,{credentials:'include'}); if(!r.ok){throw new Error('download failed: '+r.status);} var b=await r.blob(); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='${dynamicDownloadName}'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();},3000); return {ok:true, src:src, size:b.size, type:b.type, name:'${dynamicDownloadName}'};})()`;
+        provider === "doubao"
+          ? `(function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<200||(img.naturalHeight||0)<200){return false;} var isTargetAttr=String(img.alt||'').toLowerCase()==='image'&&String(img.loading||'').toLowerCase()==='lazy'; var isDoubaoSrc=src.indexOf('-flow-imagex-sign.byteimg.com')>=0||src.indexOf('byteimg.com')>=0||src.indexOf('/rc_gen_image/')>=0||/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); return isTargetAttr&&isDoubaoSrc;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; return {ok:true, src:src, name:'${dynamicDownloadName}'};})()`
+          : `(async function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<256||(img.naturalHeight||0)<256){return false;} var isChatGpt=src.indexOf('id=file_')>=0||src.indexOf('/backend-api/')>=0; var hasImageExt=/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); var isYuanbaoCos=/hunyuan-prod-\\d+\\.cos\\.ap-guangzhou\\.myqcloud\\.com/i.test(src)||/\\.cos\\.[^/]+\\.myqcloud\\.com/i.test(src); return isChatGpt||hasImageExt||isYuanbaoCos;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; var r=await fetch(src,{credentials:'include'}); if(!r.ok){throw new Error('download failed: '+r.status);} var b=await r.blob(); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='${dynamicDownloadName}'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();},3000); return {ok:true, src:src, size:b.size, type:b.type, name:'${dynamicDownloadName}'};})()`;
       const evalArgs = ["--profile", profile, "browser", provider, "eval", oneShotScript];
       const evalResult = await this.openCliRunner.run(
         evalArgs,
@@ -165,12 +169,22 @@ export class ContentStudioImageService {
       throw new Error(`${provider} 图片生成超时，未检测到可下载图片。建议先手动在页面确认图片已出现。`);
     }
 
+    await mkdir(taskImagesDir, { recursive: true });
+    if (provider === "doubao") {
+      const directPath = await this.downloadImageFromUrl(imageSrc, taskImagesDir);
+      return {
+        localPath: directPath,
+        prompt,
+        paragraphId,
+        sourceRef: this.extractFileRef(imageSrc) || undefined
+      };
+    }
+
     const created = await this.waitForDownloadedFile(browserDownloadDir, before, timeoutMs);
     if (!created) {
       throw new Error(`${provider} 已返回图片，但在浏览器下载目录中未检测到新文件。请检查浏览器默认下载路径配置。`);
     }
 
-    await mkdir(taskImagesDir, { recursive: true });
     const extension = this.inferImageExtFromSrc(imageSrc);
     const taskFileName = `generated-${Date.now()}${extension}`;
     const targetPath = join(taskImagesDir, taskFileName);
@@ -233,6 +247,27 @@ export class ContentStudioImageService {
     return ext === ".jpeg" ? ".jpg" : ext;
   }
 
+  private async downloadImageFromUrl(src: string, taskImagesDir: string): Promise<string> {
+    const response = await fetch(src);
+    if (!response.ok) {
+      throw new Error(`下载图片失败：${response.status}`);
+    }
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const byType = contentType.includes("png")
+      ? ".png"
+      : contentType.includes("webp")
+        ? ".webp"
+        : contentType.includes("jpeg") || contentType.includes("jpg")
+          ? ".jpg"
+          : "";
+    const extension = byType || this.inferImageExtFromSrc(src);
+    const fileName = `generated-${Date.now()}${extension}`;
+    const targetPath = join(taskImagesDir, fileName);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    await writeFile(targetPath, bytes);
+    return targetPath;
+  }
+
   private async listImageFiles(dir: string): Promise<Set<string>> {
     const entries = await readdir(dir, { withFileTypes: true });
     return new Set(
@@ -293,7 +328,12 @@ export class ContentStudioImageService {
   private async submitPromptRobustly(provider: OpenCliProvider, profile: string, timeoutMs: number): Promise<void> {
     this.logSubmit("submit start", { provider, profile, timeoutMs, mode: "sleep4s-click-enter" });
     await new Promise((resolve) => setTimeout(resolve, 4000));
-    const sendSelector = provider === "yuanbao" ? "a#yuanbao-send-btn" : "button[data-testid='send-button']";
+    const sendSelector =
+      provider === "yuanbao"
+        ? "a#yuanbao-send-btn"
+        : provider === "doubao"
+          ? "button#flow-end-msg-send"
+          : "button[data-testid='send-button']";
     const clickResult = await this.openCliRunner.run(
       ["--profile", profile, "browser", provider, "click", sendSelector],
       { timeoutMs: Math.min(timeoutMs, 20000), ignoreError: true }

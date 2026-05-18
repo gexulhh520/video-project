@@ -476,6 +476,29 @@ async function generateAiImageForLayoutTask(payload: { paragraphId: string; prom
   }
 }
 
+async function generateCoverAiImageForLayoutTask(payload: { prompt: string }): Promise<void> {
+  if (!layoutSelectedTask.value?.result) {
+    return;
+  }
+  const prompt = String(payload.prompt || "").trim();
+  if (!prompt) {
+    pageNotice.value = "封面提示词为空，无法执行封面生图。";
+    return;
+  }
+  pageNotice.value = "封面生图进行中，请稍候...";
+  try {
+    await withImageAssetSave(() =>
+      desktopApi.generateContentStudioAiImage(layoutSelectedTask.value!.taskId, {
+        prompt,
+        bindAfterGenerate: false
+      })
+    );
+    pageNotice.value = "封面图片已生成并加入图片池。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? `封面生图失败：${error.message}` : "封面生图失败";
+  }
+}
+
 async function copyLayoutPublishDraft(): Promise<void> {
   if (!layoutSelectedTask.value) {
     pageNotice.value = "请先选择文章。";
@@ -982,6 +1005,7 @@ function rerunTopicFromDrawer(): void {
       @unbind="unbindImageForLayoutTask"
       @delete-image="deleteImageFromLayoutTask"
       @generate-ai-image="generateAiImageForLayoutTask"
+      @generate-cover-ai-image="generateCoverAiImageForLayoutTask"
     />
 
     <PublishPreviewDrawer

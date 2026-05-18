@@ -1,5 +1,5 @@
-<script setup lang="ts">
-import { computed, ref } from "vue";
+﻿<script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import type { ContentStudioTask } from "../../../../main/types/content-studio.types";
 
 const props = defineProps<{
@@ -16,6 +16,7 @@ const emit = defineEmits<{
   unbind: [paragraphId: string];
   deleteImage: [assetId: string];
   generateAiImage: [payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }];
+  generateCoverAiImage: [payload: { prompt: string }];
 }>();
 
 const selectedParagraphId = ref("");
@@ -23,10 +24,22 @@ const selectedAssetId = ref("");
 const aiParagraphId = ref("");
 const aiPrompt = ref("");
 const aiBindAfterGenerate = ref(true);
+const coverPrompt = ref("");
 
 const paragraphs = computed(() => props.task?.result?.paragraphs ?? []);
 const assets = computed(() => props.task?.imageAssets ?? []);
 const bindings = computed(() => props.task?.imageBindings ?? []);
+
+watch(
+  () => [props.open, props.task?.taskId, props.task?.result?.coverStyleSuggestion],
+  () => {
+    if (!props.open) {
+      return;
+    }
+    coverPrompt.value = String(props.task?.result?.coverStyleSuggestion || "");
+  },
+  { immediate: true }
+);
 
 function getBindingByParagraphId(paragraphId: string): string {
   return bindings.value.find((item) => item.paragraphId === paragraphId)?.assetId || "";
@@ -47,6 +60,12 @@ function submitAiGenerate(): void {
     bindAfterGenerate: aiBindAfterGenerate.value
   });
 }
+
+function submitCoverAiGenerate(): void {
+  emit("generateCoverAiImage", {
+    prompt: coverPrompt.value
+  });
+}
 </script>
 
 <template>
@@ -62,6 +81,18 @@ function submitAiGenerate(): void {
           <button class="ghost-btn" @click="emit('close')">关闭</button>
         </div>
       </header>
+
+      <section class="bind-box">
+        <h4>封面生图</h4>
+        <p v-if="props.saving" class="status">AI 生图进行中，请稍候...</p>
+        <div class="cover-row">
+          <input v-model="coverPrompt" type="text" placeholder="封面生图提示词（可临时编辑，不会修改原文数据）" />
+          <button class="primary-btn" :disabled="props.saving || !coverPrompt.trim()" @click="submitCoverAiGenerate">
+            封面生图（使用封面提示词）
+          </button>
+          <p class="hint">默认来源：{{ props.task?.result?.coverStyleSuggestion?.trim() || "当前文章没有封面风格建议" }}</p>
+        </div>
+      </section>
 
       <section class="bind-box">
         <h4>绑定到段落</h4>
@@ -99,9 +130,10 @@ function submitAiGenerate(): void {
             生成后自动绑定到段落
           </label>
           <button class="primary-btn" :disabled="!aiPrompt.trim() || props.saving" @click="submitAiGenerate">
-            {{ props.saving ? "生成中..." : "生成AI图片" }}
+            {{ props.saving ? "生成中..." : "生成 AI 图片" }}
           </button>
         </div>
+
       </section>
 
       <div class="list">
@@ -140,9 +172,11 @@ function submitAiGenerate(): void {
 .bind-row { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; }
 select { border-radius: 8px; border: 1px solid rgba(140,173,247,0.2); background: rgba(255,255,255,0.02); color: #eaf3ff; padding: 8px; }
 .ai-row { grid-template-columns: 1fr 2fr auto auto; }
-input[type=\"text\"] { border-radius: 8px; border: 1px solid rgba(140,173,247,0.2); background: rgba(255,255,255,0.02); color: #eaf3ff; padding: 8px; }
+input[type="text"] { border-radius: 8px; border: 1px solid rgba(140,173,247,0.2); background: rgba(255,255,255,0.02); color: #eaf3ff; padding: 8px; }
 .check { display: flex; gap: 6px; align-items: center; color: #9cb3d7; font-size: 12px; }
 .status { margin: 0; color: #7bd0ff; font-size: 13px; }
+.cover-row { display: grid; gap: 6px; margin-top: 6px; }
+.hint { margin: 0; color: #9cb3d7; font-size: 12px; }
 .list { display: grid; gap: 10px; }
 .item { border: 1px solid rgba(149,181,255,0.14); border-radius: 12px; padding: 12px; display: grid; gap: 7px; }
 .thumb { width: 160px; max-width: 100%; border-radius: 8px; border: 1px solid rgba(149,181,255,0.2); }

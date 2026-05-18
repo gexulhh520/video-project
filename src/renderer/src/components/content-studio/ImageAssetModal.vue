@@ -16,7 +16,7 @@ const emit = defineEmits<{
   unbind: [paragraphId: string];
   deleteImage: [assetId: string];
   generateAiImage: [payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }];
-  generateCoverAiImage: [payload: { prompt: string }];
+  generateCoverAiImage: [payload: { prompt: string; size: string }];
 }>();
 
 const selectedParagraphId = ref("");
@@ -25,10 +25,21 @@ const aiParagraphId = ref("");
 const aiPrompt = ref("");
 const aiBindAfterGenerate = ref(true);
 const coverPrompt = ref("");
+const coverSize = ref("16:9");
 
 const paragraphs = computed(() => props.task?.result?.paragraphs ?? []);
 const assets = computed(() => props.task?.imageAssets ?? []);
 const bindings = computed(() => props.task?.imageBindings ?? []);
+const coverAssets = computed(() =>
+  assets.value.filter((asset) =>
+    asset.sourceType === "generated" && String(asset.caption || "").includes("用途：封面")
+  )
+);
+const normalAssets = computed(() =>
+  assets.value.filter((asset) =>
+    !(asset.sourceType === "generated" && String(asset.caption || "").includes("用途：封面"))
+  )
+);
 
 watch(
   () => [props.open, props.task?.taskId, props.task?.result?.coverStyleSuggestion],
@@ -63,7 +74,8 @@ function submitAiGenerate(): void {
 
 function submitCoverAiGenerate(): void {
   emit("generateCoverAiImage", {
-    prompt: coverPrompt.value
+    prompt: coverPrompt.value,
+    size: coverSize.value
   });
 }
 </script>
@@ -87,10 +99,25 @@ function submitCoverAiGenerate(): void {
         <p v-if="props.saving" class="status">AI 生图进行中，请稍候...</p>
         <div class="cover-row">
           <input v-model="coverPrompt" type="text" placeholder="封面生图提示词（可临时编辑，不会修改原文数据）" />
+          <select v-model="coverSize" class="cover-size">
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="4:3">4:3</option>
+            <option value="3:4">3:4</option>
+            <option value="1:1">1:1</option>
+          </select>
           <button class="primary-btn" :disabled="props.saving || !coverPrompt.trim()" @click="submitCoverAiGenerate">
             封面生图（使用封面提示词）
           </button>
           <p class="hint">默认来源：{{ props.task?.result?.coverStyleSuggestion?.trim() || "当前文章没有封面风格建议" }}</p>
+        </div>
+        <div v-if="coverAssets.length" class="cover-result-list">
+          <article v-for="asset in coverAssets" :key="`cover-${asset.assetId}`" class="item">
+            <img v-if="props.imagePreviewMap[asset.assetId]" class="thumb" :src="props.imagePreviewMap[asset.assetId]" :alt="asset.fileName" />
+            <p class="title">{{ asset.fileName }}</p>
+            <p class="meta">封面图</p>
+            <button class="danger-btn" :disabled="props.saving" @click="emit('deleteImage', asset.assetId)">删除</button>
+          </article>
         </div>
       </section>
 
@@ -137,7 +164,7 @@ function submitCoverAiGenerate(): void {
       </section>
 
       <div class="list">
-        <article v-for="asset in assets" :key="asset.assetId" class="item">
+        <article v-for="asset in normalAssets" :key="asset.assetId" class="item">
           <img v-if="props.imagePreviewMap[asset.assetId]" class="thumb" :src="props.imagePreviewMap[asset.assetId]" :alt="asset.fileName" />
           <p class="title">{{ asset.fileName }}</p>
           <p class="meta">来源：{{ asset.sourceType }}</p>
@@ -176,6 +203,8 @@ input[type="text"] { border-radius: 8px; border: 1px solid rgba(140,173,247,0.2)
 .check { display: flex; gap: 6px; align-items: center; color: #9cb3d7; font-size: 12px; }
 .status { margin: 0; color: #7bd0ff; font-size: 13px; }
 .cover-row { display: grid; gap: 6px; margin-top: 6px; }
+.cover-size { max-width: 180px; }
+.cover-result-list { display: grid; gap: 10px; margin-top: 8px; }
 .hint { margin: 0; color: #9cb3d7; font-size: 12px; }
 .list { display: grid; gap: 10px; }
 .item { border: 1px solid rgba(149,181,255,0.14); border-radius: 12px; padding: 12px; display: grid; gap: 7px; }

@@ -476,11 +476,13 @@ async function generateAiImageForLayoutTask(payload: { paragraphId: string; prom
   }
 }
 
-async function generateCoverAiImageForLayoutTask(payload: { prompt: string }): Promise<void> {
+async function generateCoverAiImageForLayoutTask(payload: { prompt: string; size: string }): Promise<void> {
   if (!layoutSelectedTask.value?.result) {
     return;
   }
   const prompt = String(payload.prompt || "").trim();
+  const size = String(payload.size || "16:9").trim() || "16:9";
+  const finalPrompt = `${prompt} 图片尺寸:${size} 用途：封面`;
   if (!prompt) {
     pageNotice.value = "封面提示词为空，无法执行封面生图。";
     return;
@@ -489,7 +491,7 @@ async function generateCoverAiImageForLayoutTask(payload: { prompt: string }): P
   try {
     await withImageAssetSave(() =>
       desktopApi.generateContentStudioAiImage(layoutSelectedTask.value!.taskId, {
-        prompt,
+        prompt: finalPrompt,
         bindAfterGenerate: false
       })
     );

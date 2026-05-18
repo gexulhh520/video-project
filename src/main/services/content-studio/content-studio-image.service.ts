@@ -13,7 +13,12 @@ export type ContentStudioGeneratedImage = {
   sourceRef?: string;
 };
 
-const IMAGE_SUPPORTED_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "gemini", "claude", "grok"]);
+const IMAGE_SUPPORTED_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "gemini", "claude", "grok", "yuanbao"]);
+const BROWSER_IMAGE_PROVIDERS = new Set<OpenCliProvider>(["chatgpt", "yuanbao"]);
+const BROWSER_PROVIDER_URL: Partial<Record<OpenCliProvider, string>> = {
+  chatgpt: "https://chatgpt.com/new",
+  yuanbao: "https://yuanbao.tencent.com/chat"
+};
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 export class ContentStudioImageService {
   constructor(
@@ -35,7 +40,7 @@ export class ContentStudioImageService {
 
     const provider = settings.image.provider as OpenCliProvider;
     if (!IMAGE_SUPPORTED_PROVIDERS.has(provider)) {
-      throw new Error(`当前 provider 不支持 image 命令：${provider}。请切换为 chatgpt/gemini/claude/grok`);
+      throw new Error(`当前 provider 不支持生图：${provider}。请切换为 chatgpt/gemini/claude/grok/yuanbao`);
     }
 
     const profile = String(settings.image.profile || "").trim();
@@ -43,9 +48,10 @@ export class ContentStudioImageService {
       throw new Error("请先配置图片模型 Profile");
     }
 
-    if (provider === "chatgpt") {
+    if (BROWSER_IMAGE_PROVIDERS.has(provider)) {
       const browserDownloadDir = await this.resolveBrowserDownloadDir(settings.image.outputDir);
-      return this.generateByChatgptBrowserFlow(
+      return this.generateByBrowserImageFlow(
+        provider,
         profile,
         taskId,
         taskImagesDir,
@@ -94,7 +100,8 @@ export class ContentStudioImageService {
     };
   }
 
-  private async generateByChatgptBrowserFlow(
+  private async generateByBrowserImageFlow(
+    provider: OpenCliProvider,
     profile: string,
     taskId: string,
     taskImagesDir: string,
@@ -104,15 +111,26 @@ export class ContentStudioImageService {
     paragraphId?: string
   ): Promise<ContentStudioGeneratedImage> {
     await mkdir(browserDownloadDir, { recursive: true });
-
-    await this.openCliRunner.run(["--profile", profile, "browser", "chatgpt", "open", "https://chatgpt.com/new"], {
-      timeoutMs
-    });
-    await this.openCliRunner.run(
-      ["--profile", profile, "browser", "chatgpt", "fill", "textarea", `生成图片：${prompt}`],
-      { timeoutMs }
-    );
-    await this.submitPromptRobustly(profile, timeoutMs);
+    const targetUrl = BROWSER_PROVIDER_URL[provider] || BROWSER_PROVIDER_URL.chatgpt || "https://chatgpt.com/new";
+    await this.openCliRunner.run(["--profile", profile, "browser", provider, "open", targetUrl], { timeoutMs });
+    if (provider === "yuanbao") {
+      const directFill = await this.openCliRunner.run(
+        ["--profile", profile, "browser", provider, "fill", `生成图片：${prompt}`],
+        { timeoutMs, ignoreError: true }
+      );
+      if (directFill.code !== 0) {
+        await this.openCliRunner.run(
+          ["--profile", profile, "browser", provider, "fill", ".ql-editor", `生成图片：${prompt}`],
+          { timeoutMs }
+        );
+      }
+    } else {
+      await this.openCliRunner.run(
+        ["--profile", profile, "browser", provider, "fill", "textarea", `生成图片：${prompt}`],
+        { timeoutMs }
+      );
+    }
+    await this.submitPromptRobustly(provider, profile, timeoutMs);
 
     const startedAt = Date.now();
     let imageSrc = "";
@@ -120,14 +138,14 @@ export class ContentStudioImageService {
     let pollRound = 0;
     const extensionFallback = ".png";
     const safeTaskId = String(taskId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const dynamicDownloadName = `chatgpt-image-${safeTaskId}-${Date.now()}${extensionFallback}`;
+    const dynamicDownloadName = `${provider}-image-${safeTaskId}-${Date.now()}${extensionFallback}`;
     const before = await this.listImageFiles(browserDownloadDir);
     while (Date.now() - startedAt < timeoutMs) {
       pollRound += 1;
       await new Promise((resolve) => setTimeout(resolve, 2500));
       const oneShotScript =
-        `(async function(){var imgs=Array.from(document.images).filter(function(img){return img&&img.src&&img.src.indexOf('id=file_')>=0;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; var r=await fetch(src,{credentials:'include'}); if(!r.ok){throw new Error('download failed: '+r.status);} var b=await r.blob(); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='${dynamicDownloadName}'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();},3000); return {ok:true, src:src, size:b.size, type:b.type, name:'${dynamicDownloadName}'};})()`;
-      const evalArgs = ["--profile", profile, "browser", "chatgpt", "eval", oneShotScript];
+        `(async function(){var imgs=Array.from(document.images).filter(function(img){if(!img||!img.src){return false;} var src=String(img.src); if(!/^https?:/i.test(src)){return false;} if((img.naturalWidth||0)<256||(img.naturalHeight||0)<256){return false;} var isChatGpt=src.indexOf('id=file_')>=0||src.indexOf('/backend-api/')>=0; var hasImageExt=/\\.(png|jpg|jpeg|webp)(\\?|$)/i.test(src); var isYuanbaoCos=/hunyuan-prod-\\d+\\.cos\\.ap-guangzhou\\.myqcloud\\.com/i.test(src)||/\\.cos\\.[^/]+\\.myqcloud\\.com/i.test(src); return isChatGpt||hasImageExt||isYuanbaoCos;}); if(!imgs.length){throw new Error('image not found');} var src=imgs[imgs.length-1].src; var r=await fetch(src,{credentials:'include'}); if(!r.ok){throw new Error('download failed: '+r.status);} var b=await r.blob(); var u=URL.createObjectURL(b); var a=document.createElement('a'); a.href=u; a.download='${dynamicDownloadName}'; document.body.appendChild(a); a.click(); setTimeout(function(){URL.revokeObjectURL(u); a.remove();},3000); return {ok:true, src:src, size:b.size, type:b.type, name:'${dynamicDownloadName}'};})()`;
+      const evalArgs = ["--profile", profile, "browser", provider, "eval", oneShotScript];
       const evalResult = await this.openCliRunner.run(
         evalArgs,
         { timeoutMs: 30000, ignoreError: true }
@@ -144,12 +162,12 @@ export class ContentStudioImageService {
     }
 
     if (!imageSrc) {
-      throw new Error("ChatGPT 图片生成超时，未检测到可下载图片。建议先手动在 ChatGPT 页面确认图片已出现。");
+      throw new Error(`${provider} 图片生成超时，未检测到可下载图片。建议先手动在页面确认图片已出现。`);
     }
 
     const created = await this.waitForDownloadedFile(browserDownloadDir, before, timeoutMs);
     if (!created) {
-      throw new Error("ChatGPT 已返回图片，但在浏览器下载目录中未检测到新文件。请检查浏览器默认下载路径配置。");
+      throw new Error(`${provider} 已返回图片，但在浏览器下载目录中未检测到新文件。请检查浏览器默认下载路径配置。`);
     }
 
     await mkdir(taskImagesDir, { recursive: true });
@@ -272,11 +290,12 @@ export class ContentStudioImageService {
     return match?.[1] || "";
   }
 
-  private async submitPromptRobustly(profile: string, timeoutMs: number): Promise<void> {
-    this.logSubmit("submit start", { profile, timeoutMs, mode: "sleep4s-click-enter" });
+  private async submitPromptRobustly(provider: OpenCliProvider, profile: string, timeoutMs: number): Promise<void> {
+    this.logSubmit("submit start", { provider, profile, timeoutMs, mode: "sleep4s-click-enter" });
     await new Promise((resolve) => setTimeout(resolve, 4000));
+    const sendSelector = provider === "yuanbao" ? "a#yuanbao-send-btn" : "button[data-testid='send-button']";
     const clickResult = await this.openCliRunner.run(
-      ["--profile", profile, "browser", "chatgpt", "click", "button[data-testid='send-button']"],
+      ["--profile", profile, "browser", provider, "click", sendSelector],
       { timeoutMs: Math.min(timeoutMs, 20000), ignoreError: true }
     );
     const clickPayload = this.parseJsonObject(clickResult.stdout || clickResult.stderr);
@@ -286,7 +305,7 @@ export class ContentStudioImageService {
       target: String((clickPayload as { target?: string }).target || "")
     });
 
-    const enterResult = await this.openCliRunner.run(["--profile", profile, "browser", "chatgpt", "keys", "Enter"], {
+    const enterResult = await this.openCliRunner.run(["--profile", profile, "browser", provider, "keys", "Enter"], {
       timeoutMs: Math.min(timeoutMs, 20000),
       ignoreError: true
     });

@@ -265,8 +265,8 @@ function handleToolClick(tool: (typeof tools.value)[number]): void {
         <button class="settings-btn" @click="openSettings">全局设置</button>
       </div>
       <p>工具使用等问题可联系 微信：gexuxu520  备用qq:283282753</p>
-      <p>淘宝店铺：</p>
-      <img :src="taobaoImg" alt="淘宝店铺" class="taobao-image" />
+      <!-- <p>淘宝店铺：</p>
+      <img :src="taobaoImg" alt="淘宝店铺" class="taobao-image" /> -->
       <div v-if="appSettings" class="workspace-card">
         <span>当前工作空间目录</span>
         <strong>{{ appSettings.workspaceDir }}</strong>

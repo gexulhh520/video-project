@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage } from "electron";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import type {
@@ -562,6 +562,14 @@ export function registerIpcHandlers(
             : "image/jpeg";
 
     return `data:${mimeType};base64,${buffer.toString("base64")}`;
+  });
+  ipcMain.handle("image:copy-to-clipboard", async (_event, imagePath: string): Promise<boolean> => {
+    const image = nativeImage.createFromPath(imagePath);
+    if (image.isEmpty()) {
+      throw new Error("图片读取失败，无法复制到剪贴板。");
+    }
+    clipboard.writeImage(image);
+    return true;
   });
 }
 

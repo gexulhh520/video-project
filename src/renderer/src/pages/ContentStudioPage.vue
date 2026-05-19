@@ -463,6 +463,27 @@ async function deleteImageFromLayoutTask(assetId: string): Promise<void> {
   pageNotice.value = "图片已删除并自动解绑。";
 }
 
+async function copyImageFromLayoutTask(assetId: string): Promise<void> {
+  const task = layoutSelectedTask.value;
+  if (!task) {
+    pageNotice.value = "请先选择文章。";
+    return;
+  }
+
+  const asset = task.imageAssets.find((item) => item.assetId === assetId);
+  if (!asset) {
+    pageNotice.value = "未找到要复制的图片。";
+    return;
+  }
+
+  try {
+    await desktopApi.copyImageToClipboard(asset.localPath);
+    pageNotice.value = "图片已复制到剪贴板。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "复制图片失败";
+  }
+}
+
 async function generateAiImageForLayoutTask(payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }): Promise<void> {
   if (!layoutSelectedTask.value) {
     return;
@@ -1018,6 +1039,7 @@ function rerunTopicFromDrawer(): void {
       @bind="bindImageForLayoutTask"
       @unbind="unbindImageForLayoutTask"
       @delete-image="deleteImageFromLayoutTask"
+      @copy-image="copyImageFromLayoutTask"
       @generate-ai-image="generateAiImageForLayoutTask"
       @generate-cover-ai-image="generateCoverAiImageForLayoutTask"
     />

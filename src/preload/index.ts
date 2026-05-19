@@ -211,6 +211,7 @@ const desktopApi: DesktopApi = {
   checkLicense: async (): Promise<LicenseStatus> => ipcRenderer.invoke("license:check"),
   activateLicense: async (licenseKey: string): Promise<LicenseStatus> => ipcRenderer.invoke("license:activate", licenseKey),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
+  copyImageToClipboard: async (imagePath: string): Promise<boolean> => ipcRenderer.invoke("image:copy-to-clipboard", imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {
       callback(progress);

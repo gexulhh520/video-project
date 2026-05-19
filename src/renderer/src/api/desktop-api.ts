@@ -199,6 +199,7 @@ export const desktopApi = {
   checkLicense: (): Promise<LicenseStatus> => window.desktopApi.checkLicense(),
   activateLicense: (licenseKey: string): Promise<LicenseStatus> => window.desktopApi.activateLicense(licenseKey),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
+  copyImageToClipboard: (imagePath: string): Promise<boolean> => window.desktopApi.copyImageToClipboard(imagePath),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback),
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void): (() => void) =>

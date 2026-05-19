@@ -571,6 +571,7 @@ export type DesktopApi = {
   checkLicense: () => Promise<LicenseStatus>;
   activateLicense: (licenseKey: string) => Promise<LicenseStatus>;
   readImageAsDataUrl: (imagePath: string) => Promise<string>;
+  copyImageToClipboard: (imagePath: string) => Promise<boolean>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;
   onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void) => () => void;

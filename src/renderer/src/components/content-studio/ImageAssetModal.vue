@@ -15,6 +15,7 @@ const emit = defineEmits<{
   bind: [paragraphId: string, assetId: string];
   unbind: [paragraphId: string];
   deleteImage: [assetId: string];
+  copyImage: [assetId: string];
   generateAiImage: [payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }];
   generateCoverAiImage: [payload: { prompt: string; size: string }];
 }>();
@@ -116,6 +117,7 @@ function submitCoverAiGenerate(): void {
             <img v-if="props.imagePreviewMap[asset.assetId]" class="thumb" :src="props.imagePreviewMap[asset.assetId]" :alt="asset.fileName" />
             <p class="title">{{ asset.fileName }}</p>
             <p class="meta">封面图</p>
+            <button class="ghost-btn" :disabled="props.saving" @click="emit('copyImage', asset.assetId)">复制图片</button>
             <button class="danger-btn" :disabled="props.saving" @click="emit('deleteImage', asset.assetId)">删除</button>
           </article>
         </div>
@@ -173,6 +175,7 @@ function submitCoverAiGenerate(): void {
             绑定段落：
             {{ bindings.filter((item) => item.assetId === asset.assetId).map((item) => item.paragraphId).join("、") || "未绑定" }}
           </p>
+          <button class="ghost-btn" :disabled="props.saving" @click="emit('copyImage', asset.assetId)">复制图片</button>
           <button class="danger-btn" :disabled="props.saving" @click="emit('deleteImage', asset.assetId)">删除</button>
         </article>
       </div>

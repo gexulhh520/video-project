@@ -17,6 +17,7 @@ type AskOptions = {
   intervalMs?: number;
   workingDir?: string;
   acceptResponse?: (text: string) => boolean;
+  preserveUrls?: boolean;
 };
 type OpenCliReadMessage = {
   Index?: number;
@@ -190,7 +191,7 @@ export class OpenCliWebLlmService {
       userPrompt,
       "必须输出严格 JSON：{\"title\": string, \"body\": string, \"confidence\": number, \"reason\": string}",
       `URL: ${targetUrl}`
-    ]);
+    ], true);
 
     const response = await this.askOnce({
       provider: options.provider,
@@ -198,7 +199,8 @@ export class OpenCliWebLlmService {
       prompt,
       timeoutMs: options.timeoutMs,
       intervalMs: options.intervalMs,
-      workingDir: options.workingDir
+      workingDir: options.workingDir,
+      preserveUrls: true
     });
 
     const parsed = parseOpenCliModelJson<Record<string, unknown>>(response);
@@ -277,7 +279,7 @@ export class OpenCliWebLlmService {
 
     return this.profileLock.runExclusive(normalizedProfile, async () => {
       await this.startNewChat(options.provider, normalizedProfile, options.workingDir);
-      await this.send(options.provider, normalizedProfile, options.prompt, options.workingDir);
+      await this.send(options.provider, normalizedProfile, options.prompt, options.workingDir, options.preserveUrls);
       return this.pollReadResult(
         options.provider,
         normalizedProfile,
@@ -296,8 +298,14 @@ export class OpenCliWebLlmService {
     });
   }
 
-  private async send(provider: OpenCliProvider, profile: string, prompt: string, workingDir?: string): Promise<void> {
-    const normalizedPrompt = this.normalizePromptForTransport(prompt);
+  private async send(
+    provider: OpenCliProvider,
+    profile: string,
+    prompt: string,
+    workingDir?: string,
+    preserveUrls = false
+  ): Promise<void> {
+    const normalizedPrompt = this.normalizePromptForTransport(prompt, preserveUrls);
     const debugPromptPath = await this.writeDebugPrompt(normalizedPrompt, workingDir);
     const tempBaseDir = join(workingDir || process.cwd(), OPENCLI_PROMPT_DEBUG_DIR, "tmp");
     await mkdir(tempBaseDir, { recursive: true });
@@ -546,11 +554,16 @@ export class OpenCliWebLlmService {
     return path;
   }
 
-  private normalizePromptForTransport(prompt: string): string {
-    return String(prompt || "")
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, "$1")
-      .replace(/https?:\/\/[^\s]+/gi, " ")
-      .replace(/www\.[^\s]+/gi, " ")
+  private normalizePromptForTransport(prompt: string, preserveUrls = false): string {
+    const text = String(prompt || "");
+    const withoutUrlMarkdown = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, "$1");
+    const strippedUrls = preserveUrls
+      ? withoutUrlMarkdown
+      : withoutUrlMarkdown
+          .replace(/https?:\/\/[^\s]+/gi, " ")
+          .replace(/www\.[^\s]+/gi, " ");
+
+    return strippedUrls
       .replace(/\r\n/g, "\n")
       .replace(/\n{2,}/g, " <段落分隔> ")
       .replace(/\n/g, " ")
@@ -559,9 +572,9 @@ export class OpenCliWebLlmService {
       .trim();
   }
 
-  private buildSingleLinePrompt(parts: string[]): string {
+  private buildSingleLinePrompt(parts: string[], preserveUrls = false): string {
     return parts
-      .map((part) => this.normalizePromptForTransport(part))
+      .map((part) => this.normalizePromptForTransport(part, preserveUrls))
       .filter(Boolean)
       .join(" ");
   }

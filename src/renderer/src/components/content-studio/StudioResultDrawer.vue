@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type { ContentStudioTask, TopicCreateInput } from "../../../../main/types/app.types";
 
 const props = defineProps<{
@@ -7,12 +7,16 @@ const props = defineProps<{
   task: ContentStudioTask | null;
   running?: boolean;
   allowRerun?: boolean;
+  stepActionPending?: { stepKey: string; action: "retry" | "restart" | "skip" } | null;
 }>();
 
 const emit = defineEmits<{
   close: [];
   viewRunLog: [];
   rerun: [];
+  retryStep: [stepKey: string];
+  restartFromStep: [stepKey: string];
+  skipStep: [stepKey: string];
 }>();
 
 const article = computed(() => props.task?.result);
@@ -42,6 +46,13 @@ const modelBLabel = computed(() => {
 const shouldShowTitleCandidates = computed(() => Boolean(topicInput.value?.generateTitleCandidates));
 const shouldShowCover = computed(() => Boolean(topicInput.value?.generateCoverText));
 const shouldShowImagePlan = computed(() => Boolean(topicInput.value?.generateImagePlan));
+const topicSteps = computed(() => props.task?.topicSteps || []);
+const selectedTopic = computed(() => props.task?.selectedTopic || null);
+const researchPlan = computed(() => props.task?.researchPlan || []);
+const researchMaterials = computed(() => props.task?.researchMaterials || []);
+const mergedMaterial = computed(() => props.task?.mergedMaterial || null);
+const failedStepKey = computed(() => topicSteps.value.find((step) => step.status === "failed")?.stepKey || "");
+const stepRefs = ref<Record<string, HTMLElement | null>>({});
 
 const fullText = computed(() => {
   if (!article.value) {
@@ -74,6 +85,22 @@ async function copyText(text: string): Promise<void> {
   }
   await navigator.clipboard.writeText(text);
 }
+
+function setStepRef(stepKey: string, element: unknown): void {
+  stepRefs.value[stepKey] = (element as HTMLElement | null) ?? null;
+}
+
+watch(
+  () => [props.open, props.task?.taskId, failedStepKey.value].join(":"),
+  async () => {
+    if (!props.open || !failedStepKey.value) {
+      return;
+    }
+    await nextTick();
+    stepRefs.value[failedStepKey.value]?.scrollIntoView({ block: "center", behavior: "smooth" });
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -102,6 +129,94 @@ async function copyText(text: string): Promise<void> {
       <p v-if="props.task?.status === 'failed'" class="error-text">{{ props.task.error || "任务执行失败" }}</p>
 
       <template v-if="article">
+        <section v-if="selectedTopic" class="section">
+          <h4>最终选题</h4>
+          <p><strong>标题：</strong>{{ selectedTopic.title }}</p>
+          <p><strong>核心立意：</strong>{{ selectedTopic.coreThesis }}</p>
+          <p><strong>内容类型：</strong>{{ selectedTopic.contentType }}</p>
+          <p><strong>目标平台：</strong>{{ selectedTopic.targetPlatform }}</p>
+          <p><strong>入选原因：</strong>{{ selectedTopic.reason }}</p>
+        </section>
+
+        <section v-if="researchPlan.length" class="section">
+          <h4>研究计划</h4>
+          <article v-for="item in researchPlan" :key="item.materialId" class="step-card">
+            <p><strong>{{ item.materialId }}</strong> - {{ item.query }}</p>
+            <p>用途：{{ item.purpose }}</p>
+            <p>来源偏好：{{ item.preferredSourceType }} | 必需：{{ item.required ? "是" : "否" }}</p>
+            <p>风险提示：{{ item.riskNotes?.join("；") || "无" }}</p>
+          </article>
+        </section>
+
+        <section v-if="researchMaterials.length" class="section">
+          <h4>素材卡片</h4>
+          <article v-for="card in researchMaterials" :key="card.materialId" class="step-card">
+            <p><strong>{{ card.materialId }}</strong> - {{ card.title }}</p>
+            <p>查询：{{ card.query }}</p>
+            <p>来源类型：{{ card.sourceType }} | 可信度：{{ card.confidence }}</p>
+            <p>来源链接：{{ card.sourceUrl || "无" }}</p>
+            <p>摘要：{{ card.summary }}</p>
+            <p>可用观点：{{ card.usablePoints?.join("；") || "无" }}</p>
+            <p>风险提醒：{{ card.riskNotes?.join("；") || "无" }}</p>
+            <p v-if="card.errorMessage" class="error-text">失败原因：{{ card.errorMessage }}</p>
+          </article>
+        </section>
+
+        <section v-if="mergedMaterial" class="section">
+          <h4>合并素材包</h4>
+          <p><strong>主题：</strong>{{ mergedMaterial.topic }}</p>
+          <p><strong>可确认事实：</strong>{{ mergedMaterial.confirmedFacts?.join("；") || "无" }}</p>
+          <p><strong>创作者问题：</strong>{{ mergedMaterial.creatorProblems?.join("；") || "无" }}</p>
+          <p><strong>争议点：</strong>{{ mergedMaterial.controversies?.join("；") || "无" }}</p>
+          <p><strong>内容缺口：</strong>{{ mergedMaterial.contentGaps?.join("；") || "无" }}</p>
+          <p><strong>可用论点：</strong>{{ mergedMaterial.usableArguments?.join("；") || "无" }}</p>
+          <p><strong>风险边界：</strong>{{ mergedMaterial.riskBoundaries?.join("；") || "无" }}</p>
+        </section>
+
+        <section v-if="topicSteps.length" class="section">
+          <h4>步骤进度</h4>
+          <article
+            v-for="step in topicSteps"
+            :key="step.stepKey"
+            :ref="(el) => setStepRef(step.stepKey, el)"
+            class="step-card"
+            :class="{
+              'step-card-failed': step.status === 'failed',
+              'step-card-running': step.status === 'running',
+              'step-card-pending': step.status === 'pending',
+              'step-card-skipped': step.status === 'skipped',
+              'step-card-success': step.status === 'success'
+            }"
+          >
+            <p><strong>{{ step.stepName }}</strong>（{{ step.stepKey }}）</p>
+            <p>状态：{{ step.status }} | 尝试次数：{{ step.attemptCount }}</p>
+            <p v-if="step.errorMessage" class="error-text">失败原因：{{ step.errorMessage }}</p>
+            <div v-if="step.status === 'failed'" class="actions">
+              <button
+                class="ghost-btn"
+                :disabled="Boolean(props.stepActionPending)"
+                @click="emit('retryStep', step.stepKey)"
+              >
+                {{ props.stepActionPending?.stepKey === step.stepKey && props.stepActionPending?.action === "retry" ? "重试中..." : "重新执行本环节" }}
+              </button>
+              <button
+                class="ghost-btn"
+                :disabled="Boolean(props.stepActionPending)"
+                @click="emit('restartFromStep', step.stepKey)"
+              >
+                {{ props.stepActionPending?.stepKey === step.stepKey && props.stepActionPending?.action === "restart" ? "重跑中..." : "从本环节重新开始" }}
+              </button>
+              <button
+                class="ghost-btn"
+                :disabled="Boolean(props.stepActionPending)"
+                @click="emit('skipStep', step.stepKey)"
+              >
+                {{ props.stepActionPending?.stepKey === step.stepKey && props.stepActionPending?.action === "skip" ? "跳过中..." : "跳过该素材" }}
+              </button>
+            </div>
+          </article>
+        </section>
+
         <section class="section">
           <h4>标题</h4>
           <p class="title">{{ article.title }}</p>
@@ -247,12 +362,37 @@ async function copyText(text: string): Promise<void> {
 }
 
 .paragraph-card,
-.plan-card {
+.plan-card,
+.step-card {
   border: 1px solid rgba(149, 181, 255, 0.12);
   border-radius: 10px;
   padding: 10px;
   margin-bottom: 8px;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.step-card-failed {
+  border-color: rgba(255, 122, 122, 0.5);
+  background: rgba(255, 122, 122, 0.08);
+}
+
+.step-card-running {
+  border-color: rgba(108, 174, 255, 0.5);
+  background: rgba(108, 174, 255, 0.08);
+}
+
+.step-card-pending {
+  border-color: rgba(200, 210, 230, 0.35);
+}
+
+.step-card-skipped {
+  border-color: rgba(255, 196, 107, 0.5);
+  background: rgba(255, 196, 107, 0.08);
+}
+
+.step-card-success {
+  border-color: rgba(121, 240, 213, 0.5);
+  background: rgba(121, 240, 213, 0.07);
 }
 
 .paragraph-head {

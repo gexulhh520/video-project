@@ -103,6 +103,12 @@ export const desktopApi = {
   deleteContentStudioTask: (taskId: string): Promise<void> => window.desktopApi.deleteContentStudioTask(taskId),
   runContentStudioTopic: (options: TopicCreateInput): Promise<ContentStudioTask> =>
     window.desktopApi.runContentStudioTopic(toPlainObject(options)),
+  retryContentStudioTopicStep: (taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    window.desktopApi.retryContentStudioTopicStep(taskId, stepKey),
+  restartContentStudioTopicFromStep: (taskId: string, stepKey: string, clearDownstream: boolean): Promise<ContentStudioTask> =>
+    window.desktopApi.restartContentStudioTopicFromStep(taskId, stepKey, clearDownstream),
+  skipContentStudioTopicStep: (taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    window.desktopApi.skipContentStudioTopicStep(taskId, stepKey),
   runContentStudioMaterial: (options: MaterialRewriteInput): Promise<ContentStudioTask> =>
     window.desktopApi.runContentStudioMaterial(toPlainObject(options)),
   addContentStudioMaterialText: (options: {

@@ -81,6 +81,7 @@ const publishDraftFallbackOpen = ref(false);
 const publishDraftFallbackText = ref("");
 const exportingWord = ref(false);
 const exportingImages = ref(false);
+const topicStepActionPending = ref<{ stepKey: string; action: "retry" | "restart" | "skip" } | null>(null);
 const taskHistoryLoading = ref(false);
 const taskHistoryDeletingTaskId = ref<string | null>(null);
 const taskHistoryPage = ref(1);
@@ -92,7 +93,13 @@ const DEFAULT_TOPIC_ADVANCED_SETTINGS: TopicAdvancedSettings = {
   wordRange: "1200-1800字",
   generateTitleCandidates: true,
   generateCoverText: true,
-  generateImagePlan: true
+  generateImagePlan: true,
+  enableTopicResearch: false,
+  maxMaterialCount: 5,
+  materialSummaryMaxWords: 500,
+  materialSearchMode: "sequential",
+  requireRiskNotes: true,
+  requireSourceUrl: true
 };
 const taskHistoryActiveTab = ref<ContentStudioTabKey>("topic");
 const topicTaskSummaries = ref<Array<{
@@ -649,7 +656,13 @@ async function startTopicCreate(payload: {
     wordRange: topicAdvancedSettings.value.wordRange || undefined,
     generateTitleCandidates: topicAdvancedSettings.value.generateTitleCandidates,
     generateCoverText: topicAdvancedSettings.value.generateCoverText,
-    generateImagePlan: topicAdvancedSettings.value.generateImagePlan
+    generateImagePlan: topicAdvancedSettings.value.generateImagePlan,
+    enableTopicResearch: topicAdvancedSettings.value.enableTopicResearch,
+    maxMaterialCount: topicAdvancedSettings.value.maxMaterialCount,
+    materialSummaryMaxWords: topicAdvancedSettings.value.materialSummaryMaxWords,
+    materialSearchMode: topicAdvancedSettings.value.materialSearchMode,
+    requireRiskNotes: topicAdvancedSettings.value.requireRiskNotes,
+    requireSourceUrl: topicAdvancedSettings.value.requireSourceUrl
   };
   await executeTopicCreate(topicInput);
 }
@@ -676,6 +689,64 @@ async function executeTopicCreate(topicInput: TopicCreateInput): Promise<void> {
     pageNotice.value = error instanceof Error ? error.message : "话题成文执行失败";
   } finally {
     topicRunning.value = false;
+  }
+}
+
+async function retryTopicStep(stepKey: string): Promise<void> {
+  const task = latestTopicTask.value;
+  if (!task) {
+    pageNotice.value = "暂无可重试任务。";
+    return;
+  }
+  try {
+    topicStepActionPending.value = { stepKey, action: "retry" };
+    latestTopicTask.value = await desktopApi.retryContentStudioTopicStep(task.taskId, stepKey);
+    pageNotice.value = `已触发步骤重试：${stepKey}`;
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "步骤重试失败";
+  } finally {
+    topicStepActionPending.value = null;
+  }
+}
+
+async function restartTopicFromStep(stepKey: string): Promise<void> {
+  const task = latestTopicTask.value;
+  if (!task) {
+    pageNotice.value = "暂无可重跑任务。";
+    return;
+  }
+  try {
+    topicStepActionPending.value = { stepKey, action: "restart" };
+    latestTopicTask.value = await desktopApi.restartContentStudioTopicFromStep(task.taskId, stepKey, true);
+    pageNotice.value = `已从步骤重新开始：${stepKey}`;
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "步骤重跑失败";
+  } finally {
+    topicStepActionPending.value = null;
+  }
+}
+
+async function skipTopicStep(stepKey: string): Promise<void> {
+  const task = latestTopicTask.value;
+  if (!task) {
+    pageNotice.value = "暂无可跳过任务。";
+    return;
+  }
+  const planItem = (task.researchPlan || []).find((item) => `material_search:${item.materialId}` === stepKey);
+  if (planItem?.required) {
+    const confirmed = window.confirm("这是关键素材，跳过可能影响文章事实支撑。是否继续跳过？");
+    if (!confirmed) {
+      return;
+    }
+  }
+  try {
+    topicStepActionPending.value = { stepKey, action: "skip" };
+    latestTopicTask.value = await desktopApi.skipContentStudioTopicStep(task.taskId, stepKey);
+    pageNotice.value = `已跳过步骤：${stepKey}`;
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "跳过步骤失败";
+  } finally {
+    topicStepActionPending.value = null;
   }
 }
 
@@ -849,7 +920,13 @@ function rerunTopicFromDrawer(): void {
     wordRange: input.wordRange || "",
     generateTitleCandidates: input.generateTitleCandidates ?? true,
     generateCoverText: input.generateCoverText ?? true,
-    generateImagePlan: input.generateImagePlan ?? true
+    generateImagePlan: input.generateImagePlan ?? true,
+    enableTopicResearch: input.enableTopicResearch ?? false,
+    maxMaterialCount: input.maxMaterialCount ?? 5,
+    materialSummaryMaxWords: input.materialSummaryMaxWords ?? 500,
+    materialSearchMode: input.materialSearchMode ?? "sequential",
+    requireRiskNotes: input.requireRiskNotes ?? true,
+    requireSourceUrl: input.requireSourceUrl ?? true
   };
   void executeTopicCreate(input);
 }
@@ -992,8 +1069,12 @@ function rerunTopicFromDrawer(): void {
       :task="latestTopicTask"
       :running="topicRunning"
       :allow-rerun="latestTopicTask?.tab === 'topic'"
+      :step-action-pending="topicStepActionPending"
       @view-run-log="openRunLogFromDrawer"
       @rerun="rerunTopicFromDrawer"
+      @retry-step="retryTopicStep"
+      @restart-from-step="restartTopicFromStep"
+      @skip-step="skipTopicStep"
       @close="resultDrawerOpen = false"
     />
 

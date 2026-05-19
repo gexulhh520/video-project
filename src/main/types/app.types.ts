@@ -503,6 +503,9 @@ export type DesktopApi = {
   getContentStudioTaskById: (taskId: string) => Promise<ContentStudioTask>;
   deleteContentStudioTask: (taskId: string) => Promise<void>;
   runContentStudioTopic: (options: TopicCreateInput) => Promise<ContentStudioTask>;
+  retryContentStudioTopicStep: (taskId: string, stepKey: string) => Promise<ContentStudioTask>;
+  restartContentStudioTopicFromStep: (taskId: string, stepKey: string, clearDownstream: boolean) => Promise<ContentStudioTask>;
+  skipContentStudioTopicStep: (taskId: string, stepKey: string) => Promise<ContentStudioTask>;
   runContentStudioMaterial: (options: MaterialRewriteInput) => Promise<ContentStudioTask>;
   addContentStudioMaterialText: (options: {
     topic?: string;

@@ -42,6 +42,12 @@ export type TopicAdvancedSettings = {
   generateTitleCandidates: boolean;
   generateCoverText: boolean;
   generateImagePlan: boolean;
+  enableTopicResearch: boolean;
+  maxMaterialCount: number;
+  materialSummaryMaxWords: number;
+  materialSearchMode: "sequential";
+  requireRiskNotes: boolean;
+  requireSourceUrl: boolean;
 };
 
 export type TopicCreateInput = {
@@ -55,6 +61,85 @@ export type TopicCreateInput = {
   generateTitleCandidates?: boolean;
   generateCoverText?: boolean;
   generateImagePlan?: boolean;
+  enableTopicResearch?: boolean;
+  maxMaterialCount?: number;
+  materialSummaryMaxWords?: number;
+  materialSearchMode?: "sequential";
+  requireRiskNotes?: boolean;
+  requireSourceUrl?: boolean;
+};
+
+export type TopicResearchPlanItem = {
+  materialId: string;
+  query: string;
+  purpose: string;
+  preferredSourceType: "official" | "media" | "community" | "case" | "industry" | "other";
+  required: boolean;
+  riskNotes: string[];
+};
+
+export type TopicSelectedTopic = {
+  title: string;
+  coreThesis: string;
+  contentType: string;
+  targetPlatform: string;
+  reason: string;
+};
+
+export type TopicResearchMaterialCard = {
+  materialId: string;
+  query: string;
+  title: string;
+  sourceType: "official" | "media" | "community" | "case" | "industry" | "other";
+  sourceUrl?: string;
+  summary: string;
+  usablePoints: string[];
+  riskNotes: string[];
+  confidence: "high" | "medium" | "low";
+  status: "success" | "failed" | "skipped";
+  errorMessage?: string;
+};
+
+export type TopicMergedMaterial = {
+  topic: string;
+  confirmedFacts: string[];
+  creatorProblems: string[];
+  controversies: string[];
+  contentGaps: string[];
+  usableArguments: string[];
+  riskBoundaries: string[];
+  sourceSummary: Array<{
+    materialId: string;
+    title: string;
+    sourceUrl?: string;
+    confidence: "high" | "medium" | "low";
+  }>;
+};
+
+export type ContentStudioTopicStepType =
+  | "topic_planning"
+  | "research_plan"
+  | "material_search"
+  | "material_merge"
+  | "draft_generation"
+  | "review_round"
+  | "rewrite_round"
+  | "final_review"
+  | "completed";
+
+export type ContentStudioTopicStepStatus = "pending" | "running" | "success" | "failed" | "skipped" | "cancelled";
+
+export type ContentStudioTopicStep = {
+  stepKey: string;
+  stepName: string;
+  stepType: ContentStudioTopicStepType;
+  status: ContentStudioTopicStepStatus;
+  input?: unknown;
+  output?: unknown;
+  errorMessage?: string;
+  attemptCount: number;
+  startedAt?: string;
+  finishedAt?: string;
 };
 
 export type MaterialSourceType = "text" | "url" | "word";
@@ -223,6 +308,12 @@ export type ContentStudioTask = {
   };
   imageAssets: ContentStudioImageAsset[];
   imageBindings?: ContentStudioParagraphImageBinding[];
+  currentStep?: string;
+  topicSteps?: ContentStudioTopicStep[];
+  selectedTopic?: TopicSelectedTopic;
+  researchPlan?: TopicResearchPlanItem[];
+  researchMaterials?: TopicResearchMaterialCard[];
+  mergedMaterial?: TopicMergedMaterial;
   error?: string;
 };
 

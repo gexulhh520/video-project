@@ -27,7 +27,13 @@ const DEFAULT_TOPIC_ADVANCED_SETTINGS = {
   wordRange: "1200-1800字",
   generateTitleCandidates: true,
   generateCoverText: true,
-  generateImagePlan: true
+  generateImagePlan: true,
+  enableTopicResearch: false,
+  maxMaterialCount: 5,
+  materialSummaryMaxWords: 500,
+  materialSearchMode: "sequential",
+  requireRiskNotes: true,
+  requireSourceUrl: true
 } as const;
 
 export const DEFAULT_CONTENT_STUDIO_SETTINGS: ContentStudioSettings = {
@@ -334,7 +340,37 @@ export class ContentStudioSettingsService {
       generateImagePlan:
         typeof settings?.generateImagePlan === "boolean"
           ? settings.generateImagePlan
-          : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateImagePlan
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateImagePlan,
+      enableTopicResearch:
+        typeof settings?.enableTopicResearch === "boolean"
+          ? settings.enableTopicResearch
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.enableTopicResearch,
+      maxMaterialCount: Math.min(
+        10,
+        Math.max(
+          1,
+          this.normalizePositiveNumber(settings?.maxMaterialCount, DEFAULT_TOPIC_ADVANCED_SETTINGS.maxMaterialCount)
+        )
+      ),
+      materialSummaryMaxWords: Math.min(
+        2000,
+        Math.max(
+          100,
+          this.normalizePositiveNumber(
+            settings?.materialSummaryMaxWords,
+            DEFAULT_TOPIC_ADVANCED_SETTINGS.materialSummaryMaxWords
+          )
+        )
+      ),
+      materialSearchMode: "sequential",
+      requireRiskNotes:
+        typeof settings?.requireRiskNotes === "boolean"
+          ? settings.requireRiskNotes
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.requireRiskNotes,
+      requireSourceUrl:
+        typeof settings?.requireSourceUrl === "boolean"
+          ? settings.requireSourceUrl
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.requireSourceUrl
     };
   }
 }

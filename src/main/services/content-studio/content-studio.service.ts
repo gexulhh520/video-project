@@ -4,11 +4,16 @@ import type {
   ContentStudioArticleParagraph,
   ContentStudioMaterialPack,
   ContentStudioMaterialProgress,
+  ContentStudioTopicStep,
   ContentStudioTopicProgress,
   ContentStudioTask,
   ContentStudioTaskSummary,
   MaterialRewriteInput,
   MaterialSourceType,
+  TopicMergedMaterial,
+  TopicResearchMaterialCard,
+  TopicResearchPlanItem,
+  TopicSelectedTopic,
   TopicCreateInput
 } from "../../types/content-studio.types";
 import { runPythonTool } from "../python-tool-runner";
@@ -28,8 +33,12 @@ import {
   buildMaterialTopicGeneratePrompt,
   buildMaterialTopicReviewPrompt,
   buildMaterialTopicRewritePrompt,
+  buildTopicDraftFromResearchPrompt,
   buildTopicFinalReviewPrompt,
+  buildTopicMaterialMergePrompt,
   buildTopicPlanPrompt,
+  buildTopicResearchMaterialPrompt,
+  buildTopicResearchPlanPrompt,
   buildTopicReviewPrompt,
   buildTopicRewritePrompt
 } from "./content-studio-prompts";
@@ -346,6 +355,165 @@ export class ContentStudioService {
     await this.taskStore.deleteTask(taskId);
   }
 
+  async retryTopicStep(
+    taskId: string,
+    stepKey: string,
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
+    const task = await this.getTaskById(taskId);
+    const matched = (task.topicSteps || []).find((step) => step.stepKey === stepKey);
+    if (!matched) {
+      throw new Error(`步骤不存在：${stepKey}`);
+    }
+    return this.restartTopicFromStep(taskId, stepKey, false, onProgress);
+  }
+
+  async restartTopicFromStep(
+    taskId: string,
+    stepKey: string,
+    clearDownstream: boolean,
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
+    const task = await this.getTaskById(taskId);
+    if (task.tab !== "topic") {
+      throw new Error("仅支持话题成文任务重跑");
+    }
+    const steps = [...(task.topicSteps || [])];
+    const index = steps.findIndex((step) => step.stepKey === stepKey);
+    if (index < 0) {
+      throw new Error(`步骤不存在：${stepKey}`);
+    }
+    const nextSteps = steps.map((step, stepIndex) => {
+      const shouldReset = clearDownstream ? stepIndex >= index : stepIndex === index;
+      if (!shouldReset) {
+        return step;
+      }
+      return {
+        ...step,
+        status: "pending" as const,
+        output: undefined,
+        errorMessage: undefined,
+        startedAt: undefined,
+        finishedAt: undefined
+      };
+    });
+    const taskAfterCleanup = clearDownstream ? this.clearTopicTaskFromStep(task, stepKey) : task;
+    const resetTask = await this.taskStore.saveTask({
+      ...taskAfterCleanup,
+      status: "idle",
+      currentStep: stepKey,
+      topicSteps: nextSteps,
+      error: undefined
+    });
+    this.emitTopicProgress(onProgress, taskId, {
+      status: "queued",
+      progress: 1,
+      message: `已从步骤 ${stepKey} 重新开始`
+    });
+    return this.continueTopicTask(resetTask.taskId, onProgress);
+  }
+
+  private clearTopicTaskFromStep(task: ContentStudioTask, stepKey: string): ContentStudioTask {
+    if (stepKey === "research_plan") {
+      return {
+        ...task,
+        selectedTopic: undefined,
+        researchPlan: undefined,
+        researchMaterials: undefined,
+        mergedMaterial: undefined,
+        result: undefined,
+        finalReview: undefined,
+        debateSteps: []
+      };
+    }
+    if (stepKey.startsWith("material_search:")) {
+      const materialId = stepKey.split(":")[1];
+      const planIds = (task.researchPlan || []).map((item) => item.materialId);
+      const fromIndex = planIds.findIndex((id) => id === materialId);
+      const removedIds = fromIndex >= 0 ? new Set(planIds.slice(fromIndex)) : new Set([materialId]);
+      const retainedMaterials = (task.researchMaterials || []).filter((item) => !removedIds.has(item.materialId));
+      return {
+        ...task,
+        researchMaterials: retainedMaterials,
+        mergedMaterial: undefined,
+        result: undefined,
+        finalReview: undefined,
+        debateSteps: []
+      };
+    }
+    if (stepKey === "material_merge") {
+      return {
+        ...task,
+        mergedMaterial: undefined,
+        result: undefined,
+        finalReview: undefined,
+        debateSteps: []
+      };
+    }
+    if (
+      stepKey === "draft_generation" ||
+      stepKey.startsWith("review_round_") ||
+      stepKey.startsWith("rewrite_round_") ||
+      stepKey === "final_review"
+    ) {
+      return {
+        ...task,
+        result: undefined,
+        finalReview: undefined,
+        debateSteps: []
+      };
+    }
+    return task;
+  }
+
+  async skipTopicStep(taskId: string, stepKey: string): Promise<ContentStudioTask> {
+    const task = await this.getTaskById(taskId);
+    const steps = [...(task.topicSteps || [])];
+    const target = steps.find((step) => step.stepKey === stepKey);
+    if (!target) {
+      throw new Error(`步骤不存在：${stepKey}`);
+    }
+    if (!target.stepKey.startsWith("material_search:")) {
+      throw new Error("仅支持跳过素材检索步骤");
+    }
+    const planItem = (task.researchPlan || []).find((item) => `material_search:${item.materialId}` === stepKey);
+    if (planItem?.required) {
+      throw new Error("这是关键素材，跳过可能影响文章事实支撑。请先重试本环节。");
+    }
+    target.status = "skipped";
+    target.finishedAt = new Date().toISOString();
+    return this.taskStore.saveTask({
+      ...task,
+      topicSteps: steps
+    });
+  }
+
+  async continueTopicTask(
+    taskId: string,
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
+    const task = await this.getTaskById(taskId);
+    if (task.tab !== "topic") {
+      throw new Error("仅支持话题成文任务续跑");
+    }
+    const normalizedInput = this.normalizeTopicInput(task.input as TopicCreateInput);
+    const configStatus = await this.settingsService.getConfigStatus();
+    if (!configStatus.tabs.topic.ready) {
+      throw new Error(`话题成文配置未完成：${configStatus.tabs.topic.missingItems.join("、") || "请先完成模型配置"}`);
+    }
+    const studioSettings = await this.settingsService.getSettings();
+    const tabSettings = studioSettings.tabs.topic;
+    const runningTask = await this.taskStore.saveTask({
+      ...task,
+      status: "running",
+      error: undefined
+    });
+    if (normalizedInput.enableTopicResearch) {
+      return this.runTopicCreateWithResearch(runningTask, normalizedInput, tabSettings, onProgress);
+    }
+    return this.runTopicCreateClassic(runningTask, normalizedInput, tabSettings, onProgress);
+  }
+
   async runTopicCreate(
     input: TopicCreateInput,
     onProgress?: (progress: ContentStudioTopicProgress) => void
@@ -370,6 +538,40 @@ export class ContentStudioService {
       status: "running"
     });
 
+    if (normalizedInput.enableTopicResearch) {
+      return this.runTopicCreateWithResearch(task, normalizedInput, tabSettings, onProgress);
+    }
+    return this.runTopicCreateClassic(task, normalizedInput, tabSettings, onProgress);
+  }
+
+  private normalizeTopicInput(input: TopicCreateInput): TopicCreateInput {
+    const topic = input.topic?.trim();
+    if (!topic) {
+      throw new Error("请输入话题");
+    }
+
+    return {
+      ...input,
+      topic,
+      reviewRounds: this.normalizeReviewRounds(input.reviewRounds),
+      targetReader: input.targetReader?.trim() || undefined,
+      writingStyle: input.writingStyle?.trim() || undefined,
+      wordRange: input.wordRange?.trim() || undefined,
+      enableTopicResearch: Boolean(input.enableTopicResearch),
+      maxMaterialCount: Math.min(10, Math.max(1, Math.floor(Number(input.maxMaterialCount || 5)))),
+      materialSummaryMaxWords: Math.min(2000, Math.max(100, Math.floor(Number(input.materialSummaryMaxWords || 500)))),
+      materialSearchMode: "sequential",
+      requireRiskNotes: input.requireRiskNotes !== false,
+      requireSourceUrl: input.requireSourceUrl !== false
+    };
+  }
+
+  private async runTopicCreateClassic(
+    task: ContentStudioTask,
+    normalizedInput: TopicCreateInput,
+    tabSettings: ContentStudioTask["settingsSnapshot"],
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
     const promptRoles = {
       modelARoleName: tabSettings.modelA.roleName,
       modelBRoleName: tabSettings.modelB.roleName
@@ -397,40 +599,45 @@ export class ContentStudioService {
     let nextStepOrder = 0;
 
     try {
-      const debateResult = await this.debateService.runDebate({
-        tab: "topic",
-        taskId: task.taskId,
-        input: normalizedInput,
-        settings: tabSettings,
-        workflow: {
-          planPrompt,
-          reviewPrompt,
-          rewritePrompt,
-          finalReviewPrompt
+      const debateResult = await this.debateService.runDebate(
+        {
+          tab: "topic",
+          taskId: task.taskId,
+          input: normalizedInput,
+          settings: tabSettings,
+          workflow: {
+            planPrompt,
+            reviewPrompt,
+            rewritePrompt,
+            finalReviewPrompt
+          }
+        },
+        (step) => {
+          const stepOrder =
+            stepOrderMap.get(step.stepId) ??
+            (() => {
+              nextStepOrder += 1;
+              stepOrderMap.set(step.stepId, nextStepOrder);
+              return nextStepOrder;
+            })();
+          const progressBase = 10;
+          const progressSpan = 76;
+          const dynamicProgress = Math.min(
+            90,
+            progressBase + Math.floor((Math.min(stepOrder, totalDebateSteps) / totalDebateSteps) * progressSpan)
+          );
+          const stateText = step.status === "running" ? "正在调用" : step.status === "success" ? "已完成" : "失败";
+          this.emitTopicProgress(onProgress, task.taskId, {
+            status: step.status === "failed" ? "failed" : "running_step",
+            progress: dynamicProgress,
+            message: `${stateText}${step.displayName}`,
+            stepName: step.name,
+            role: step.role,
+            provider: step.provider,
+            profile: step.profile
+          });
         }
-      }, (step) => {
-        const stepOrder = stepOrderMap.get(step.stepId) ?? (() => {
-          nextStepOrder += 1;
-          stepOrderMap.set(step.stepId, nextStepOrder);
-          return nextStepOrder;
-        })();
-        const progressBase = 10;
-        const progressSpan = 76;
-        const dynamicProgress = Math.min(
-          90,
-          progressBase + Math.floor((Math.min(stepOrder, totalDebateSteps) / totalDebateSteps) * progressSpan)
-        );
-        const stateText = step.status === "running" ? "正在调用" : step.status === "success" ? "已完成" : "失败";
-        this.emitTopicProgress(onProgress, task.taskId, {
-          status: step.status === "failed" ? "failed" : "running_step",
-          progress: dynamicProgress,
-          message: `${stateText}${step.displayName}`,
-          stepName: step.name,
-          role: step.role,
-          provider: step.provider,
-          profile: step.profile
-        });
-      });
+      );
 
       this.emitTopicProgress(onProgress, task.taskId, {
         status: "parsing_result",
@@ -439,51 +646,297 @@ export class ContentStudioService {
       });
       const article = this.parseArticleResult(debateResult.finalResponse, normalizedInput.topic);
 
-      task = await this.taskStore.saveTask({
+      return this.taskStore.saveTask({
         ...task,
         status: "completed",
         debateSteps: debateResult.steps,
         result: article,
         error: undefined
       });
-      this.emitTopicProgress(onProgress, task.taskId, {
-        status: "completed",
-        progress: 100,
-        message: "话题成文完成。"
-      });
-
-      return task;
     } catch (error) {
       const debateSteps = error instanceof ContentStudioDebateError ? error.steps : task.debateSteps;
-      task = await this.taskStore.saveTask({
+      return this.taskStore.saveTask({
         ...task,
         status: "failed",
         debateSteps,
         error: error instanceof Error ? error.message : "话题成文执行失败"
       });
-      this.emitTopicProgress(onProgress, task.taskId, {
-        status: "failed",
-        progress: 100,
-        message: task.error || "话题成文执行失败。"
-      });
-      return task;
     }
   }
 
-  private normalizeTopicInput(input: TopicCreateInput): TopicCreateInput {
-    const topic = input.topic?.trim();
-    if (!topic) {
-      throw new Error("请输入话题");
-    }
+  private async runTopicCreateWithResearch(
+    task: ContentStudioTask,
+    normalizedInput: TopicCreateInput,
+    tabSettings: ContentStudioTask["settingsSnapshot"],
+    onProgress?: (progress: ContentStudioTopicProgress) => void
+  ): Promise<ContentStudioTask> {
+    const [modelA, modelB] = this.debateService.resolveEnabledModels(tabSettings);
+    const steps: ContentStudioTopicStep[] = [...(task.topicSteps || [])];
+    const debateSteps: ContentStudioTask["debateSteps"] = [...task.debateSteps];
+    let workingTask = task;
+    const reviewRounds = normalizedInput.reviewRounds ?? 2;
 
-    return {
-      ...input,
-      topic,
-      reviewRounds: this.normalizeReviewRounds(input.reviewRounds),
-      targetReader: input.targetReader?.trim() || undefined,
-      writingStyle: input.writingStyle?.trim() || undefined,
-      wordRange: input.wordRange?.trim() || undefined
+    const persist = async (): Promise<void> => {
+      workingTask = await this.taskStore.saveTask({
+        ...workingTask,
+        topicSteps: steps,
+        debateSteps
+      });
     };
+
+    const runTopicStep = async <T>(
+      stepSeed: Omit<ContentStudioTopicStep, "status" | "attemptCount">,
+      runner: () => Promise<T>
+    ): Promise<T> => {
+      let step = steps.find((item) => item.stepKey === stepSeed.stepKey);
+      if (!step) {
+        step = {
+          ...stepSeed,
+          status: "pending",
+          attemptCount: 0
+        };
+        steps.push(step);
+      } else {
+        step.stepName = stepSeed.stepName;
+        step.stepType = stepSeed.stepType;
+        if (stepSeed.input !== undefined) {
+          step.input = stepSeed.input;
+        }
+      }
+
+      if (step.status === "success" || step.status === "skipped") {
+        return step.output as T;
+      }
+
+      step.status = "running";
+      step.attemptCount = (step.attemptCount || 0) + 1;
+      step.startedAt = new Date().toISOString();
+      step.finishedAt = undefined;
+      step.errorMessage = undefined;
+      workingTask.currentStep = step.stepKey;
+      await persist();
+      try {
+        const output = await runner();
+        step.output = output as unknown;
+        step.status = "success";
+        step.finishedAt = new Date().toISOString();
+        await persist();
+        return output;
+      } catch (error) {
+        step.errorMessage = error instanceof Error ? error.message : String(error);
+        step.status = "failed";
+        step.finishedAt = new Date().toISOString();
+        await persist();
+        throw error;
+      }
+    };
+
+    try {
+      let selectedTopic: TopicSelectedTopic;
+      let researchPlan: TopicResearchPlanItem[];
+      const planningResult = await runTopicStep(
+        {
+          stepKey: "research_plan",
+          stepName: "生成素材研究计划",
+          stepType: "research_plan",
+          input: normalizedInput
+        },
+        async () => {
+          const prompt = buildTopicResearchPlanPrompt(normalizedInput, {
+            modelARoleName: tabSettings.modelA.roleName
+          });
+          const raw = await this.debateService.runAdHocStep({
+            steps: debateSteps,
+            role: modelA.role,
+            name: "plan",
+            displayName: "模型A：选题与研究计划",
+            provider: modelA.provider,
+            profile: modelA.profile,
+            prompt,
+            settings: tabSettings
+          });
+          return this.parseTopicResearchPlan(raw, normalizedInput.maxMaterialCount ?? 5);
+        }
+      );
+      selectedTopic = planningResult.selectedTopic;
+      researchPlan = planningResult.researchPlan;
+      workingTask.selectedTopic = selectedTopic;
+      workingTask.researchPlan = researchPlan;
+      await persist();
+
+      const cards: TopicResearchMaterialCard[] = [];
+      for (const item of researchPlan) {
+        this.emitTopicProgress(onProgress, task.taskId, {
+          status: "running_step",
+          progress: Math.min(80, 20 + cards.length * 8),
+          message: `正在检索素材 ${item.materialId}`
+        });
+        const card = await runTopicStep(
+          {
+            stepKey: `material_search:${item.materialId}`,
+            stepName: `查找素材 ${item.materialId}`,
+            stepType: "material_search",
+            input: item
+          },
+          async () => {
+            const prompt = buildTopicResearchMaterialPrompt(normalizedInput, selectedTopic, item, cards);
+            const raw = await this.debateService.runAdHocStep({
+              steps: debateSteps,
+              role: modelA.role,
+              name: "plan",
+              displayName: `模型A：素材检索 ${item.materialId}`,
+              provider: modelA.provider,
+              profile: modelA.profile,
+              prompt,
+              settings: tabSettings
+            });
+            return this.parseTopicResearchMaterialCard(raw, item, normalizedInput.materialSummaryMaxWords ?? 500);
+          }
+        );
+        cards.push(card);
+        workingTask.researchMaterials = [...cards];
+        await persist();
+      }
+
+      const mergedMaterial = await runTopicStep(
+        {
+          stepKey: "material_merge",
+          stepName: "合并素材",
+          stepType: "material_merge"
+        },
+        async () => {
+          const prompt = buildTopicMaterialMergePrompt(normalizedInput, selectedTopic, cards);
+          const raw = await this.debateService.runAdHocStep({
+            steps: debateSteps,
+            role: modelA.role,
+            name: "plan",
+            displayName: "模型A：合并素材包",
+            provider: modelA.provider,
+            profile: modelA.profile,
+            prompt,
+            settings: tabSettings
+          });
+          return this.parseTopicMergedMaterial(raw, selectedTopic.title, cards);
+        }
+      );
+      workingTask.mergedMaterial = mergedMaterial;
+      await persist();
+
+      let currentDraft = await runTopicStep(
+        {
+          stepKey: "draft_generation",
+          stepName: "生成正文",
+          stepType: "draft_generation"
+        },
+        async () => {
+          const prompt = buildTopicDraftFromResearchPrompt(normalizedInput, selectedTopic, mergedMaterial, {
+            modelARoleName: tabSettings.modelA.roleName
+          });
+          return this.debateService.runAdHocStep({
+            steps: debateSteps,
+            role: modelA.role,
+            name: "plan",
+            displayName: "模型A：基于素材写稿",
+            provider: modelA.provider,
+            profile: modelA.profile,
+            prompt,
+            settings: tabSettings
+          });
+        }
+      );
+
+      for (let i = 1; i < reviewRounds; i += 1) {
+        const review = await runTopicStep(
+          {
+            stepKey: `review_round_${i}`,
+            stepName: `第 ${i} 轮审稿`,
+            stepType: "review_round"
+          },
+          async () =>
+            this.debateService.runAdHocStep({
+              steps: debateSteps,
+              role: modelB.role,
+              name: "review",
+              displayName: `模型B：第${i}轮审稿`,
+              provider: modelB.provider,
+              profile: modelB.profile,
+              prompt: buildTopicReviewPrompt(normalizedInput, currentDraft, {
+                modelBRoleName: tabSettings.modelB.roleName
+              }),
+              settings: tabSettings
+            })
+        );
+        currentDraft = await runTopicStep(
+          {
+            stepKey: `rewrite_round_${i}`,
+            stepName: `第 ${i} 轮重写`,
+            stepType: "rewrite_round"
+          },
+          async () =>
+            this.debateService.runAdHocStep({
+              steps: debateSteps,
+              role: modelA.role,
+              name: "rewrite",
+              displayName: `模型A：第${i}轮重写`,
+              provider: modelA.provider,
+              profile: modelA.profile,
+              prompt: buildTopicRewritePrompt(normalizedInput, currentDraft, review, {
+                modelARoleName: tabSettings.modelA.roleName,
+                modelBRoleName: tabSettings.modelB.roleName
+              }),
+              settings: tabSettings
+            })
+        );
+      }
+
+      const finalRaw = await runTopicStep(
+        {
+          stepKey: "final_review",
+          stepName: "终审",
+          stepType: "final_review"
+        },
+        async () =>
+          this.debateService.runAdHocStep({
+            steps: debateSteps,
+            role: modelB.role,
+            name: "final_review",
+            displayName: "模型B：终审",
+            provider: modelB.provider,
+            profile: modelB.profile,
+            prompt: buildTopicFinalReviewPrompt(normalizedInput, currentDraft, {
+              modelARoleName: tabSettings.modelA.roleName,
+              modelBRoleName: tabSettings.modelB.roleName
+            }),
+            settings: tabSettings
+          })
+      );
+      const article = this.parseArticleResult(finalRaw, normalizedInput.topic);
+      const completedStep: ContentStudioTopicStep = {
+        stepKey: "completed",
+        stepName: "完成",
+        stepType: "completed",
+        status: "success",
+        attemptCount: 1
+      };
+      const stepsWithoutCompleted = steps.filter((step) => step.stepKey !== "completed");
+      return this.taskStore.saveTask({
+        ...workingTask,
+        status: "completed",
+        currentStep: "completed",
+        topicSteps: [...stepsWithoutCompleted, completedStep],
+        debateSteps,
+        result: article,
+        error: undefined
+      });
+    } catch (error) {
+      return this.taskStore.saveTask({
+        ...workingTask,
+        status: "failed",
+        topicSteps: steps,
+        debateSteps,
+        error: error instanceof Error ? error.message : "话题成文执行失败"
+      });
+    }
   }
 
   private normalizeReviewRounds(value: number | undefined): number {
@@ -491,6 +944,101 @@ export class ContentStudioService {
       return 2;
     }
     return Math.min(5, Math.max(1, Math.floor(value)));
+  }
+
+  private parseTopicResearchPlan(
+    raw: string,
+    maxMaterialCount: number
+  ): { selectedTopic: TopicSelectedTopic; researchPlan: TopicResearchPlanItem[] } {
+    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    const selectedRaw = (parsed.selectedTopic ?? {}) as Record<string, unknown>;
+    const selectedTopic: TopicSelectedTopic = {
+      title: String(selectedRaw.title || "").trim() || "未命名选题",
+      coreThesis: String(selectedRaw.coreThesis || "").trim() || "待补充",
+      contentType: String(selectedRaw.contentType || "").trim() || "观点文",
+      targetPlatform: String(selectedRaw.targetPlatform || "").trim() || "公众号",
+      reason: String(selectedRaw.reason || "").trim() || "基于话题与用户需求"
+    };
+    const planRaw = Array.isArray(parsed.researchPlan) ? parsed.researchPlan : [];
+    const researchPlan = planRaw
+      .slice(0, Math.max(1, Math.min(10, maxMaterialCount)))
+      .map((item, index) => {
+        const value = (item ?? {}) as Record<string, unknown>;
+        return {
+          materialId: String(value.materialId || `m${index + 1}`).trim() || `m${index + 1}`,
+          query: String(value.query || "").trim() || selectedTopic.title,
+          purpose: String(value.purpose || "").trim() || "用于支撑核心论点",
+          preferredSourceType: this.normalizeSourceType(value.preferredSourceType),
+          required: typeof value.required === "boolean" ? value.required : true,
+          riskNotes: Array.isArray(value.riskNotes) ? value.riskNotes.map((x) => String(x || "").trim()).filter(Boolean) : []
+        } as TopicResearchPlanItem;
+      });
+    return { selectedTopic, researchPlan };
+  }
+
+  private parseTopicResearchMaterialCard(
+    raw: string,
+    item: TopicResearchPlanItem,
+    maxWords: number
+  ): TopicResearchMaterialCard {
+    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    const summaryRaw = String(parsed.summary || "").trim();
+    const limitedSummary = summaryRaw.length > maxWords * 2 ? summaryRaw.slice(0, maxWords * 2) : summaryRaw;
+    return {
+      materialId: String(parsed.materialId || item.materialId).trim() || item.materialId,
+      query: String(parsed.query || item.query).trim() || item.query,
+      title: String(parsed.title || "").trim() || `${item.materialId} 素材`,
+      sourceType: this.normalizeSourceType(parsed.sourceType),
+      sourceUrl: String(parsed.sourceUrl || "").trim() || undefined,
+      summary: limitedSummary || "未获得可靠摘要",
+      usablePoints: Array.isArray(parsed.usablePoints) ? parsed.usablePoints.map((x) => String(x || "").trim()).filter(Boolean) : [],
+      riskNotes: Array.isArray(parsed.riskNotes) ? parsed.riskNotes.map((x) => String(x || "").trim()).filter(Boolean) : [],
+      confidence: this.normalizeConfidence(parsed.confidence),
+      status: "success"
+    };
+  }
+
+  private parseTopicMergedMaterial(
+    raw: string,
+    fallbackTopic: string,
+    cards: TopicResearchMaterialCard[]
+  ): TopicMergedMaterial {
+    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    return {
+      topic: String(parsed.topic || "").trim() || fallbackTopic,
+      confirmedFacts: this.toStringArray(parsed.confirmedFacts),
+      creatorProblems: this.toStringArray(parsed.creatorProblems),
+      controversies: this.toStringArray(parsed.controversies),
+      contentGaps: this.toStringArray(parsed.contentGaps),
+      usableArguments: this.toStringArray(parsed.usableArguments),
+      riskBoundaries: this.toStringArray(parsed.riskBoundaries),
+      sourceSummary: cards.map((card) => ({
+        materialId: card.materialId,
+        title: card.title,
+        sourceUrl: card.sourceUrl,
+        confidence: card.confidence
+      }))
+    };
+  }
+
+  private toStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.map((item) => String(item || "").trim()).filter(Boolean) : [];
+  }
+
+  private normalizeSourceType(value: unknown): TopicResearchPlanItem["preferredSourceType"] {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "official" || normalized === "media" || normalized === "community" || normalized === "case" || normalized === "industry") {
+      return normalized;
+    }
+    return "other";
+  }
+
+  private normalizeConfidence(value: unknown): TopicResearchMaterialCard["confidence"] {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "high" || normalized === "medium" || normalized === "low") {
+      return normalized;
+    }
+    return "medium";
   }
 
   private normalizeMaterialInput(input: MaterialRewriteInput): MaterialRewriteInput {

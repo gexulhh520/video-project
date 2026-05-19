@@ -109,6 +109,12 @@ const desktopApi: DesktopApi = {
   deleteContentStudioTask: async (taskId: string): Promise<void> => ipcRenderer.invoke("content-studio-task:delete", taskId),
   runContentStudioTopic: async (options: TopicCreateInput): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-topic:run", options),
+  retryContentStudioTopicStep: async (taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-topic:retry-step", taskId, stepKey),
+  restartContentStudioTopicFromStep: async (taskId: string, stepKey: string, clearDownstream: boolean): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-topic:restart-from-step", taskId, stepKey, clearDownstream),
+  skipContentStudioTopicStep: async (taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio-topic:skip-step", taskId, stepKey),
   runContentStudioMaterial: async (options: MaterialRewriteInput): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-material:run", options),
   addContentStudioMaterialText: async (options: {

@@ -196,6 +196,21 @@ export function registerIpcHandlers(
       mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
     })
   );
+  ipcMain.handle("content-studio-topic:retry-step", async (_event, taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    contentStudioService.retryTopicStep(taskId, stepKey, (progress: ContentStudioTopicProgress): void => {
+      mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
+    })
+  );
+  ipcMain.handle(
+    "content-studio-topic:restart-from-step",
+    async (_event, taskId: string, stepKey: string, clearDownstream: boolean): Promise<ContentStudioTask> =>
+      contentStudioService.restartTopicFromStep(taskId, stepKey, clearDownstream, (progress: ContentStudioTopicProgress): void => {
+        mainWindow.webContents.send(CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL, progress);
+      })
+  );
+  ipcMain.handle("content-studio-topic:skip-step", async (_event, taskId: string, stepKey: string): Promise<ContentStudioTask> =>
+    contentStudioService.skipTopicStep(taskId, stepKey)
+  );
   ipcMain.handle("content-studio-material:run", async (_event, options: MaterialRewriteInput): Promise<ContentStudioTask> =>
     contentStudioService.runMaterialRewrite(options, (progress: ContentStudioMaterialProgress): void => {
       mainWindow.webContents.send(CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, progress);

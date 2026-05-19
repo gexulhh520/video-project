@@ -46,12 +46,15 @@ export function getFirstConnectedProfile(output: string): string | undefined {
 }
 
 export function parseOpenCliJson<T = unknown>(output: string): T {
-  const text = sanitizeJsonText(output);
-  const candidates = [text, ...extractJsonCandidates(text)];
+  const text = repairWebLlmJsonText(sanitizeJsonText(output));
+  const firstObject = extractFirstCompleteJsonObject(text);
+  const candidates = [text, firstObject, ...extractJsonCandidates(text)].filter(
+    (candidate): candidate is string => Boolean(candidate && candidate.trim())
+  );
 
   for (const candidate of candidates) {
     try {
-      return JSON.parse(candidate) as T;
+      return parseJsonMaybeString<T>(candidate);
     } catch {
       // Continue trying more candidates.
     }
@@ -64,6 +67,7 @@ export function repairWebLlmJsonText(text: string): string {
   return String(text || "")
     .replace(/^\uFEFF/, "")
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/\\\[/g, "[")
     .replace(/\\\]/g, "]")
     .replace(/\\_/g, "_")

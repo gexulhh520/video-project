@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch } from "vue";
 
 type TopicAdvancedSettings = {
@@ -9,6 +9,12 @@ type TopicAdvancedSettings = {
   generateTitleCandidates: boolean;
   generateCoverText: boolean;
   generateImagePlan: boolean;
+  enableTopicResearch: boolean;
+  maxMaterialCount: number;
+  materialSummaryMaxWords: number;
+  materialSearchMode: "sequential";
+  requireRiskNotes: boolean;
+  requireSourceUrl: boolean;
 };
 
 const props = defineProps<{
@@ -28,7 +34,13 @@ const form = ref<TopicAdvancedSettings>({
   wordRange: "",
   generateTitleCandidates: true,
   generateCoverText: true,
-  generateImagePlan: true
+  generateImagePlan: true,
+  enableTopicResearch: false,
+  maxMaterialCount: 5,
+  materialSummaryMaxWords: 500,
+  materialSearchMode: "sequential",
+  requireRiskNotes: true,
+  requireSourceUrl: true
 });
 
 watch(
@@ -54,7 +66,13 @@ function handleSave(): void {
     wordRange: form.value.wordRange.trim(),
     generateTitleCandidates: form.value.generateTitleCandidates,
     generateCoverText: form.value.generateCoverText,
-    generateImagePlan: form.value.generateImagePlan
+    generateImagePlan: form.value.generateImagePlan,
+    enableTopicResearch: form.value.enableTopicResearch,
+    maxMaterialCount: Math.min(10, Math.max(1, Math.floor(form.value.maxMaterialCount || 5))),
+    materialSummaryMaxWords: Math.min(2000, Math.max(100, Math.floor(form.value.materialSummaryMaxWords || 500))),
+    materialSearchMode: "sequential",
+    requireRiskNotes: form.value.requireRiskNotes,
+    requireSourceUrl: form.value.requireSourceUrl
   });
 }
 </script>
@@ -71,9 +89,7 @@ function handleSave(): void {
         <label class="field">
           <span>审稿轮次</span>
           <input v-model.number="form.reviewRounds" type="number" min="1" max="5" step="1" />
-          <small class="hint">
-            审稿轮次表示模型 B 审查次数；每增加 1 次审稿，系统会增加一次 A 重写与 B 再审稿。默认 2，范围 1-5。
-          </small>
+          <small class="hint">审稿轮次表示模型 B 评审次数；每增加 1 轮，会增加一轮模型 A 重写和模型 B 评审。</small>
         </label>
 
         <label class="field">
@@ -102,6 +118,27 @@ function handleSave(): void {
         <label class="switch-field">
           <input v-model="form.generateImagePlan" type="checkbox" />
           <span>生成配图计划</span>
+        </label>
+
+        <label class="switch-field">
+          <input v-model="form.enableTopicResearch" type="checkbox" />
+          <span>开启选题研究流程</span>
+        </label>
+        <label v-if="form.enableTopicResearch" class="field">
+          <span>最大素材条数</span>
+          <input v-model.number="form.maxMaterialCount" type="number" min="1" max="10" step="1" />
+        </label>
+        <label v-if="form.enableTopicResearch" class="field">
+          <span>单条素材总结最大字数</span>
+          <input v-model.number="form.materialSummaryMaxWords" type="number" min="100" max="2000" step="50" />
+        </label>
+        <label v-if="form.enableTopicResearch" class="switch-field">
+          <input v-model="form.requireRiskNotes" type="checkbox" />
+          <span>要求输出风险提醒</span>
+        </label>
+        <label v-if="form.enableTopicResearch" class="switch-field">
+          <input v-model="form.requireSourceUrl" type="checkbox" />
+          <span>要求输出来源链接</span>
         </label>
       </div>
 

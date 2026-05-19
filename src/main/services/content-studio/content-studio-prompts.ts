@@ -1,4 +1,13 @@
-﻿import type { ContentStudioMaterialPack, MaterialRewriteInput, TopicCreateInput } from "../../types/content-studio.types";
+﻿import type {
+  ContentStudioMaterialPack,
+  MaterialRewriteInput,
+  TopicCreateInput,
+  TopicMergedMaterial,
+  TopicResearchMaterialCard,
+  TopicResearchPlanItem,
+  TopicSelectedTopic
+} from "../../types/content-studio.types";
+
 
 type TopicPromptRoles = {
   modelARoleName?: string;
@@ -318,5 +327,84 @@ export function buildMaterialFinalReviewPrompt(
     buildMaterialContext(input),
     buildMaterialSourceDigest(materialPack),
     finalArticleJson
+  ].join("\n\n");
+}
+
+
+export function buildTopicResearchPlanPrompt(input: TopicCreateInput, roles?: TopicPromptRoles): string {
+  const modelARole = resolveRoleName(roles?.modelARoleName, "选题策划编辑");
+  const maxMaterialCount = Math.min(10, Math.max(1, Number(input.maxMaterialCount || 5)));
+  return [
+    `你是内容创作工作台中的模型A，角色是${modelARole}。`,
+    "先做选题研究，不要直接写文章。",
+    "输出严格 JSON，字段：selectedTopic、researchPlan。",
+    `researchPlan 长度必须 <= ${maxMaterialCount}。`,
+    "researchPlan 每项必须包含 materialId/query/purpose/preferredSourceType/required/riskNotes。",
+    "preferredSourceType 仅允许 official|media|community|case|industry|other。",
+    "selectedTopic 包含 title/coreThesis/contentType/targetPlatform/reason。",
+    "回复只能是一个 JSON 对象，不要 markdown。",
+    "用户输入：",
+    buildTopicContext(input)
+  ].join("\n\n");
+}
+
+export function buildTopicResearchMaterialPrompt(
+  input: TopicCreateInput,
+  selectedTopic: TopicSelectedTopic,
+  planItem: TopicResearchPlanItem,
+  priorCards: TopicResearchMaterialCard[]
+): string {
+  const maxWords = Math.min(2000, Math.max(100, Number(input.materialSummaryMaxWords || 500)));
+  const requireRiskNotes = input.requireRiskNotes !== false;
+  const requireSourceUrl = input.requireSourceUrl !== false;
+  return [
+    "你现在执行单条素材检索与总结。",
+    "你可以先检索公开网页，再输出素材卡。",
+    "输出严格 JSON，不要 markdown。",
+    "字段必须包含：materialId/query/title/sourceType/sourceUrl/summary/usablePoints/riskNotes/confidence。",
+    `summary 必须控制在 ${maxWords} 字以内。`,
+    `sourceUrl ${requireSourceUrl ? "必须提供有效链接" : "可为空字符串"}。`,
+    `riskNotes ${requireRiskNotes ? "必须至少 1 条（如无风险可写“暂无明显风险”）" : "可为空数组"}。`,
+    "sourceType 仅允许 official|media|community|case|industry|other。",
+    "confidence 仅允许 high|medium|low。",
+    "如果没找到可靠素材，不要编造：confidence=low，并在 riskNotes 说明原因。",
+    `选题：${JSON.stringify(selectedTopic)}`,
+    `当前计划项：${JSON.stringify(planItem)}`,
+    `已完成素材卡（供去重与避免重复）：${JSON.stringify(priorCards)}`
+  ].join("\n\n");
+}
+
+export function buildTopicMaterialMergePrompt(
+  input: TopicCreateInput,
+  selectedTopic: TopicSelectedTopic,
+  cards: TopicResearchMaterialCard[]
+): string {
+  return [
+    "请基于已收集素材卡合并素材包。",
+    "输出严格 JSON，字段：topic/confirmedFacts/creatorProblems/controversies/contentGaps/usableArguments/riskBoundaries/sourceSummary。",
+    "sourceSummary 每项包含 materialId/title/sourceUrl/confidence。",
+    "不要新增未在素材卡中出现的事实。",
+    `用户输入：${buildTopicContext(input)}`,
+    `选题：${JSON.stringify(selectedTopic)}`,
+    `素材卡：${JSON.stringify(cards)}`
+  ].join("\n\n");
+}
+
+export function buildTopicDraftFromResearchPrompt(
+  input: TopicCreateInput,
+  selectedTopic: TopicSelectedTopic,
+  mergedMaterial: TopicMergedMaterial,
+  roles?: TopicPromptRoles
+): string {
+  const modelARole = resolveRoleName(roles?.modelARoleName, "选题策划编辑");
+  return [
+    `你是内容创作工作台中的模型A，角色是${modelARole}。`,
+    "基于选题和素材包生成文章初稿。",
+    buildTopicOutputSchemaNotice(input),
+    "约束：不能把用户反馈写成官方结论；不能把推测写成确定事实；不能编造平台规则。",
+    "用户输入：",
+    buildTopicContext(input),
+    `最终选题：${JSON.stringify(selectedTopic)}`,
+    `素材包：${JSON.stringify(mergedMaterial)}`
   ].join("\n\n");
 }

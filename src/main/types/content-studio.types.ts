@@ -31,6 +31,17 @@ export type ContentStudioSettings = {
   openCliCommand: string;
   tabs: Record<ContentStudioTabKey, ContentStudioTabModelSettings>;
   image: ContentStudioImageSettings;
+  topicAdvanced: TopicAdvancedSettings;
+};
+
+export type TopicAdvancedSettings = {
+  reviewRounds: number;
+  targetReader: string;
+  writingStyle: string;
+  wordRange: string;
+  generateTitleCandidates: boolean;
+  generateCoverText: boolean;
+  generateImagePlan: boolean;
 };
 
 export type TopicCreateInput = {

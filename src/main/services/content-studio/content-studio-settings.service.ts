@@ -20,6 +20,15 @@ import { OpenCliRuntimeService } from "../opencli/opencli-runtime.service";
 const DEFAULT_POLL_INTERVAL_MS = 3000;
 const DEFAULT_TIMEOUT_MS = 180000;
 const DEFAULT_DEBATE_ROUNDS = 2;
+const DEFAULT_TOPIC_ADVANCED_SETTINGS = {
+  reviewRounds: 2,
+  targetReader: "",
+  writingStyle: "",
+  wordRange: "1200-1800字",
+  generateTitleCandidates: true,
+  generateCoverText: true,
+  generateImagePlan: true
+} as const;
 
 export const DEFAULT_CONTENT_STUDIO_SETTINGS: ContentStudioSettings = {
   openCliCommand: "opencli",
@@ -97,6 +106,9 @@ export const DEFAULT_CONTENT_STUDIO_SETTINGS: ContentStudioSettings = {
     enabled: false,
     provider: "chatgpt",
     profile: ""
+  },
+  topicAdvanced: {
+    ...DEFAULT_TOPIC_ADVANCED_SETTINGS
   }
 };
 
@@ -252,7 +264,8 @@ export class ContentStudioSettingsService {
         provider: this.normalizeProvider(settings.image?.provider),
         profile: settings.image?.profile?.trim() ?? "",
         outputDir: settings.image?.outputDir?.trim() || undefined
-      }
+      },
+      topicAdvanced: this.normalizeTopicAdvancedSettings(settings.topicAdvanced)
     };
   }
 
@@ -296,5 +309,32 @@ export class ContentStudioSettingsService {
     }
 
     return Math.floor(value);
+  }
+
+  private normalizeTopicAdvancedSettings(settings: Partial<ContentStudioSettings["topicAdvanced"]> | undefined): ContentStudioSettings["topicAdvanced"] {
+    return {
+      reviewRounds: Math.min(
+        5,
+        Math.max(
+          1,
+          this.normalizePositiveNumber(settings?.reviewRounds, DEFAULT_TOPIC_ADVANCED_SETTINGS.reviewRounds)
+        )
+      ),
+      targetReader: settings?.targetReader?.trim() ?? DEFAULT_TOPIC_ADVANCED_SETTINGS.targetReader,
+      writingStyle: settings?.writingStyle?.trim() ?? DEFAULT_TOPIC_ADVANCED_SETTINGS.writingStyle,
+      wordRange: settings?.wordRange?.trim() || DEFAULT_TOPIC_ADVANCED_SETTINGS.wordRange,
+      generateTitleCandidates:
+        typeof settings?.generateTitleCandidates === "boolean"
+          ? settings.generateTitleCandidates
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateTitleCandidates,
+      generateCoverText:
+        typeof settings?.generateCoverText === "boolean"
+          ? settings.generateCoverText
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateCoverText,
+      generateImagePlan:
+        typeof settings?.generateImagePlan === "boolean"
+          ? settings.generateImagePlan
+          : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateImagePlan
+    };
   }
 }

@@ -14,6 +14,7 @@ import type {
   ContentStudioTabModelSettings,
   OpenCliProvider,
   MaterialRewriteInput,
+  TopicAdvancedSettings,
   TopicCreateInput
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
@@ -84,6 +85,15 @@ const taskHistoryLoading = ref(false);
 const taskHistoryDeletingTaskId = ref<string | null>(null);
 const taskHistoryPage = ref(1);
 const taskHistoryPageSize = 8;
+const DEFAULT_TOPIC_ADVANCED_SETTINGS: TopicAdvancedSettings = {
+  reviewRounds: 2,
+  targetReader: "",
+  writingStyle: "",
+  wordRange: "1200-1800字",
+  generateTitleCandidates: true,
+  generateCoverText: true,
+  generateImagePlan: true
+};
 const taskHistoryActiveTab = ref<ContentStudioTabKey>("topic");
 const topicTaskSummaries = ref<Array<{
   taskId: string;
@@ -99,15 +109,7 @@ const materialRunning = ref(false);
 const materialPack = ref<ContentStudioMaterialPack>({ sources: [] });
 const materialSourceBusy = ref(false);
 const latestMaterialTask = ref<ContentStudioTask | null>(null);
-const topicAdvancedSettings = ref({
-  reviewRounds: 2,
-  targetReader: "",
-  writingStyle: "",
-  wordRange: "1200-1800字",
-  generateTitleCandidates: true,
-  generateCoverText: true,
-  generateImagePlan: true
-});
+const topicAdvancedSettings = ref<TopicAdvancedSettings>({ ...DEFAULT_TOPIC_ADVANCED_SETTINGS });
 const recentResultTask = computed(() => (activeTab.value === "material" ? latestMaterialTask.value : latestTopicTask.value));
 
 const currentTabStatus = computed(() => {
@@ -153,6 +155,10 @@ async function bootstrap(): Promise<void> {
 
 async function loadSettings(): Promise<void> {
   settings.value = await desktopApi.getContentStudioSettings();
+  topicAdvancedSettings.value = {
+    ...DEFAULT_TOPIC_ADVANCED_SETTINGS,
+    ...(settings.value.topicAdvanced ?? {})
+  };
 }
 
 async function loadStatus(): Promise<void> {
@@ -564,20 +570,18 @@ function openTopicAdvancedSettings(): void {
   topicAdvancedModalOpen.value = true;
 }
 
-function saveTopicAdvancedSettings(nextSettings: {
-  reviewRounds: number;
-  targetReader: string;
-  writingStyle: string;
-  wordRange: string;
-  generateTitleCandidates: boolean;
-  generateCoverText: boolean;
-  generateImagePlan: boolean;
-}): void {
+async function saveTopicAdvancedSettings(nextSettings: TopicAdvancedSettings): Promise<void> {
   topicAdvancedSettings.value = {
     ...nextSettings
   };
+  if (settings.value) {
+    settings.value = await desktopApi.saveContentStudioSettings({
+      ...settings.value,
+      topicAdvanced: { ...nextSettings }
+    });
+  }
   topicAdvancedModalOpen.value = false;
-  pageNotice.value = "话题成文高级设置已更新。";
+  pageNotice.value = "话题成文高级设置已保存。";
 }
 
 function openTopicRunLog(): void {

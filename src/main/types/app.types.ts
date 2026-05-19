@@ -17,6 +17,7 @@ import type {
   ContentStudioTopicProgress,
   MaterialRewriteInput,
   MaterialSourceType,
+  TopicAdvancedSettings,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -40,6 +41,7 @@ export type {
   ContentStudioTopicProgress,
   MaterialRewriteInput,
   MaterialSourceType,
+  TopicAdvancedSettings,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";

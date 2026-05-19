@@ -305,7 +305,7 @@ export class OpenCliWebLlmService {
     workingDir?: string,
     preserveUrls = false
   ): Promise<void> {
-    const normalizedPrompt = this.normalizePromptForTransport(prompt, preserveUrls);
+    const normalizedPrompt = prompt; // normalizePromptForTransport commented out
     const debugPromptPath = await this.writeDebugPrompt(normalizedPrompt, workingDir);
     const tempBaseDir = join(workingDir || process.cwd(), OPENCLI_PROMPT_DEBUG_DIR, "tmp");
     await mkdir(tempBaseDir, { recursive: true });
@@ -345,7 +345,13 @@ export class OpenCliWebLlmService {
 
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      const messages = await this.readMessages(provider, profile, workingDir);
+      let messages: OpenCliReadMessage[] = [];
+      try {
+        messages = await this.readMessages(provider, profile, workingDir);
+        console.log("Messages:", JSON.stringify(messages, null, 2));
+      } catch {
+        // Ignore readMessages errors and continue polling
+      }
       const latestAssistant = this.getLatestAssistantText(messages);
       if (!latestAssistant) {
         continue;
@@ -364,6 +370,7 @@ export class OpenCliWebLlmService {
       const normalizedJson = this.normalizeJsonText(latestAssistant);
       if (normalizedJson) {
         if (normalizedJson === lastJsonNormalized) {
+          console.log("normalizedJson === lastJsonNormalized:", normalizedJson === lastJsonNormalized, "jsonStableRounds:", jsonStableRounds, "lastJsonNormalized:", lastJsonNormalized);
           jsonStableRounds += 1;
           const settled = Date.now() - lastJsonChangedAt >= minJsonSettleMs;
           if (jsonStableRounds >= 2 && stableRounds >= 2 && settled) {
@@ -538,8 +545,8 @@ export class OpenCliWebLlmService {
     }
 
     try {
-      const parsed = parseOpenCliModelJson(normalized);
-      return JSON.stringify(parsed);
+      //const parsed = parseOpenCliModelJson(normalized);
+      return JSON.stringify(normalized);
     } catch {
       return "";
     }

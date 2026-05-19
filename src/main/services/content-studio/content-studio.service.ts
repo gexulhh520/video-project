@@ -1,4 +1,4 @@
-﻿import { parseOpenCliJson, parseOpenCliModelJson, repairWebLlmJsonText } from "../opencli/opencli-output-parser";
+import { parseOpenCliJson, parseOpenCliModelJson, repairWebLlmJsonText } from "../opencli/opencli-output-parser";
 import type {
   ContentStudioArticle,
   ContentStudioArticleParagraph,
@@ -950,7 +950,7 @@ export class ContentStudioService {
     raw: string,
     maxMaterialCount: number
   ): { selectedTopic: TopicSelectedTopic; researchPlan: TopicResearchPlanItem[] } {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
     const selectedRaw = (parsed.selectedTopic ?? {}) as Record<string, unknown>;
     const selectedTopic: TopicSelectedTopic = {
       title: String(selectedRaw.title || "").trim() || "未命名选题",
@@ -981,7 +981,7 @@ export class ContentStudioService {
     item: TopicResearchPlanItem,
     maxWords: number
   ): TopicResearchMaterialCard {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
     const summaryRaw = String(parsed.summary || "").trim();
     const limitedSummary = summaryRaw.length > maxWords * 2 ? summaryRaw.slice(0, maxWords * 2) : summaryRaw;
     return {
@@ -1003,7 +1003,7 @@ export class ContentStudioService {
     fallbackTopic: string,
     cards: TopicResearchMaterialCard[]
   ): TopicMergedMaterial {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(repairWebLlmJsonText(raw));
+    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
     return {
       topic: String(parsed.topic || "").trim() || fallbackTopic,
       confirmedFacts: this.toStringArray(parsed.confirmedFacts),
@@ -1303,7 +1303,7 @@ export class ContentStudioService {
   }
 
   private collectArticleJsonCandidates(rawOutput: string): string[] {
-    const text = repairWebLlmJsonText(String(rawOutput || "").trim());
+    const text = String(rawOutput || "").trim(); // repairWebLlmJsonText commented out
     if (!text) {
       return [];
     }

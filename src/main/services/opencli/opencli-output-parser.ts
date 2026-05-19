@@ -46,9 +46,9 @@ export function getFirstConnectedProfile(output: string): string | undefined {
 }
 
 export function parseOpenCliJson<T = unknown>(output: string): T {
-  const text = repairWebLlmJsonText(sanitizeJsonText(output));
-  const firstObject = extractFirstCompleteJsonObject(text);
-  const candidates = [text, firstObject, ...extractJsonCandidates(text)].filter(
+  const text = output; // sanitizeJsonText commented out
+  // const firstObject = extractFirstCompleteJsonObject(text);
+  const candidates = [text, /* firstObject, */ ...extractJsonCandidates(text)].filter(
     (candidate): candidate is string => Boolean(candidate && candidate.trim())
   );
 
@@ -77,8 +77,8 @@ export function repairWebLlmJsonText(text: string): string {
 export function parseOpenCliModelJson<T = unknown>(output: string): T {
   const text = sanitizeModelJsonText(output);
   const codeBlockText = extractCodeBlockJsonText(text);
-  const firstObject = extractFirstCompleteJsonObject(text);
-  const candidates = [text, codeBlockText, firstObject, ...extractJsonCandidates(text)].filter(
+  // const firstObject = extractFirstCompleteJsonObject(text);
+  const candidates = [text, codeBlockText, /* firstObject, */ ...extractJsonCandidates(text)].filter(
     (candidate): candidate is string => Boolean(candidate && candidate.trim())
   );
 
@@ -150,15 +150,16 @@ function sanitizeJsonText(output: string): string {
 }
 
 function sanitizeModelJsonText(output: string): string {
-  const repaired = repairWebLlmJsonText(output);
-  return repaired;
+  // const repaired = repairWebLlmJsonText(output);
+  // return repaired;
+  return output;
 }
 
 function parseJsonMaybeString<T = unknown>(candidate: string): T {
   const first = JSON.parse(candidate);
 
   if (typeof first === "string") {
-    return JSON.parse(repairWebLlmJsonText(first)) as T;
+    return JSON.parse(first) as T; // repairWebLlmJsonText commented out
   }
 
   return first as T;
@@ -187,8 +188,9 @@ function extractCodeBlockJsonText(text: string): string | null {
   if (!codeBlockMatch?.[1]) {
     return null;
   }
-  const repaired = repairWebLlmJsonText(codeBlockMatch[1]);
-  return repaired || null;
+  // const repaired = repairWebLlmJsonText(codeBlockMatch[1]);
+  // return repaired || null;
+  return codeBlockMatch[1] || null;
 }
 
 function extractFirstCompleteJsonObject(text: string): string | null {

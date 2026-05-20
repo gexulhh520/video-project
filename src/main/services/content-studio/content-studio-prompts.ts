@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ContentStudioMaterialPack,
   MaterialRewriteInput,
   TopicCreateInput,
@@ -337,15 +337,22 @@ export function buildTopicResearchPlanPrompt(input: TopicCreateInput, roles?: To
   return [
     `你是内容创作工作台中的模型A，角色是${modelARole}。`,
     "先做选题研究，不要直接写文章。",
-    "输出严格 JSON，字段：selectedTopic、researchPlan。",
-    `researchPlan 长度必须 <= ${maxMaterialCount}。`,
-    "researchPlan 每项必须包含 materialId/query/purpose/preferredSourceType/required/riskNotes。",
-    "preferredSourceType 仅允许 official|media|community|case|industry|other。",
-    "selectedTopic 包含 title/coreThesis/contentType/targetPlatform/reason。",
-    "回复只能是一个 JSON 对象，不要 markdown。",
+    "请使用严格的 JSON 格式输出，不要输出 Markdown。",
+    "",
+    "输出字段：",
+    "- selectedTopic: { title, coreThesis, contentType, targetPlatform, reason }",
+    "- researchPlan: 数组，每个元素包含 { materialId, query, purpose, preferredSourceType, required }",
+    "- researchPlan 条数不超过 ${maxMaterialCount} 条",
+    "",
+    "preferredSourceType 可选值：official|media|community|case|industry|other",
+    "",
+    "要求：",
+    "- 每条素材必须有明确的 purpose",
+    "- preferredSourceType 优先选择官方来源、媒体报道、行业讨论等",
+    "",
     "用户输入：",
     buildTopicContext(input)
-  ].join("\n\n");
+  ].join("\n");
 }
 
 export function buildTopicResearchMaterialPrompt(
@@ -360,18 +367,36 @@ export function buildTopicResearchMaterialPrompt(
   return [
     "你现在执行单条素材检索与总结。",
     "你可以先检索公开网页，再输出素材卡。",
-    "输出严格 JSON，不要 markdown。",
-    "字段必须包含：materialId/query/title/sourceType/sourceUrl/summary/usablePoints/riskNotes/confidence。",
-    `summary 必须控制在 ${maxWords} 字以内。`,
-    `sourceUrl ${requireSourceUrl ? "必须提供有效链接" : "可为空字符串"}。`,
-    `riskNotes ${requireRiskNotes ? "必须至少 1 条（如无风险可写“暂无明显风险”）" : "可为空数组"}。`,
-    "sourceType 仅允许 official|media|community|case|industry|other。",
-    "confidence 仅允许 high|medium|low。",
-    "如果没找到可靠素材，不要编造：confidence=low，并在 riskNotes 说明原因。",
+    "请使用 Markdown 格式输出，不要输出 JSON。",
+    "",
+    "输出格式示例：",
+    `# 素材卡 ${planItem.materialId}`,
+    "query：本次查找的问题或关键词",
+    "标题：素材标题",
+    "来源类型：official|media|community|case|industry|other",
+    "来源链接：https://...",
+    "可信度：high|medium|low",
+    "",
+    "## 摘要",
+    `${maxWords} 字以内的摘要内容...`,
+    "",
+    "## 可用观点",
+    "- 观点1",
+    "- 观点2",
+    "",
+    "## 风险提醒",
+    requireRiskNotes ? "- 至少列出1条风险提醒（如无风险可写'暂无明显风险'）" : "- 可选",
+    "",
+    "要求：",
+    "- 如果没找到可靠素材，不要编造，可信度设为 low，并在风险提醒中说明原因",
+    `- 来源链接${requireSourceUrl ? "必须提供有效链接" : "可为空"}`,
+    "- 区分官方信息、媒体报道、用户反馈、个人观点",
+    "- 用户反馈不能当成官方结论",
+    "",
     `选题：${JSON.stringify(selectedTopic)}`,
     `当前计划项：${JSON.stringify(planItem)}`,
-    `已完成素材卡（供去重与避免重复）：${JSON.stringify(priorCards)}`
-  ].join("\n\n");
+    `已完成素材卡（供去重与避免重复）：${JSON.stringify(priorCards.map(c => c.materialId))}`
+  ].join("\n");
 }
 
 export function buildTopicMaterialMergePrompt(
@@ -381,13 +406,39 @@ export function buildTopicMaterialMergePrompt(
 ): string {
   return [
     "请基于已收集素材卡合并素材包。",
-    "输出严格 JSON，字段：topic/confirmedFacts/creatorProblems/controversies/contentGaps/usableArguments/riskBoundaries/sourceSummary。",
-    "sourceSummary 每项包含 materialId/title/sourceUrl/confidence。",
-    "不要新增未在素材卡中出现的事实。",
+    "请使用 Markdown 格式输出，不要输出 JSON。",
+    "",
+    "输出格式示例：",
+    "# 素材包合并",
+    "",
+    "## 可确认事实",
+    "- 事实1",
+    "- 事实2",
+    "",
+    "## 用户/创作者问题",
+    "- 问题1",
+    "",
+    "## 争议点",
+    "- 争议1",
+    "",
+    "## 内容市场缺口",
+    "- 缺口1",
+    "",
+    "## 可用论点",
+    "- 论点1",
+    "",
+    "## 风险边界",
+    "- 不能直接断言的内容",
+    "",
+    "## 来源摘要",
+    "- m1：标题 / 来源链接 / 可信度",
+    "",
+    "要求：不要新增未在素材卡中出现的事实。",
+    "",
     `用户输入：${buildTopicContext(input)}`,
     `选题：${JSON.stringify(selectedTopic)}`,
-    `素材卡：${JSON.stringify(cards)}`
-  ].join("\n\n");
+    `素材卡：${JSON.stringify(cards.map(c => ({ materialId: c.materialId, title: c.title, rawText: c.rawText })))}`
+  ].join("\n");
 }
 
 export function buildTopicDraftFromResearchPrompt(

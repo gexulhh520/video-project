@@ -1,4 +1,4 @@
-﻿import type { OpenCliProvider, OpenCliProviderStatus } from "./app.types";
+import type { OpenCliProvider, OpenCliProviderStatus } from "./app.types";
 
 export type ContentStudioTabKey = "topic" | "material" | "hot" | "layout";
 
@@ -75,7 +75,7 @@ export type TopicResearchPlanItem = {
   purpose: string;
   preferredSourceType: "official" | "media" | "community" | "case" | "industry" | "other";
   required: boolean;
-  riskNotes: string[];
+  rawText?: string;
 };
 
 export type TopicSelectedTopic = {
@@ -84,6 +84,7 @@ export type TopicSelectedTopic = {
   contentType: string;
   targetPlatform: string;
   reason: string;
+  rawText?: string;
 };
 
 export type TopicResearchMaterialCard = {
@@ -98,6 +99,7 @@ export type TopicResearchMaterialCard = {
   confidence: "high" | "medium" | "low";
   status: "success" | "failed" | "skipped";
   errorMessage?: string;
+  rawText?: string;
 };
 
 export type TopicMergedMaterial = {
@@ -114,6 +116,7 @@ export type TopicMergedMaterial = {
     sourceUrl?: string;
     confidence: "high" | "medium" | "low";
   }>;
+  rawText?: string;
 };
 
 export type ContentStudioTopicStepType =

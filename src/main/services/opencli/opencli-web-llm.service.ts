@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   ContentBlock,
   OpenCliProvider,
   OpenCliProviderStatus,
@@ -340,7 +340,15 @@ export class OpenCliWebLlmService {
     let lastJsonRaw = "";
     let jsonStableRounds = 0;
     let lastJsonChangedAt = 0;
+    
     const minJsonSettleMs = Math.max(intervalMs * 3, 6000);
+    const minNonJsonSettleMs = Math.max(intervalMs * 5, 10000);
+    const minStableRounds = 3;
+    const minJsonStableRounds = 3;
+    
+    let lastLength = 0;
+    let lengthStableRounds = 0;
+    let lastContentChangedAt = 0;
 
     while (Date.now() - startedAt < timeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
@@ -354,6 +362,17 @@ export class OpenCliWebLlmService {
       const latestAssistant = this.getLatestAssistantText(messages);
       if (!latestAssistant) {
         continue;
+      }
+
+      const currentLength = latestAssistant.length;
+      const lengthChanged = Math.abs(currentLength - lastLength) > 0;
+      
+      if (lengthChanged) {
+        lastLength = currentLength;
+        lengthStableRounds = 0;
+        lastContentChangedAt = Date.now();
+      } else {
+        lengthStableRounds += 1;
       }
 
       if (latestAssistant === lastAssistant) {
@@ -372,7 +391,8 @@ export class OpenCliWebLlmService {
           console.log("normalizedJson === lastJsonNormalized:", normalizedJson === lastJsonNormalized, "jsonStableRounds:", jsonStableRounds, "lastJsonNormalized:", lastJsonNormalized);
           jsonStableRounds += 1;
           const settled = Date.now() - lastJsonChangedAt >= minJsonSettleMs;
-          if (jsonStableRounds >= 2 && stableRounds >= 2 && settled) {
+          const lengthSettled = lengthStableRounds >= minStableRounds;
+          if (jsonStableRounds >= minJsonStableRounds && stableRounds >= minStableRounds && settled && lengthSettled) {
             return latestAssistant;
           }
         } else {
@@ -384,7 +404,9 @@ export class OpenCliWebLlmService {
         continue;
       }
 
-      if (stableRounds >= 2) {
+      // For non-JSON responses (Markdown/text), require more stable rounds and longer settle time
+      const contentSettled = Date.now() - lastContentChangedAt >= minNonJsonSettleMs;
+      if (stableRounds >= minStableRounds && lengthStableRounds >= minStableRounds && contentSettled) {
         if (acceptResponse && !acceptResponse(latestAssistant)) {
           continue;
         }

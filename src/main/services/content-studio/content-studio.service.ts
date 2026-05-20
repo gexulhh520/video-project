@@ -950,30 +950,132 @@ export class ContentStudioService {
     raw: string,
     maxMaterialCount: number
   ): { selectedTopic: TopicSelectedTopic; researchPlan: TopicResearchPlanItem[] } {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
-    const selectedRaw = (parsed.selectedTopic ?? {}) as Record<string, unknown>;
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = parseOpenCliJson<Record<string, unknown>>(raw);
+    } catch {
+      parsed = null;
+    }
+    
     const selectedTopic: TopicSelectedTopic = {
-      title: String(selectedRaw.title || "").trim() || "未命名选题",
-      coreThesis: String(selectedRaw.coreThesis || "").trim() || "待补充",
-      contentType: String(selectedRaw.contentType || "").trim() || "观点文",
-      targetPlatform: String(selectedRaw.targetPlatform || "").trim() || "公众号",
-      reason: String(selectedRaw.reason || "").trim() || "基于话题与用户需求"
+      title: "未命名选题",
+      coreThesis: "待补充",
+      contentType: "观点文",
+      targetPlatform: "公众号",
+      reason: "基于话题与用户需求",
+      rawText: raw
     };
-    const planRaw = Array.isArray(parsed.researchPlan) ? parsed.researchPlan : [];
-    const researchPlan = planRaw
-      .slice(0, Math.max(1, Math.min(10, maxMaterialCount)))
-      .map((item, index) => {
-        const value = (item ?? {}) as Record<string, unknown>;
-        return {
-          materialId: String(value.materialId || `m${index + 1}`).trim() || `m${index + 1}`,
-          query: String(value.query || "").trim() || selectedTopic.title,
-          purpose: String(value.purpose || "").trim() || "用于支撑核心论点",
-          preferredSourceType: this.normalizeSourceType(value.preferredSourceType),
-          required: typeof value.required === "boolean" ? value.required : true,
-          riskNotes: Array.isArray(value.riskNotes) ? value.riskNotes.map((x) => String(x || "").trim()).filter(Boolean) : []
-        } as TopicResearchPlanItem;
-      });
+    
+    if (parsed) {
+      const selectedRaw = (parsed.selectedTopic ?? {}) as Record<string, unknown>;
+      selectedTopic.title = String(selectedRaw.title || "").trim() || "未命名选题";
+      selectedTopic.coreThesis = String(selectedRaw.coreThesis || "").trim() || "待补充";
+      selectedTopic.contentType = String(selectedRaw.contentType || "").trim() || "观点文";
+      selectedTopic.targetPlatform = String(selectedRaw.targetPlatform || "").trim() || "公众号";
+      selectedTopic.reason = String(selectedRaw.reason || "").trim() || "基于话题与用户需求";
+      
+      const planRaw = Array.isArray(parsed.researchPlan) ? parsed.researchPlan : [];
+      const researchPlan = planRaw
+        .slice(0, Math.max(1, Math.min(10, maxMaterialCount)))
+        .map((item, index) => {
+          const value = (item ?? {}) as Record<string, unknown>;
+          return {
+            materialId: String(value.materialId || `m${index + 1}`).trim() || `m${index + 1}`,
+            query: String(value.query || "").trim() || selectedTopic.title,
+            purpose: String(value.purpose || "").trim() || "用于支撑核心论点",
+            preferredSourceType: this.normalizeSourceType(value.preferredSourceType),
+            required: typeof value.required === "boolean" ? value.required : true,
+            rawText: raw
+          } as TopicResearchPlanItem;
+        });
+      return { selectedTopic, researchPlan };
+    }
+    
+    const researchPlan = this.parseResearchPlanFromMarkdown(raw, maxMaterialCount, selectedTopic);
     return { selectedTopic, researchPlan };
+  }
+
+  private parseResearchPlanFromMarkdown(
+    raw: string,
+    maxMaterialCount: number,
+    selectedTopic: TopicSelectedTopic
+  ): TopicResearchPlanItem[] {
+    const lines = raw.split(/\r?\n/);
+    const plan: TopicResearchPlanItem[] = [];
+    
+    const titleMatch = raw.match(/标题[：:]\s*(.+)/);
+    if (titleMatch) selectedTopic.title = titleMatch[1].trim();
+    
+    const coreThesisMatch = raw.match(/核心立意[：:]\s*(.+)/);
+    if (coreThesisMatch) selectedTopic.coreThesis = coreThesisMatch[1].trim();
+    
+    const platformMatch = raw.match(/适合平台[：:]\s*(.+)/);
+    if (platformMatch) selectedTopic.targetPlatform = platformMatch[1].trim();
+    
+    const reasonMatch = raw.match(/推荐理由[：:]\s*(.+)/);
+    if (reasonMatch) selectedTopic.reason = reasonMatch[1].trim();
+    
+    let currentMaterial: Partial<TopicResearchPlanItem> | null = null;
+    
+    for (const line of lines) {
+      const trimmed = line.trim();
+      const materialIdMatch = trimmed.match(/materialId[：:]\s*(\S+)/i);
+      if (materialIdMatch) {
+        if (currentMaterial?.materialId) {
+          plan.push(this.finalizePlanItem(currentMaterial, selectedTopic.title, raw));
+        }
+        currentMaterial = { materialId: materialIdMatch[1], rawText: raw };
+        continue;
+      }
+      
+      if (!currentMaterial) continue;
+      
+      const queryMatch = trimmed.match(/query[：:]\s*(.+)/i);
+      if (queryMatch) currentMaterial.query = queryMatch[1].trim();
+      
+      const purposeMatch = trimmed.match(/purpose[：:]\s*(.+)/i);
+      if (purposeMatch) currentMaterial.purpose = purposeMatch[1].trim();
+      
+      const sourceTypeMatch = trimmed.match(/preferredSourceType[：:]\s*(\w+)/i);
+      if (sourceTypeMatch) currentMaterial.preferredSourceType = this.normalizeSourceType(sourceTypeMatch[1]);
+      
+      const requiredMatch = trimmed.match(/required[：:]\s*(true|false)/i);
+      if (requiredMatch) currentMaterial.required = requiredMatch[1].toLowerCase() === "true";
+    }
+    
+    if (currentMaterial?.materialId) {
+      plan.push(this.finalizePlanItem(currentMaterial, selectedTopic.title, raw));
+    }
+    
+    if (plan.length === 0) {
+      for (let i = 1; i <= Math.min(maxMaterialCount, 3); i++) {
+        plan.push({
+          materialId: `m${i}`,
+          query: selectedTopic.title,
+          purpose: "用于支撑核心论点",
+          preferredSourceType: "other",
+          required: true,
+          rawText: raw
+        });
+      }
+    }
+    
+    return plan.slice(0, maxMaterialCount);
+  }
+
+  private finalizePlanItem(
+    partial: Partial<TopicResearchPlanItem>,
+    fallbackQuery: string,
+    rawText: string
+  ): TopicResearchPlanItem {
+    return {
+      materialId: partial.materialId || `m${Date.now()}`,
+      query: partial.query || fallbackQuery,
+      purpose: partial.purpose || "用于支撑核心论点",
+      preferredSourceType: partial.preferredSourceType || "other",
+      required: partial.required ?? true,
+      rawText: rawText
+    };
   }
 
   private parseTopicResearchMaterialCard(
@@ -981,21 +1083,88 @@ export class ContentStudioService {
     item: TopicResearchPlanItem,
     maxWords: number
   ): TopicResearchMaterialCard {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
-    const summaryRaw = String(parsed.summary || "").trim();
-    const limitedSummary = summaryRaw.length > maxWords * 2 ? summaryRaw.slice(0, maxWords * 2) : summaryRaw;
-    return {
-      materialId: String(parsed.materialId || item.materialId).trim() || item.materialId,
-      query: String(parsed.query || item.query).trim() || item.query,
-      title: String(parsed.title || "").trim() || `${item.materialId} 素材`,
-      sourceType: this.normalizeSourceType(parsed.sourceType),
-      sourceUrl: String(parsed.sourceUrl || "").trim() || undefined,
-      summary: limitedSummary || "未获得可靠摘要",
-      usablePoints: Array.isArray(parsed.usablePoints) ? parsed.usablePoints.map((x) => String(x || "").trim()).filter(Boolean) : [],
-      riskNotes: Array.isArray(parsed.riskNotes) ? parsed.riskNotes.map((x) => String(x || "").trim()).filter(Boolean) : [],
-      confidence: this.normalizeConfidence(parsed.confidence),
-      status: "success"
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = parseOpenCliJson<Record<string, unknown>>(raw);
+    } catch {
+      parsed = null;
+    }
+    
+    if (parsed) {
+      const summaryRaw = String(parsed.summary || "").trim();
+      const limitedSummary = summaryRaw.length > maxWords * 2 ? summaryRaw.slice(0, maxWords * 2) : summaryRaw;
+      return {
+        materialId: String(parsed.materialId || item.materialId).trim() || item.materialId,
+        query: String(parsed.query || item.query).trim() || item.query,
+        title: String(parsed.title || "").trim() || `${item.materialId} 素材`,
+        sourceType: this.normalizeSourceType(parsed.sourceType),
+        sourceUrl: String(parsed.sourceUrl || "").trim() || undefined,
+        summary: limitedSummary || "未获得可靠摘要",
+        usablePoints: Array.isArray(parsed.usablePoints) ? parsed.usablePoints.map((x) => String(x || "").trim()).filter(Boolean) : [],
+        riskNotes: Array.isArray(parsed.riskNotes) ? parsed.riskNotes.map((x) => String(x || "").trim()).filter(Boolean) : [],
+        confidence: this.normalizeConfidence(parsed.confidence),
+        status: "success",
+        rawText: raw
+      };
+    }
+    
+    return this.parseMaterialCardFromMarkdown(raw, item, maxWords);
+  }
+
+  private parseMaterialCardFromMarkdown(
+    raw: string,
+    item: TopicResearchPlanItem,
+    maxWords: number
+  ): TopicResearchMaterialCard {
+    const card: TopicResearchMaterialCard = {
+      materialId: item.materialId,
+      query: item.query,
+      title: `${item.materialId} 素材`,
+      sourceType: "other",
+      sourceUrl: undefined,
+      summary: raw.slice(0, maxWords * 2) || "未获得可靠摘要",
+      usablePoints: [],
+      riskNotes: [],
+      confidence: "medium",
+      status: "success",
+      rawText: raw
     };
+    
+    const titleMatch = raw.match(/标题[：:]\s*(.+)/);
+    if (titleMatch) card.title = titleMatch[1].trim();
+    
+    const sourceTypeMatch = raw.match(/来源类型[：:]\s*(\w+)/);
+    if (sourceTypeMatch) card.sourceType = this.normalizeSourceType(sourceTypeMatch[1]);
+    
+    const sourceUrlMatch = raw.match(/来源链接[：:]\s*(\S+)/);
+    if (sourceUrlMatch) card.sourceUrl = sourceUrlMatch[1].trim();
+    
+    const confidenceMatch = raw.match(/可信度[：:]\s*(high|medium|low)/i);
+    if (confidenceMatch) card.confidence = this.normalizeConfidence(confidenceMatch[1]);
+    
+    const summaryMatch = raw.match(/## 摘要\s*([\s\S]*?)(?=##|$)/);
+    if (summaryMatch) {
+      const summary = summaryMatch[1].trim();
+      card.summary = summary.length > maxWords * 2 ? summary.slice(0, maxWords * 2) : summary;
+    }
+    
+    const pointsMatch = raw.match(/## 可用观点\s*([\s\S]*?)(?=##|$)/);
+    if (pointsMatch) {
+      card.usablePoints = pointsMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const riskMatch = raw.match(/## 风险提醒\s*([\s\S]*?)(?=##|$)/);
+    if (riskMatch) {
+      card.riskNotes = riskMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    return card;
   }
 
   private parseTopicMergedMaterial(
@@ -1003,22 +1172,109 @@ export class ContentStudioService {
     fallbackTopic: string,
     cards: TopicResearchMaterialCard[]
   ): TopicMergedMaterial {
-    const parsed = parseOpenCliJson<Record<string, unknown>>(raw); // repairWebLlmJsonText commented out
-    return {
-      topic: String(parsed.topic || "").trim() || fallbackTopic,
-      confirmedFacts: this.toStringArray(parsed.confirmedFacts),
-      creatorProblems: this.toStringArray(parsed.creatorProblems),
-      controversies: this.toStringArray(parsed.controversies),
-      contentGaps: this.toStringArray(parsed.contentGaps),
-      usableArguments: this.toStringArray(parsed.usableArguments),
-      riskBoundaries: this.toStringArray(parsed.riskBoundaries),
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = parseOpenCliJson<Record<string, unknown>>(raw);
+    } catch {
+      parsed = null;
+    }
+    
+    if (parsed) {
+      return {
+        topic: String(parsed.topic || "").trim() || fallbackTopic,
+        confirmedFacts: this.toStringArray(parsed.confirmedFacts),
+        creatorProblems: this.toStringArray(parsed.creatorProblems),
+        controversies: this.toStringArray(parsed.controversies),
+        contentGaps: this.toStringArray(parsed.contentGaps),
+        usableArguments: this.toStringArray(parsed.usableArguments),
+        riskBoundaries: this.toStringArray(parsed.riskBoundaries),
+        sourceSummary: cards.map((card) => ({
+          materialId: card.materialId,
+          title: card.title,
+          sourceUrl: card.sourceUrl,
+          confidence: card.confidence
+        })),
+        rawText: raw
+      };
+    }
+    
+    return this.parseMergedMaterialFromMarkdown(raw, fallbackTopic, cards);
+  }
+
+  private parseMergedMaterialFromMarkdown(
+    raw: string,
+    fallbackTopic: string,
+    cards: TopicResearchMaterialCard[]
+  ): TopicMergedMaterial {
+    const result: TopicMergedMaterial = {
+      topic: fallbackTopic,
+      confirmedFacts: [],
+      creatorProblems: [],
+      controversies: [],
+      contentGaps: [],
+      usableArguments: [],
+      riskBoundaries: [],
       sourceSummary: cards.map((card) => ({
         materialId: card.materialId,
         title: card.title,
         sourceUrl: card.sourceUrl,
         confidence: card.confidence
-      }))
+      })),
+      rawText: raw
     };
+    
+    const topicMatch = raw.match(/话题[：:]\s*(.+)/);
+    if (topicMatch) result.topic = topicMatch[1].trim();
+    
+    const factsMatch = raw.match(/## 可确认事实\s*([\s\S]*?)(?=##|$)/);
+    if (factsMatch) {
+      result.confirmedFacts = factsMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const problemsMatch = raw.match(/## 用户[\/\s]*创作者问题\s*([\s\S]*?)(?=##|$)/);
+    if (problemsMatch) {
+      result.creatorProblems = problemsMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const controversiesMatch = raw.match(/## 争议点\s*([\s\S]*?)(?=##|$)/);
+    if (controversiesMatch) {
+      result.controversies = controversiesMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const gapsMatch = raw.match(/## 内容市场缺口\s*([\s\S]*?)(?=##|$)/);
+    if (gapsMatch) {
+      result.contentGaps = gapsMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const argumentsMatch = raw.match(/## 可用论点\s*([\s\S]*?)(?=##|$)/);
+    if (argumentsMatch) {
+      result.usableArguments = argumentsMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    const riskMatch = raw.match(/## 风险边界\s*([\s\S]*?)(?=##|$)/);
+    if (riskMatch) {
+      result.riskBoundaries = riskMatch[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+    }
+    
+    return result;
   }
 
   private toStringArray(value: unknown): string[] {

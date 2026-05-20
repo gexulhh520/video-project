@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch } from "vue";
 
 type TopicAdvancedSettings = {
@@ -9,6 +9,7 @@ type TopicAdvancedSettings = {
   generateTitleCandidates: boolean;
   generateCoverText: boolean;
   generateImagePlan: boolean;
+  imagePlanRequirements: string;
   enableTopicResearch: boolean;
   maxMaterialCount: number;
   materialSummaryMaxWords: number;
@@ -35,6 +36,7 @@ const form = ref<TopicAdvancedSettings>({
   generateTitleCandidates: true,
   generateCoverText: true,
   generateImagePlan: true,
+  imagePlanRequirements: "",
   enableTopicResearch: false,
   maxMaterialCount: 5,
   materialSummaryMaxWords: 500,
@@ -67,6 +69,7 @@ function handleSave(): void {
     generateTitleCandidates: form.value.generateTitleCandidates,
     generateCoverText: form.value.generateCoverText,
     generateImagePlan: form.value.generateImagePlan,
+    imagePlanRequirements: form.value.imagePlanRequirements.trim(),
     enableTopicResearch: form.value.enableTopicResearch,
     maxMaterialCount: Math.min(10, Math.max(1, Math.floor(form.value.maxMaterialCount || 5))),
     materialSummaryMaxWords: Math.min(2000, Math.max(100, Math.floor(form.value.materialSummaryMaxWords || 500))),
@@ -118,6 +121,11 @@ function handleSave(): void {
         <label class="switch-field">
           <input v-model="form.generateImagePlan" type="checkbox" />
           <span>生成配图计划</span>
+        </label>
+        <label v-if="form.generateImagePlan" class="field">
+          <span>配图要求</span>
+          <input v-model="form.imagePlanRequirements" type="text" placeholder="例如：风格统一、色调明亮、适合公众号配图" />
+          <small class="hint">对配图风格、色调、尺寸等的要求（可选）</small>
         </label>
 
         <label class="switch-field">

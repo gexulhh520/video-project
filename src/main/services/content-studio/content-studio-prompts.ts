@@ -27,7 +27,7 @@ function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
   const lines: string[] = [
     "你必须输出严格合法 JSON，不要输出 Markdown 代码块，不要解释。",
     "整个回复只能包含一个最终版 JSON 对象，不要先输出草稿 JSON 再修正。",
-    "基础字段固定包含：title、paragraphs、tags、riskNotes。",
+    "基础字段固定包含：title、paragraphs、tags。",
     "paragraphs 每项必须包含 paragraphId、text。"
   ];
 
@@ -44,9 +44,19 @@ function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
   }
 
   if (input.generateImagePlan) {
-    lines.push("用户已开启配图计划：尽量为每段输出 imagePlan，结构为 {type,prompt?,caption?}，type 仅允许 source_image|ai_generated|infographic|none。");
+    let imagePlanLine = "用户已开启配图计划：必须为每段输出 imagePlan 字段，结构为 {type,prompt,caption}，type 仅允许 source_image|ai_generated|infographic|none。";
+    if (input.imagePlanRequirements) {
+      imagePlanLine += ` 配图要求：${input.imagePlanRequirements}`;
+    }
+    lines.push(imagePlanLine);
   } else {
     lines.push("用户关闭配图计划：不要输出 imagePlan 字段。");
+  }
+
+  if (input.requireRiskNotes) {
+    lines.push("用户要求输出风险提醒：必须输出 riskNotes 字段，值为字符串数组，例如 [\"风险1\", \"风险2\"]，不要输出单个字符串。");
+  } else {
+    lines.push("用户关闭风险提醒：不要输出 riskNotes 字段。");
   }
 
   lines.push("回复必须以 { 开头，以 } 结尾。");
@@ -54,7 +64,6 @@ function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
   lines.push("不要对 [ ] _ 进行反斜杠转义。");
   lines.push("数组必须直接写成 []，不能写成 \\[ \\]。");
   lines.push("字段值 source_image、ai_generated、infographic、none 必须原样输出，不能写成 source\\_image 或 ai\\_generated。");
-  lines.push("riskNotes 必须输出字符串数组，例如 [\"风险1\", \"风险2\"]，不要输出单个字符串。");
 
   return lines.join("\n");
 }

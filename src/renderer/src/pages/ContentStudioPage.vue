@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import type {
@@ -657,6 +657,7 @@ async function startTopicCreate(payload: {
     generateTitleCandidates: topicAdvancedSettings.value.generateTitleCandidates,
     generateCoverText: topicAdvancedSettings.value.generateCoverText,
     generateImagePlan: topicAdvancedSettings.value.generateImagePlan,
+    imagePlanRequirements: topicAdvancedSettings.value.imagePlanRequirements || undefined,
     enableTopicResearch: topicAdvancedSettings.value.enableTopicResearch,
     maxMaterialCount: topicAdvancedSettings.value.maxMaterialCount,
     materialSummaryMaxWords: topicAdvancedSettings.value.materialSummaryMaxWords,

@@ -1,4 +1,4 @@
-﻿import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { join } from "node:path";
 import type { OpenCliProvider, OpenCliRuntimeHealthStatus } from "../../types/app.types";
@@ -341,6 +341,7 @@ export class ContentStudioSettingsService {
         typeof settings?.generateImagePlan === "boolean"
           ? settings.generateImagePlan
           : DEFAULT_TOPIC_ADVANCED_SETTINGS.generateImagePlan,
+      imagePlanRequirements: settings?.imagePlanRequirements?.trim() || undefined,
       enableTopicResearch:
         typeof settings?.enableTopicResearch === "boolean"
           ? settings.enableTopicResearch

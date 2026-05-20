@@ -42,6 +42,7 @@ export type TopicAdvancedSettings = {
   generateTitleCandidates: boolean;
   generateCoverText: boolean;
   generateImagePlan: boolean;
+  imagePlanRequirements?: string;
   enableTopicResearch: boolean;
   maxMaterialCount: number;
   materialSummaryMaxWords: number;
@@ -61,6 +62,7 @@ export type TopicCreateInput = {
   generateTitleCandidates?: boolean;
   generateCoverText?: boolean;
   generateImagePlan?: boolean;
+  imagePlanRequirements?: string;
   enableTopicResearch?: boolean;
   maxMaterialCount?: number;
   materialSummaryMaxWords?: number;

@@ -51,12 +51,14 @@ export function parseOpenCliJson<T = unknown>(output: string): T {
   const candidates = [text, /* firstObject, */ ...extractJsonCandidates(text)].filter(
     (candidate): candidate is string => Boolean(candidate && candidate.trim())
   );
+  //console.log("candidates:", candidates);
 
   for (const candidate of candidates) {
     try {
+      //console.log("candidate:", candidate);
       return parseJsonMaybeString<T>(candidate);
-    } catch {
-      // Continue trying more candidates.
+    } catch (error) {
+      console.error("Failed to parse candidate:", candidate, "Error:", error);
     }
   }
 
@@ -152,11 +154,15 @@ function sanitizeJsonText(output: string): string {
 function sanitizeModelJsonText(output: string): string {
   // const repaired = repairWebLlmJsonText(output);
   // return repaired;
-  return output;
+  return output
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t');
 }
 
 function parseJsonMaybeString<T = unknown>(candidate: string): T {
   const first = JSON.parse(candidate);
+  console.log("first:", first);
 
   if (typeof first === "string") {
     return JSON.parse(first) as T; // repairWebLlmJsonText commented out
@@ -171,13 +177,17 @@ function extractJsonCandidates(text: string): string[] {
   const arrayStart = text.indexOf("[");
   const arrayEnd = text.lastIndexOf("]");
   if (arrayStart >= 0 && arrayEnd > arrayStart) {
-    candidates.push(text.slice(arrayStart, arrayEnd + 1));
+    const arrayCandidate = text.slice(arrayStart, arrayEnd + 1);
+    console.log("Extracted array candidate:", arrayCandidate);
+    candidates.push(arrayCandidate);
   }
 
   const objectStart = text.indexOf("{");
   const objectEnd = text.lastIndexOf("}");
   if (objectStart >= 0 && objectEnd > objectStart) {
-    candidates.push(text.slice(objectStart, objectEnd + 1));
+    const objectCandidate = text.slice(objectStart, objectEnd + 1);
+    console.log("Extracted object candidate:", objectCandidate);
+    candidates.push(objectCandidate);
   }
 
   return candidates;

@@ -73,7 +73,6 @@ const DEFAULT_EXTRACT_PROMPT =
   "请提取网页正文，删除导航、广告、评论、页脚、推荐内容和无关信息，只输出清洗后的正文。";
 const DEFAULT_EXTRACT_FROM_URL_PROMPT =
   "你是网页正文提取助手。请打开并读取下面这个链接，提取文章标题和完整正文。只保留标题、作者或来源、发布时间和正文段落，删除导航、广告、评论、推荐阅读、版权声明、登录提示和无关按钮文案。如果无法访问或没有正文，请输出空 body 并说明 reason。";
-const ARG_FILE_PREFIX = "__OPENCLI_ARG_FILE__:";
 const OPENCLI_PROMPT_DEBUG_DIR = ".cache/opencli-prompts";
 const MAX_REWRITE_TITLE_LENGTH = 40;
 
@@ -314,7 +313,7 @@ export class OpenCliWebLlmService {
     await writeFile(promptPath, normalizedPrompt, "utf8");
 
     try {
-      await this.runner.run(["--profile", profile, provider, "send", `${ARG_FILE_PREFIX}${promptPath}`], {
+      await this.runner.run(["--profile", profile, provider, "send", "--file-prompt", promptPath], {
         timeoutMs: 60000,
         cwd: workingDir
       });
@@ -413,13 +412,16 @@ export class OpenCliWebLlmService {
       timeoutMs: 60000,
       cwd: workingDir
     });
-    const payloadText = `${result.stdout}\n${result.stderr}`.trim();
+    const payloadText = result.stdout.trim();
+    //console.log("payloadText:", payloadText);
     if (!payloadText) {
       return [];
     }
 
     try {
+      //const parsed = JSON.parse(payloadText);
       const parsed = parseOpenCliJson<unknown>(payloadText);
+      console.log("parsed:", parsed);
       return this.extractMessages(parsed);
     } catch {
       return [];

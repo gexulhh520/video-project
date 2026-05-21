@@ -9,7 +9,7 @@ type TopicAdvancedSettings = {
   generateTitleCandidates: boolean;
   generateCoverText: boolean;
   generateImagePlan: boolean;
-  imagePlanRequirements: string;
+  imagePlanRequirements?: string;
   enableTopicResearch: boolean;
   maxMaterialCount: number;
   materialSummaryMaxWords: number;
@@ -69,7 +69,7 @@ function handleSave(): void {
     generateTitleCandidates: form.value.generateTitleCandidates,
     generateCoverText: form.value.generateCoverText,
     generateImagePlan: form.value.generateImagePlan,
-    imagePlanRequirements: form.value.imagePlanRequirements.trim(),
+    imagePlanRequirements: form.value.imagePlanRequirements?.trim() || "",
     enableTopicResearch: form.value.enableTopicResearch,
     maxMaterialCount: Math.min(10, Math.max(1, Math.floor(form.value.maxMaterialCount || 5))),
     materialSummaryMaxWords: Math.min(2000, Math.max(100, Math.floor(form.value.materialSummaryMaxWords || 500))),

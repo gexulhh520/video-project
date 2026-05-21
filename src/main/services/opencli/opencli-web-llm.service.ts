@@ -342,8 +342,8 @@ export class OpenCliWebLlmService {
     let lastJsonChangedAt = 0;
     
     const minJsonSettleMs = Math.max(intervalMs * 3, 6000);
-    const minNonJsonSettleMs = Math.max(intervalMs * 5, 10000);
-    const minStableRounds = 3;
+    const minNonJsonSettleMs = Math.max(intervalMs * 5, 15000);
+    const minStableRounds = 5;
     const minJsonStableRounds = 3;
     
     let lastLength = 0;

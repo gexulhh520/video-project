@@ -1,6 +1,7 @@
-﻿import { copyFile, rm } from "node:fs/promises";
+import { copyFile, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { clipboard, nativeImage } from "electron";
 import type {
   ContentStudioGenerateImageOptions,
   ContentStudioImageAsset,
@@ -77,6 +78,39 @@ export class ContentStudioLayoutService {
     const nextAsset: ContentStudioImageAsset = {
       assetId,
       sourceType: "local_upload",
+      fileName,
+      localPath: targetPath,
+      createdAt: new Date().toISOString()
+    };
+
+    return this.taskStore.saveTask({
+      ...task,
+      imageAssets: [...task.imageAssets, nextAsset]
+    });
+  }
+
+  async addClipboardImage(taskId: string): Promise<ContentStudioTask> {
+    const task = await this.taskStore.getTaskById(taskId);
+    if (!task) {
+      throw new Error("任务不存在");
+    }
+
+    const image = clipboard.readImage("clipboard");
+    if (image.isEmpty()) {
+      throw new Error("剪贴板中没有图片");
+    }
+
+    const taskDir = await this.taskStore.getTaskDirPath(taskId);
+    const imagesDir = join(taskDir, "images");
+    const assetId = randomUUID();
+    const fileName = `clipboard-${assetId.slice(0, 8)}.png`;
+    const targetPath = join(imagesDir, fileName);
+
+    await writeFile(targetPath, image.toPNG());
+
+    const nextAsset: ContentStudioImageAsset = {
+      assetId,
+      sourceType: "clipboard",
       fileName,
       localPath: targetPath,
       createdAt: new Date().toISOString()

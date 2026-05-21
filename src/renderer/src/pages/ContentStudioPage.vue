@@ -436,6 +436,18 @@ async function addLocalImageToLayoutTask(): Promise<void> {
   pageNotice.value = "图片已导入图片池。";
 }
 
+async function addClipboardImageToLayoutTask(): Promise<void> {
+  if (!layoutSelectedTask.value) {
+    return;
+  }
+  try {
+    await withImageAssetSave(() => desktopApi.addContentStudioClipboardImage(layoutSelectedTask.value!.taskId));
+    pageNotice.value = "粘贴板图片已导入图片池。";
+  } catch (error) {
+    pageNotice.value = error instanceof Error ? error.message : "获取粘贴板图片失败";
+  }
+}
+
 async function bindImageForLayoutTask(paragraphId: string, assetId: string): Promise<void> {
   if (!layoutSelectedTask.value) {
     return;
@@ -1118,6 +1130,7 @@ function rerunTopicFromDrawer(): void {
       :image-preview-map="imagePreviewMap"
       @close="imageAssetModalOpen = false"
       @add-local-image="addLocalImageToLayoutTask"
+      @add-clipboard-image="addClipboardImageToLayoutTask"
       @bind="bindImageForLayoutTask"
       @unbind="unbindImageForLayoutTask"
       @delete-image="deleteImageFromLayoutTask"

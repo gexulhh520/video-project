@@ -144,6 +144,8 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("content-studio-layout:save-image-plan", taskId, updates),
   addContentStudioLocalImage: async (taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-layout:add-local-image", taskId, sourceImagePath),
+  addContentStudioClipboardImage: async (taskId: string): Promise<ContentStudioTask> =>
+    ipcRenderer.invoke("content-studio:add-clipboard-image", taskId),
   bindContentStudioImage: async (taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-layout:bind-image", taskId, paragraphId, assetId),
   unbindContentStudioImage: async (taskId: string, paragraphId: string): Promise<ContentStudioTask> =>
@@ -218,6 +220,7 @@ const desktopApi: DesktopApi = {
   activateLicense: async (licenseKey: string): Promise<LicenseStatus> => ipcRenderer.invoke("license:activate", licenseKey),
   readImageAsDataUrl: async (imagePath: string): Promise<string> => ipcRenderer.invoke("image:read-data-url", imagePath),
   copyImageToClipboard: async (imagePath: string): Promise<boolean> => ipcRenderer.invoke("image:copy-to-clipboard", imagePath),
+  readClipboardImage: async (): Promise<string | null> => ipcRenderer.invoke("image:read-clipboard"),
   onTaskProgress: (callback: (progress: TaskProgress) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, progress: TaskProgress): void => {
       callback(progress);

@@ -203,7 +203,7 @@ export type ContentStudioParagraphImagePlanUpdate = {
 
 export type ContentStudioImageAsset = {
   assetId: string;
-  sourceType: "local_upload" | "generated" | "source";
+  sourceType: "local_upload" | "generated" | "source" | "clipboard";
   fileName: string;
   localPath: string;
   createdAt: string;

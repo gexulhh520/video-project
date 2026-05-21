@@ -135,6 +135,8 @@ export const desktopApi = {
     window.desktopApi.saveContentStudioImagePlan(taskId, toPlainObject(updates)),
   addContentStudioLocalImage: (taskId: string, sourceImagePath: string): Promise<ContentStudioTask> =>
     window.desktopApi.addContentStudioLocalImage(taskId, sourceImagePath),
+  addContentStudioClipboardImage: (taskId: string): Promise<ContentStudioTask> =>
+    window.desktopApi.addContentStudioClipboardImage(taskId),
   bindContentStudioImage: (taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
     window.desktopApi.bindContentStudioImage(taskId, paragraphId, assetId),
   unbindContentStudioImage: (taskId: string, paragraphId: string): Promise<ContentStudioTask> =>
@@ -206,6 +208,7 @@ export const desktopApi = {
   activateLicense: (licenseKey: string): Promise<LicenseStatus> => window.desktopApi.activateLicense(licenseKey),
   readImageAsDataUrl: (imagePath: string): Promise<string> => window.desktopApi.readImageAsDataUrl(imagePath),
   copyImageToClipboard: (imagePath: string): Promise<boolean> => window.desktopApi.copyImageToClipboard(imagePath),
+  readClipboardImage: (): Promise<string | null> => window.desktopApi.readClipboardImage(),
   onTaskProgress: (callback: (progress: TaskProgress) => void): (() => void) =>
     window.desktopApi.onTaskProgress(callback),
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void): (() => void) =>

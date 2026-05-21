@@ -1373,32 +1373,69 @@ export class ContentStudioService {
     similarityRisk?: "low" | "medium" | "high";
     riskNotes?: string[];
   } {
-    const candidates = this.collectArticleJsonCandidates(rawOutput);
-    for (const candidate of candidates) {
-      try {
-        const parsed = parseOpenCliJson<Record<string, unknown>>(candidate);
-        const verdictRaw = String(parsed.verdict || "").trim().toLowerCase();
-        const verdict = verdictRaw === "pass" ? "pass" : "revise";
-        const similarityRaw = String(parsed.similarityRisk || "").trim().toLowerCase();
-        const similarityRisk = similarityRaw === "low" || similarityRaw === "medium" || similarityRaw === "high"
-          ? similarityRaw
-          : undefined;
-        const riskNotes = Array.isArray(parsed.riskNotes)
-          ? parsed.riskNotes.map((item) => String(item || "").trim()).filter(Boolean)
-          : undefined;
-        return {
-          verdict,
-          publishable: typeof parsed.publishable === "boolean" ? parsed.publishable : undefined,
-          originalityScore: this.normalizeOptionalScore(parsed.originalityScore),
-          viralPotentialScore: this.normalizeOptionalScore(parsed.viralPotentialScore),
-          similarityRisk,
-          riskNotes: riskNotes?.length ? riskNotes : undefined
-        };
-      } catch {
-        // Continue.
+    const text = String(rawOutput || "").trim().toLowerCase();
+    
+    let verdict: "pass" | "revise" = "revise";
+    let publishable: boolean | undefined;
+    let originalityScore: number | undefined;
+    let viralPotentialScore: number | undefined;
+    let similarityRisk: "low" | "medium" | "high" | undefined;
+    const riskNotes: string[] = [];
+
+    if (text.includes("通过") || text.includes("验收通过") || text.includes("可以发布") || text.includes("建议发布") || text.includes("## 验收结论") && text.includes("通过")) {
+      verdict = "pass";
+    }
+    
+    if (text.includes("可以发布") || text.includes("直接发布")) {
+      publishable = true;
+    } else if (text.includes("不通过") || text.includes("需要修改") || text.includes("建议修改")) {
+      publishable = false;
+    }
+
+    const originalityMatch = text.match(/原创性[评分分：:]\s*(\d+)/);
+    if (originalityMatch) {
+      originalityScore = this.normalizeOptionalScore(Number(originalityMatch[1]));
+    }
+
+    const viralMatch = text.match(/爆款潜力[评分分：:]\s*(\d+)/);
+    if (viralMatch) {
+      viralPotentialScore = this.normalizeOptionalScore(Number(viralMatch[1]));
+    }
+
+    if (text.includes("相似度低") || text.includes("原创度高") || text.includes("风险：低") || text.includes("低风险")) {
+      similarityRisk = "low";
+    } else if (text.includes("相似度中") || text.includes("存在相似") || text.includes("风险：中") || text.includes("中风险")) {
+      similarityRisk = "medium";
+    } else if (text.includes("相似度高") || text.includes("抄袭") || text.includes("重复") || text.includes("高风险")) {
+      similarityRisk = "high";
+    }
+
+    const riskSection = rawOutput.match(/## 风险提示\s*([\s\S]*?)(?=##|$)/);
+    if (riskSection) {
+      const risks = riskSection[1]
+        .split(/\n/)
+        .map(line => line.replace(/^[-*•]\s*/, "").trim())
+        .filter(Boolean);
+      riskNotes.push(...risks);
+    } else {
+      const riskSectionAlt = rawOutput.match(/风险提示[：:]([\s\S]*?)(?=\n\n|$)/);
+      if (riskSectionAlt) {
+        const risks = riskSectionAlt[1]
+          .split(/\n/)
+          .map(line => line.replace(/^[-*•]\s*/, "").trim())
+          .filter(Boolean);
+        riskNotes.push(...risks);
       }
     }
-    return { verdict: "revise", riskNotes: ["最终验收 JSON 解析失败"] };
+
+    return {
+      verdict,
+      publishable,
+      originalityScore,
+      viralPotentialScore,
+      similarityRisk,
+      riskNotes: riskNotes.length ? riskNotes : undefined
+    };
   }
 
   private normalizeOptionalScore(value: unknown): number | undefined {
@@ -1454,7 +1491,7 @@ export class ContentStudioService {
       const preview = String(rawOutput || "")
         .slice(0, 500)
         .replace(/\s+/g, " ");
-      throw new Error(`最终文章 JSON 解析失败：${message}。原始输出前500字：${preview}`);
+      throw new Error(`最终文章 JSON 解析失败：${message}。原始输出前500字：${preview}。完整原始输出：${rawOutput}`);
     }
   }
 

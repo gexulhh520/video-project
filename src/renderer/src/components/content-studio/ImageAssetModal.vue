@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { ContentStudioTask } from "../../../../main/types/content-studio.types";
 
@@ -12,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   addLocalImage: [];
+  addClipboardImage: [];
   bind: [paragraphId: string, assetId: string];
   unbind: [paragraphId: string];
   deleteImage: [assetId: string];
@@ -91,6 +92,7 @@ function submitCoverAiGenerate(): void {
         </div>
         <div class="actions">
           <button class="ghost-btn" :disabled="props.saving || !props.task" @click="emit('addLocalImage')">上传本地图片</button>
+          <button class="ghost-btn" :disabled="props.saving || !props.task" @click="emit('addClipboardImage')">粘贴板图片</button>
           <button class="ghost-btn" @click="emit('close')">关闭</button>
         </div>
       </header>

@@ -69,6 +69,9 @@ function buildTopicOutputSchemaNotice(input: TopicCreateInput): string {
 }
 
 function buildTopicContext(input: TopicCreateInput): string {
+  const imagePlanLine = input.generateImagePlan
+    ? `生成配图计划：是${input.imagePlanRequirements ? `（配图要求：${input.imagePlanRequirements}）` : ""}`
+    : `生成配图计划：否`;
   return [
     `话题：${input.topic}`,
     `平台：${input.platform}`,
@@ -79,7 +82,7 @@ function buildTopicContext(input: TopicCreateInput): string {
     `字数范围：${input.wordRange?.trim() || "未指定"}`,
     `生成标题候选：${boolLabel(input.generateTitleCandidates, "是", "否")}`,
     `生成封面文案：${boolLabel(input.generateCoverText, "是", "否")}`,
-    `生成配图计划：${boolLabel(input.generateImagePlan, "是", "否")}`
+    imagePlanLine
   ].join("\n");
 }
 
@@ -90,8 +93,10 @@ export function buildTopicPlanPrompt(input: TopicCreateInput, roles?: TopicPromp
     "目标：根据用户输入给出可执行的文章方向，并产出第一版完整文章 JSON。",
     buildTopicOutputSchemaNotice(input),
     "要求：",
-    "1. 段落不少于 3 段，结构完整，有开头钩子、主体分析、结尾观点。",
-    "2. 所有观点要有事实边界，不夸大、不造数据。",
+    "1. 标题简短但是必须吸引人点击",
+    "2. 段落不少于 3 段，结构完整，开头必须会引起用户点击，非常强烈的点击欲望、主体分析、结尾观点。",
+
+    // "2. 所有观点要有事实边界，不夸大、不造数据。",
     "3. paragraphId 依次使用 p1/p2/p3...",
     "用户输入：",
     buildTopicContext(input)
@@ -102,7 +107,7 @@ export function buildTopicReviewPrompt(input: TopicCreateInput, planJson: string
   const modelBRole = resolveRoleName(roles?.modelBRoleName, "反方审稿总编");
   return [
     `你是内容创作工作台中的模型B，角色是${modelBRole}。`,
-    "任务：审查模型A输出草稿，重点找出逻辑漏洞、事实风险、平台不匹配、标题钩子不足。",
+    "任务：审查模型A输出草稿，重点提出爆款内容修改建议,严格围绕用户要求。",
     "只输出 JSON，不要输出 Markdown，不要解释。",
     "输出字段：{ verdict: \"pass|revise\", mustFix: string[], niceToHave: string[], riskNotes: string[] }",
     "用户输入：",
@@ -143,7 +148,6 @@ export function buildTopicFinalReviewPrompt(
   return [
     `你是内容创作工作台中的模型B，角色是${modelBRole}。请对模型A（${modelARole}）重写稿做终审并输出最终可发布版本。`,
     buildTopicOutputSchemaNotice(input),
-    "如果存在风险，请在 riskNotes 中明确给出。",
     "用户输入：",
     buildTopicContext(input),
     "待终审JSON：",
@@ -191,9 +195,25 @@ export function buildMaterialSourceAnalysisPrompt(
 ): string {
   const role = resolveRoleName(roleName, "素材重组编辑");
   return [
-    `你是模型A，角色是${role}。请分析原始素材并输出 JSON。`,
-    "输出字段：sourceAnalysis，包含 originalTheme/originalMainPoints/originalStructure/rewriteRisk。",
-    "只输出 JSON，不要 markdown。",
+    `你是模型A，角色是${role}。请分析原始素材并给出详细的分析报告。`,
+    "请使用 Markdown 格式输出，结构如下：",
+    "",
+    "# 素材分析报告",
+    "",
+    "## 原始主题",
+    "素材主要讲述的核心内容...",
+    "",
+    "## 核心要点",
+    "素材中的关键观点和事实（列出要点）",
+    "",
+    "## 结构分析",
+    "素材的组织结构和逻辑框架...",
+    "",
+    "## 重写风险",
+    "直接重写可能遇到的问题和风险点...",
+    "",
+    "## 可借鉴角度",
+    "适合二创的切入点和创新方向...",
     buildMaterialContext(input),
     buildMaterialSourceDigest(materialPack)
   ].join("\n\n");
@@ -224,9 +244,33 @@ export function buildMaterialTopicReviewPrompt(
 ): string {
   const role = resolveRoleName(roleName, "相似度与事实审稿人");
   return [
-    `你是模型B，角色是${role}。请评审 5 个选题并给出排名与修改建议。`,
-    "输出字段：overallVerdict/ranking/detailedReview/bestTopicRecommendation/topicsToAvoid/finalSuggestionsForModelA。",
-    "只输出 JSON，不要 markdown。",
+    `你是模型B，角色是${role}。请评审 5 个选题并给出详细的评审意见。`,
+    "请使用 Markdown 格式输出，结构如下：",
+    "",
+    "# 选题评审报告",
+    "",
+    "## 整体评价",
+    "对5个选题的总体质量评估...",
+    "",
+    "## 排名建议",
+    "按优劣顺序排列5个选题，并说明理由",
+    "",
+    "## 详细点评",
+    "### 选题1标题",
+    "优点：...",
+    "缺点：...",
+    "改进建议：...",
+    "### 选题2标题",
+    "...",
+    "",
+    "## 最佳推荐",
+    "最适合深入创作的选题及理由...",
+    "",
+    "## 风险提示",
+    "需要避免的选题及原因...",
+    "",
+    "## 修改建议",
+    "给模型A的具体优化建议...",
     buildMaterialContext(input),
     sourceAnalysisJson,
     topicJson
@@ -294,9 +338,43 @@ export function buildMaterialArticleReviewPrompt(
 ): string {
   const role = resolveRoleName(roleName, "相似度与事实审稿人");
   return [
-    `你是模型B，角色是${role}。请评审文章并输出可执行修改意见。`,
-    "输出字段：verdict/publishable/originalityScore/similarityRisk/viralPotentialScore/contentDepthScore/platformFitScore/wordCountFitScore/styleFitScore/imagePlanFitScore/mustFix/niceToHave/riskNotes/revisionInstructionForA。",
-    "只输出 JSON，不要 markdown。",
+    `你是模型B，角色是${role}。请评审文章并给出详细的审稿意见。`,
+    "请使用 Markdown 格式输出，结构如下：",
+    "",
+    "# 文章审稿报告",
+    "",
+    "## 总体评价",
+    "对文章质量的总体判断...",
+    "",
+    "## 原创性评估",
+    "文章的原创程度和相似度风险分析...",
+    "",
+    "## 爆款潜力",
+    "文章吸引读者点击和传播的潜力评估...",
+    "",
+    "## 内容深度",
+    "观点的深度和论证的充分性评估...",
+    "",
+    "## 平台适配",
+    "是否符合目标平台风格...",
+    "",
+    "## 必须修改",
+    "需要强制修复的问题列表：",
+    "- 问题1：...",
+    "- 问题2：...",
+    "",
+    "## 建议优化",
+    "可以改进的地方：",
+    "- 优化点1：...",
+    "- 优化点2：...",
+    "",
+    "## 风险提示",
+    "潜在的风险点：",
+    "- 风险1：...",
+    "- 风险2：...",
+    "",
+    "## 修改指导",
+    "给模型A的具体修改建议...",
     buildMaterialContext(input),
     buildMaterialSourceDigest(materialPack),
     draftJson
@@ -330,9 +408,33 @@ export function buildMaterialFinalReviewPrompt(
 ): string {
   const role = resolveRoleName(roleName, "相似度与事实审稿人");
   return [
-    `你是模型B，角色是${role}。请做最终验收并输出 JSON。`,
-    "输出字段：verdict/publishable/originalityScore/similarityRisk/viralPotentialScore/riskNotes。",
-    "只输出 JSON，不要 markdown。",
+    `你是模型B，角色是${role}。请做最终验收并给出详细的验收报告。`,
+    "请使用 Markdown 格式输出，结构如下：",
+    "",
+    "# 最终验收报告",
+    "",
+    "## 验收结论",
+    "是否通过验收（通过/不通过）",
+    "",
+    "## 可发布性",
+    "文章是否可以直接发布...",
+    "",
+    "## 原创性评分",
+    "对文章原创程度的评估（可给出1-10分评分）...",
+    "",
+    "## 相似度风险",
+    "与原始素材或其他内容的相似度评估（低/中/高风险）...",
+    "",
+    "## 爆款潜力",
+    "文章的传播潜力评估（可给出1-10分评分）...",
+    "",
+    "## 风险提示",
+    "发布前需要注意的风险点：",
+    "- 风险1：...",
+    "- 风险2：...",
+    "",
+    "## 最终建议",
+    "是否建议发布及优化建议...",
     buildMaterialContext(input),
     buildMaterialSourceDigest(materialPack),
     finalArticleJson
@@ -356,8 +458,9 @@ export function buildTopicResearchPlanPrompt(input: TopicCreateInput, roles?: To
     "preferredSourceType 可选值：official|media|community|case|industry|other",
     "",
     "要求：",
+    "- 严格按用户输入的选题进行研究",
     "- 每条素材必须有明确的 purpose",
-    "- preferredSourceType 优先选择官方来源、媒体报道、行业讨论等",
+    "- preferredSourceType 任何来源",
     "",
     "用户输入：",
     buildTopicContext(input)
@@ -371,8 +474,8 @@ export function buildTopicResearchMaterialPrompt(
   priorCards: TopicResearchMaterialCard[]
 ): string {
   const maxWords = Math.min(2000, Math.max(100, Number(input.materialSummaryMaxWords || 500)));
-  const requireRiskNotes = input.requireRiskNotes !== false;
-  const requireSourceUrl = input.requireSourceUrl !== false;
+  const requireRiskNotes = Boolean(input.requireRiskNotes);
+  const requireSourceUrl = Boolean(input.requireSourceUrl);
   return [
     "你现在执行单条素材检索与总结。",
     "你可以先检索公开网页，再输出素材卡。",

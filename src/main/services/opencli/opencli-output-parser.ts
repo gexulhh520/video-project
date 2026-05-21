@@ -152,12 +152,17 @@ function sanitizeJsonText(output: string): string {
 }
 
 function sanitizeModelJsonText(output: string): string {
-  // const repaired = repairWebLlmJsonText(output);
-  // return repaired;
-  return output
+  return String(output || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/\\n/g, '\n')
     .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t');
+    .replace(/\\t/g, '\t')
+    .replace(/\\\[/g, "[")
+    .replace(/\\\]/g, "]")
+    .replace(/\\_/g, "_")
+    .trim();
 }
 
 function parseJsonMaybeString<T = unknown>(candidate: string): T {

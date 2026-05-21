@@ -1,6 +1,6 @@
-import { BrowserWindow, clipboard, dialog, ipcMain, nativeImage } from "electron";
-import { readFile } from "node:fs/promises";
-import { extname } from "node:path";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage } from "electron";
+import { readFile, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import type {
   OpenCliProvider,
   OpenCliProviderStatus,
@@ -586,6 +586,24 @@ export function registerIpcHandlers(
     clipboard.writeImage(image);
     return true;
   });
+
+  ipcMain.handle("image:read-clipboard", async (): Promise<string | null> => {
+    const image = clipboard.readImage("clipboard");
+    if (image.isEmpty()) {
+      return null;
+    }
+    const tempDir = app.getPath("temp");
+    const fileName = `clipboard-${Date.now()}.png`;
+    const tempPath = join(tempDir, fileName);
+    await writeFile(tempPath, image.toPNG());
+    return tempPath;
+  });
+
+  ipcMain.handle(
+    "content-studio:add-clipboard-image",
+    async (_event, taskId: string): Promise<ContentStudioTask> =>
+      contentStudioLayoutService.addClipboardImage(taskId)
+  );
 }
 
 function sanitizeFileName(value: string): string {

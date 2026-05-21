@@ -124,6 +124,7 @@ export const desktopApi = {
     current?: ContentStudioMaterialPack;
     collectImagesFromUrl?: boolean;
     maxSourceCount?: number;
+    extractMode?: "llm" | "browser";
   }): Promise<ContentStudioMaterialPack> => window.desktopApi.addContentStudioMaterialUrl(toPlainObject(options)),
   addContentStudioMaterialWord: (options: {
     filePath: string;

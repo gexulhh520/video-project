@@ -130,6 +130,7 @@ const desktopApi: DesktopApi = {
     current?: ContentStudioMaterialPack;
     collectImagesFromUrl?: boolean;
     maxSourceCount?: number;
+    extractMode?: "llm" | "browser";
   }): Promise<ContentStudioMaterialPack> => ipcRenderer.invoke("content-studio-material:add-url", options),
   addContentStudioMaterialWord: async (options: {
     filePath: string;

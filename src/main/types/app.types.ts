@@ -18,6 +18,7 @@ import type {
   MaterialRewriteInput,
   MaterialSourceType,
   TopicAdvancedSettings,
+  MaterialAdvancedSettings,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -42,6 +43,7 @@ export type {
   MaterialRewriteInput,
   MaterialSourceType,
   TopicAdvancedSettings,
+  MaterialAdvancedSettings,
   TestContentStudioModelOptions,
   TopicCreateInput,
 } from "./content-studio.types";
@@ -520,6 +522,7 @@ export type DesktopApi = {
     current?: ContentStudioMaterialPack;
     collectImagesFromUrl?: boolean;
     maxSourceCount?: number;
+    extractMode?: "llm" | "browser";
   }) => Promise<ContentStudioMaterialPack>;
   addContentStudioMaterialWord: (options: {
     filePath: string;

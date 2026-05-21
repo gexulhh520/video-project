@@ -27,11 +27,25 @@ export type ContentStudioImageSettings = {
   outputDir?: string;
 };
 
+export type MaterialAdvancedSettings = {
+  platform: "公众号" | "今日头条" | "小红书" | "知乎" | "CSDN";
+  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文" | "微头条";
+  targetReader: string;
+  writingStyle: string;
+  wordRange: string;
+  generateTitleCandidates: boolean;
+  generateCoverText: boolean;
+  generateImagePlan: boolean;
+  topicReviewRounds: number;
+  articleReviewRounds: number;
+};
+
 export type ContentStudioSettings = {
   openCliCommand: string;
   tabs: Record<ContentStudioTabKey, ContentStudioTabModelSettings>;
   image: ContentStudioImageSettings;
   topicAdvanced: TopicAdvancedSettings;
+  materialAdvanced: MaterialAdvancedSettings;
 };
 
 export type TopicAdvancedSettings = {
@@ -54,7 +68,7 @@ export type TopicAdvancedSettings = {
 export type TopicCreateInput = {
   topic: string;
   platform: "公众号" | "今日头条" | "小红书" | "知乎";
-  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文";
+  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文" | "微头条";
   reviewRounds?: number;
   targetReader?: string;
   writingStyle?: string;
@@ -153,7 +167,7 @@ export type MaterialExtractMethod = "manual" | "browser_extract" | "llmweb_body_
 export type MaterialRewriteInput = {
   topic?: string;
   platform: "公众号" | "今日头条" | "小红书" | "知乎" | "CSDN";
-  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文";
+  articleType: "观点文" | "科普文" | "热点解读" | "干货文" | "种草文" | "微头条";
   targetReader?: string;
   writingStyle?: string;
   wordRange?: string;

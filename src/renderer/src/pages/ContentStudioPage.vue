@@ -15,7 +15,8 @@ import type {
   OpenCliProvider,
   MaterialRewriteInput,
   TopicAdvancedSettings,
-  TopicCreateInput
+  TopicCreateInput,
+  MaterialAdvancedSettings
 } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 import ContentStudioSettingsModal from "../components/content-studio/ContentStudioSettingsModal.vue";
@@ -663,6 +664,15 @@ async function saveTopicAdvancedSettings(nextSettings: TopicAdvancedSettings): P
   pageNotice.value = "话题成文高级设置已保存。";
 }
 
+async function updateMaterialAdvanced(nextSettings: MaterialAdvancedSettings): Promise<void> {
+  if (settings.value) {
+    settings.value = await desktopApi.saveContentStudioSettings({
+      ...settings.value,
+      materialAdvanced: { ...nextSettings }
+    });
+  }
+}
+
 function openTopicRunLog(): void {
   if (latestTopicTask.value) {
     runLogTitle.value = "话题成文 - 运行记录";
@@ -847,7 +857,7 @@ async function addMaterialText(payload: { title?: string; body: string }): Promi
   }
 }
 
-async function addMaterialUrl(payload: { url: string; title?: string }): Promise<void> {
+async function addMaterialUrl(payload: { url: string; title?: string; extractMode?: "llm" | "browser" }): Promise<void> {
   materialSourceBusy.value = true;
   try {
     materialPack.value = await desktopApi.addContentStudioMaterialUrl({
@@ -862,6 +872,8 @@ async function addMaterialUrl(payload: { url: string; title?: string }): Promise
       pageNotice.value = "URL 素材已添加（通过模型链接兜底提取正文）。";
     } else if (method === "llmweb_body_extract") {
       pageNotice.value = "URL 素材已添加（通过模型清洗正文提取）。";
+    } else if (method === "browser_extract") {
+      pageNotice.value = "URL 素材已添加（通过浏览器直接提取）。";
     } else {
       pageNotice.value = "URL 素材已采集并添加。";
     }
@@ -1038,10 +1050,12 @@ function rerunTopicFromDrawer(): void {
         :running="materialRunning"
         :material-pack="materialPack"
         :progress-label="materialProgressLabel"
+        :material-advanced="settings?.materialAdvanced"
         @open-model-settings="openModelSettings('material')"
         @open-run-log="openMaterialRunLog"
         @open-source-modal="materialSourceModalOpen = true"
         @start-material-rewrite="startMaterialRewrite"
+        @update-material-advanced="updateMaterialAdvanced"
       />
       <HotCreateTab
         v-if="activeTab === 'hot'"

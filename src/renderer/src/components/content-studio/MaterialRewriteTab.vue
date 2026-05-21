@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import type { ContentStudioMaterialPack, MaterialRewriteInput } from "../../../../main/types/content-studio.types";
+import { computed, ref, watch } from "vue";
+import type { ContentStudioMaterialPack, MaterialRewriteInput, MaterialAdvancedSettings } from "../../../../main/types/content-studio.types";
 
 const props = defineProps<{
   tabReady: boolean;
@@ -8,6 +8,7 @@ const props = defineProps<{
   running?: boolean;
   materialPack?: ContentStudioMaterialPack | null;
   progressLabel?: string;
+  materialAdvanced?: MaterialAdvancedSettings | null;
 }>();
 
 const emit = defineEmits<{
@@ -15,6 +16,7 @@ const emit = defineEmits<{
   openRunLog: [];
   openSourceModal: [];
   startMaterialRewrite: [payload: MaterialRewriteInput];
+  updateMaterialAdvanced: [payload: MaterialAdvancedSettings];
 }>();
 const platform = ref<MaterialRewriteInput["platform"]>("公众号");
 const articleType = ref<MaterialRewriteInput["articleType"]>("观点文");
@@ -26,6 +28,38 @@ const generateCoverText = ref(true);
 const generateImagePlan = ref(true);
 const topicReviewRounds = ref(2);
 const articleReviewRounds = ref(2);
+
+// 从父组件加载设置
+watch(() => props.materialAdvanced, (settings) => {
+  if (settings) {
+    platform.value = settings.platform;
+    articleType.value = settings.articleType;
+    targetReader.value = settings.targetReader;
+    writingStyle.value = settings.writingStyle;
+    wordRange.value = settings.wordRange;
+    generateTitleCandidates.value = settings.generateTitleCandidates;
+    generateCoverText.value = settings.generateCoverText;
+    generateImagePlan.value = settings.generateImagePlan;
+    topicReviewRounds.value = settings.topicReviewRounds;
+    articleReviewRounds.value = settings.articleReviewRounds;
+  }
+}, { immediate: true });
+
+// 保存设置到父组件
+function saveSettings(): void {
+  emit("updateMaterialAdvanced", {
+    platform: platform.value,
+    articleType: articleType.value,
+    targetReader: targetReader.value,
+    writingStyle: writingStyle.value,
+    wordRange: wordRange.value,
+    generateTitleCandidates: generateTitleCandidates.value,
+    generateCoverText: generateCoverText.value,
+    generateImagePlan: generateImagePlan.value,
+    topicReviewRounds: topicReviewRounds.value,
+    articleReviewRounds: articleReviewRounds.value
+  });
+}
 
 const sourceCount = computed(() => props.materialPack?.sources.length || 0);
 const canStart = computed(() => props.tabReady && sourceCount.value > 0 && !props.running);
@@ -69,7 +103,7 @@ function startRewrite(): void {
     <div class="form-grid">
       <label class="field">
         <span>平台</span>
-        <select v-model="platform">
+        <select v-model="platform" @change="saveSettings">
           <option>公众号</option>
           <option>今日头条</option>
           <option>小红书</option>
@@ -79,44 +113,45 @@ function startRewrite(): void {
       </label>
       <label class="field">
         <span>文章类型</span>
-        <select v-model="articleType">
+        <select v-model="articleType" @change="saveSettings">
           <option>观点文</option>
           <option>科普文</option>
           <option>热点解读</option>
           <option>干货文</option>
           <option>种草文</option>
+          <option>微头条</option>
         </select>
       </label>
       <label class="field">
         <span>目标读者</span>
-        <input v-model="targetReader" type="text" placeholder="例如：职场新人" />
+        <input v-model="targetReader" type="text" placeholder="例如：职场新人" @blur="saveSettings" />
       </label>
       <label class="field">
         <span>写作风格</span>
-        <input v-model="writingStyle" type="text" placeholder="例如：观点鲜明、干货向" />
+        <input v-model="writingStyle" type="text" placeholder="例如：观点鲜明、干货向" @blur="saveSettings" />
       </label>
       <label class="field">
         <span>字数范围</span>
-        <input v-model="wordRange" type="text" />
+        <input v-model="wordRange" type="text" @blur="saveSettings" />
       </label>
       <label class="field">
         <span>选题评判轮次</span>
-        <input v-model.number="topicReviewRounds" type="number" min="1" max="5" />
+        <input v-model.number="topicReviewRounds" type="number" min="1" max="5" @change="saveSettings" />
       </label>
       <label class="field">
         <span>正文评审轮次</span>
-        <input v-model.number="articleReviewRounds" type="number" min="1" max="5" />
+        <input v-model.number="articleReviewRounds" type="number" min="1" max="5" @change="saveSettings" />
       </label>
       <label class="field check">
-        <input v-model="generateTitleCandidates" type="checkbox" />
+        <input v-model="generateTitleCandidates" type="checkbox" @change="saveSettings" />
         <span>生成标题候选</span>
       </label>
       <label class="field check">
-        <input v-model="generateCoverText" type="checkbox" />
+        <input v-model="generateCoverText" type="checkbox" @change="saveSettings" />
         <span>生成封面文案</span>
       </label>
       <label class="field check">
-        <input v-model="generateImagePlan" type="checkbox" />
+        <input v-model="generateImagePlan" type="checkbox" @change="saveSettings" />
         <span>生成配图计划</span>
       </label>
     </div>

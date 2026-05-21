@@ -11,7 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: [];
   addText: [payload: { title?: string; body: string }];
-  addUrl: [payload: { url: string; title?: string }];
+  addUrl: [payload: { url: string; title?: string; extractMode?: "llm" | "browser" }];
   addWord: [];
   removeSource: [sourceId: string];
   updateSourceBody: [payload: { sourceId: string; body: string }];
@@ -21,6 +21,7 @@ const textTitle = ref("");
 const textBody = ref("");
 const urlInput = ref("");
 const urlTitle = ref("");
+const urlExtractMode = ref<"llm" | "browser">("llm");
 
 const sourceCount = computed(() => props.materialPack.sources.length);
 const draftBodies = ref<Record<string, string>>({});
@@ -48,7 +49,7 @@ function submitText(): void {
 function submitUrl(): void {
   const url = urlInput.value.trim();
   if (!url) return;
-  emit("addUrl", { url, title: urlTitle.value.trim() || undefined });
+  emit("addUrl", { url, title: urlTitle.value.trim() || undefined, extractMode: urlExtractMode.value });
   urlInput.value = "";
   urlTitle.value = "";
 }
@@ -94,6 +95,13 @@ function isDirty(sourceId: string, originalBody: string): boolean {
         <label class="field">
           <span>URL 标题（可选）</span>
           <input v-model="urlTitle" type="text" placeholder="不填则自动抓取" />
+        </label>
+        <label class="field">
+          <span>提取模式</span>
+          <select v-model="urlExtractMode">
+            <option value="llm">LLM直接读取（默认）</option>
+            <option value="browser">浏览器爬取</option>
+          </select>
         </label>
         <button class="ghost-btn" :disabled="busy" @click="submitUrl">添加 URL 素材</button>
         <button class="ghost-btn" :disabled="busy" @click="emit('addWord')">导入 Word 素材</button>

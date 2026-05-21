@@ -36,6 +36,19 @@ const DEFAULT_TOPIC_ADVANCED_SETTINGS = {
   requireSourceUrl: true
 } as const;
 
+const DEFAULT_MATERIAL_ADVANCED_SETTINGS = {
+  platform: "公众号" as const,
+  articleType: "观点文" as const,
+  targetReader: "",
+  writingStyle: "",
+  wordRange: "1200-1800字",
+  generateTitleCandidates: true,
+  generateCoverText: true,
+  generateImagePlan: true,
+  topicReviewRounds: 2,
+  articleReviewRounds: 2
+} as const;
+
 export const DEFAULT_CONTENT_STUDIO_SETTINGS: ContentStudioSettings = {
   openCliCommand: "opencli",
   tabs: {
@@ -115,6 +128,9 @@ export const DEFAULT_CONTENT_STUDIO_SETTINGS: ContentStudioSettings = {
   },
   topicAdvanced: {
     ...DEFAULT_TOPIC_ADVANCED_SETTINGS
+  },
+  materialAdvanced: {
+    ...DEFAULT_MATERIAL_ADVANCED_SETTINGS
   }
 };
 
@@ -271,7 +287,8 @@ export class ContentStudioSettingsService {
         profile: settings.image?.profile?.trim() ?? "",
         outputDir: settings.image?.outputDir?.trim() || undefined
       },
-      topicAdvanced: this.normalizeTopicAdvancedSettings(settings.topicAdvanced)
+      topicAdvanced: this.normalizeTopicAdvancedSettings(settings.topicAdvanced),
+      materialAdvanced: this.normalizeMaterialAdvancedSettings(settings.materialAdvanced)
     };
   }
 
@@ -372,6 +389,69 @@ export class ContentStudioSettingsService {
         typeof settings?.requireSourceUrl === "boolean"
           ? settings.requireSourceUrl
           : DEFAULT_TOPIC_ADVANCED_SETTINGS.requireSourceUrl
+    };
+  }
+
+  private normalizeMaterialAdvancedSettings(
+    settings: Partial<ContentStudioSettings["materialAdvanced"]> | undefined
+  ): ContentStudioSettings["materialAdvanced"] {
+    const platforms: Array<ContentStudioSettings["materialAdvanced"]["platform"]> = [
+      "公众号",
+      "今日头条",
+      "小红书",
+      "知乎",
+      "CSDN"
+    ];
+    const articleTypes: Array<ContentStudioSettings["materialAdvanced"]["articleType"]> = [
+      "观点文",
+      "科普文",
+      "热点解读",
+      "干货文",
+      "种草文",
+      "微头条"
+    ];
+
+    return {
+      platform:
+        settings?.platform && platforms.includes(settings.platform)
+          ? settings.platform
+          : DEFAULT_MATERIAL_ADVANCED_SETTINGS.platform,
+      articleType:
+        settings?.articleType && articleTypes.includes(settings.articleType)
+          ? settings.articleType
+          : DEFAULT_MATERIAL_ADVANCED_SETTINGS.articleType,
+      targetReader: settings?.targetReader?.trim() ?? DEFAULT_MATERIAL_ADVANCED_SETTINGS.targetReader,
+      writingStyle: settings?.writingStyle?.trim() ?? DEFAULT_MATERIAL_ADVANCED_SETTINGS.writingStyle,
+      wordRange: settings?.wordRange?.trim() || DEFAULT_MATERIAL_ADVANCED_SETTINGS.wordRange,
+      generateTitleCandidates:
+        typeof settings?.generateTitleCandidates === "boolean"
+          ? settings.generateTitleCandidates
+          : DEFAULT_MATERIAL_ADVANCED_SETTINGS.generateTitleCandidates,
+      generateCoverText:
+        typeof settings?.generateCoverText === "boolean"
+          ? settings.generateCoverText
+          : DEFAULT_MATERIAL_ADVANCED_SETTINGS.generateCoverText,
+      generateImagePlan:
+        typeof settings?.generateImagePlan === "boolean"
+          ? settings.generateImagePlan
+          : DEFAULT_MATERIAL_ADVANCED_SETTINGS.generateImagePlan,
+      topicReviewRounds: Math.min(
+        5,
+        Math.max(
+          1,
+          this.normalizePositiveNumber(settings?.topicReviewRounds, DEFAULT_MATERIAL_ADVANCED_SETTINGS.topicReviewRounds)
+        )
+      ),
+      articleReviewRounds: Math.min(
+        5,
+        Math.max(
+          1,
+          this.normalizePositiveNumber(
+            settings?.articleReviewRounds,
+            DEFAULT_MATERIAL_ADVANCED_SETTINGS.articleReviewRounds
+          )
+        )
+      )
     };
   }
 }

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref } from "vue";
 import type { TopicCreateInput } from "../../../../main/types/content-studio.types";
 
@@ -71,6 +71,7 @@ function handleStart(): void {
           <option>热点解读</option>
           <option>干货文</option>
           <option>种草文</option>
+          <option>微头条</option>
         </select>
       </label>
     </div>

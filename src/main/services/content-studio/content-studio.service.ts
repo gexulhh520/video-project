@@ -83,13 +83,15 @@ export class ContentStudioService {
     current?: ContentStudioMaterialPack;
     collectImagesFromUrl?: boolean;
     maxSourceCount?: number;
+    extractMode?: "llm" | "browser";
   }): Promise<ContentStudioMaterialPack> {
     const targetUrl = String(options.url || "").trim();
     if (!targetUrl) {
       throw new Error("URL 不能为空");
     }
     const collected = await this.resourceService.collectFromUrl(targetUrl, {
-      collectImages: options.collectImagesFromUrl ?? true
+      collectImages: options.collectImagesFromUrl ?? true,
+      extractMode: options.extractMode ?? "llm"
     });
     return this.pushMaterialSource(options.current, {
       sourceId: this.createSourceId(),

@@ -19,6 +19,7 @@ const emit = defineEmits<{
   copyImage: [assetId: string];
   generateAiImage: [payload: { paragraphId: string; prompt: string; bindAfterGenerate: boolean }];
   generateCoverAiImage: [payload: { prompt: string; size: string }];
+  autoGenerateImages: [payload: { paragraphs: Array<{ paragraphId: string; prompt: string }> }];
 }>();
 
 const selectedParagraphId = ref("");
@@ -80,6 +81,23 @@ function submitCoverAiGenerate(): void {
     size: coverSize.value
   });
 }
+
+function getParagraphsWithPrompt(): Array<{ paragraphId: string; prompt: string }> {
+  return paragraphs.value
+    .map((paragraph) => ({
+      paragraphId: paragraph.paragraphId,
+      prompt: paragraph.imagePlan?.prompt || paragraph.imagePlan?.caption || ""
+    }))
+    .filter((item) => item.prompt.trim() !== "");
+}
+
+function submitAutoGenerate(): void {
+  const paragraphsWithPrompt = getParagraphsWithPrompt();
+  if (paragraphsWithPrompt.length === 0) {
+    return;
+  }
+  emit("autoGenerateImages", { paragraphs: paragraphsWithPrompt });
+}
 </script>
 
 <template>
@@ -93,6 +111,9 @@ function submitCoverAiGenerate(): void {
         <div class="actions">
           <button class="ghost-btn" :disabled="props.saving || !props.task" @click="emit('addLocalImage')">上传本地图片</button>
           <button class="ghost-btn" :disabled="props.saving || !props.task" @click="emit('addClipboardImage')">粘贴板图片</button>
+          <button class="primary-btn" :disabled="props.saving || !props.task || getParagraphsWithPrompt().length === 0" @click="submitAutoGenerate">
+            自动配图 ({{ getParagraphsWithPrompt().length }})
+          </button>
           <button class="ghost-btn" @click="emit('close')">关闭</button>
         </div>
       </header>

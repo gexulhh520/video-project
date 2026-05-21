@@ -522,6 +522,45 @@ async function generateAiImageForLayoutTask(payload: { paragraphId: string; prom
   }
 }
 
+async function autoGenerateImagesForLayoutTask(payload: { paragraphs: Array<{ paragraphId: string; prompt: string }> }): Promise<void> {
+  if (!layoutSelectedTask.value || payload.paragraphs.length === 0) {
+    return;
+  }
+
+  const total = payload.paragraphs.length;
+  let completed = 0;
+  let failed = 0;
+
+  for (const paragraph of payload.paragraphs) {
+    if (!imageAssetModalOpen.value) {
+      pageNotice.value = `自动配图已取消，已完成 ${completed}/${total}，失败 ${failed} 个。`;
+      return;
+    }
+
+    pageNotice.value = `自动配图中... (${completed + 1}/${total}) 段落 ${paragraph.paragraphId}`;
+
+    try {
+      await withImageAssetSave(() =>
+        desktopApi.generateContentStudioAiImage(layoutSelectedTask.value!.taskId, {
+          paragraphId: paragraph.paragraphId,
+          prompt: paragraph.prompt,
+          bindAfterGenerate: true
+        })
+      );
+      completed++;
+    } catch (error) {
+      failed++;
+      console.error(`段落 ${paragraph.paragraphId} 生图失败:`, error);
+    }
+  }
+
+  if (failed === 0) {
+    pageNotice.value = `自动配图完成！共生成 ${completed} 张图片。`;
+  } else {
+    pageNotice.value = `自动配图完成，成功 ${completed} 个，失败 ${failed} 个。`;
+  }
+}
+
 async function generateCoverAiImageForLayoutTask(payload: { prompt: string; size: string }): Promise<void> {
   if (!layoutSelectedTask.value?.result) {
     return;
@@ -1137,6 +1176,7 @@ function rerunTopicFromDrawer(): void {
       @copy-image="copyImageFromLayoutTask"
       @generate-ai-image="generateAiImageForLayoutTask"
       @generate-cover-ai-image="generateCoverAiImageForLayoutTask"
+      @auto-generate-images="autoGenerateImagesForLayoutTask"
     />
 
     <PublishPreviewDrawer

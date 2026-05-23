@@ -32,6 +32,6 @@ export const router = createRouter({
       path: "/tools/content-studio",
       name: "content-studio",
       component: ContentStudioPage
-    }
+    },
   ]
 });

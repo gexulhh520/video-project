@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHashHistory } from "vue-router";
+import { createRouter, createWebHashHistory } from "vue-router";
 import HomePage from "../pages/HomePage.vue";
 import ArticleRewritePage from "../pages/ArticleRewritePage.vue";
 import VideoToPostPage from "../pages/VideoToPostPage.vue";
@@ -37,6 +37,31 @@ export const router = createRouter({
       path: "/tools/content-studio",
       name: "content-studio",
       component: ContentStudioPage
+    },
+    {
+      path: "/tools/hotspot-radar",
+      name: "hotspot-radar",
+      component: HotspotRadarPage
+    },
+    {
+      path: "/tools/hotspot-radar/tasks",
+      name: "hotspot-radar-tasks",
+      component: HotspotRadarTasksPage
+    },
+    {
+      path: "/tools/hotspot-radar/candidates",
+      name: "hotspot-radar-candidates",
+      component: HotspotRadarCandidatesPage
+    },
+    {
+      path: "/tools/hotspot-radar/saved",
+      name: "hotspot-radar-saved",
+      component: HotspotRadarSavedPage
+    },
+    {
+      path: "/tools/hotspot-radar/saved/:id",
+      name: "hotspot-radar-saved-detail",
+      component: HotspotRadarSavedDetailPage
     },
   ]
 });

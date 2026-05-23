@@ -42,7 +42,17 @@ onMounted(async () => {
 
 
 async function loadGlobalConfig(): Promise<void> {
-  globalConfig.value = await desktopApi.hotspotRadarGetConfig();
+  const cfg = await desktopApi.hotspotRadarGetConfig();
+  globalConfig.value = {
+    ...cfg,
+    llm: {
+      provider: cfg.llm?.provider || "chatgpt",
+      profile: cfg.llm?.profile || "",
+      model: cfg.llm?.model,
+      timeoutMs: cfg.llm?.timeoutMs || 120000,
+      intervalMs: cfg.llm?.intervalMs || 3000
+    }
+  };
 }
 
 async function saveGlobalConfig(): Promise<void> {

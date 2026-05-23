@@ -4,6 +4,11 @@ import ArticleRewritePage from "../pages/ArticleRewritePage.vue";
 import VideoToPostPage from "../pages/VideoToPostPage.vue";
 import WebToPostPage from "../pages/WebToPostPage.vue";
 import ContentStudioPage from "../pages/ContentStudioPage.vue";
+import HotspotRadarPage from "../pages/HotspotRadarPage.vue";
+import HotspotRadarTasksPage from "../pages/HotspotRadarTasksPage.vue";
+import HotspotRadarCandidatesPage from "../pages/HotspotRadarCandidatesPage.vue";
+import HotspotRadarSavedPage from "../pages/HotspotRadarSavedPage.vue";
+import HotspotRadarSavedDetailPage from "../pages/HotspotRadarSavedDetailPage.vue";
 
 export const router = createRouter({
   history: createWebHashHistory(),

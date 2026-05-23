@@ -92,6 +92,15 @@ const tools = computed(() => [
       : `未完成工具配置，缺失：${articleToolConfigStatus.value?.missingItems.join("、") || "请先配置"}`,
     actionLabel: "工具配置"
   },
+  {
+    title: "热点雷达",
+    description: "按账号画像+平台命令采集热点，标准化、去重、筛选并产出推荐热点。",
+    status: "available" as const,
+    route: "/tools/hotspot-radar",
+    blocked: false,
+    blockedReason: "",
+    actionLabel: "开发版"
+  },
   // {
   //   title: "爆款标题生成",
   //   description: "基于内容主题自动生成更适合分发场景的标题方案。",

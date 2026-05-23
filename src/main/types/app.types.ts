@@ -466,6 +466,96 @@ export type LlmSectionsResult = {
   sections: ArticleSection[];
 };
 
+
+export type HotspotRadarSourceConfig = {
+  source: string;
+  enabled: boolean;
+  enabledCommands: string[];
+  topLimit?: number;
+  searchLimit?: number;
+};
+
+export type HotspotRadarAccount = {
+  id: string;
+  accountName: string;
+  platform: string;
+  contentStyle: string;
+  mainTopics: string[];
+  targetAudience: string[];
+  tone: string;
+  avoidTopics: string[];
+  preferredContentTypes: string[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HotspotRadarWatcher = {
+  id: string;
+  accountId: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  sources: HotspotRadarSourceConfig[];
+  keywords: string[];
+  runIntervalMinutes: number;
+  dedupeLookbackDays: number;
+  maxCandidatesPerRun: number;
+  lastRunAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HotspotRadarLlmConfig = {
+  provider: OpenCliProvider;
+  profile: string;
+  model?: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+};
+
+export type HotspotRadarGlobalConfig = {
+  opencliProfile: string;
+  dedupeLookbackDays: number;
+  llm: HotspotRadarLlmConfig;
+};
+
+export type HotspotRadarTaskSummary = {
+  id: string;
+  watcherId: string;
+  status: string;
+  rawFileCount: number;
+  standardizedCount: number;
+  dedupedCount: number;
+  savedCount: number;
+  createdAt: string;
+  filePath: string;
+};
+
+export type HotspotRadarCandidateSummary = {
+  id: string;
+  title: string;
+  source: string;
+  matchedKeyword: string;
+  status: string;
+  roughDecision?: string;
+  finalDecision?: string;
+  finalScore?: number;
+  createdAt: string;
+  filePath: string;
+};
+
+export type HotspotRadarSavedSummary = {
+  id: string;
+  recommendedTopic: string;
+  hotspotTitle: string;
+  source: string;
+  decision: string;
+  score: number;
+  createdAt: string;
+  filePath: string;
+};
+
 export type DesktopApi = {
   selectVideo: () => Promise<string | null>;
   selectWord: () => Promise<string | null>;
@@ -580,6 +670,24 @@ export type DesktopApi = {
   copyImageToClipboard: (imagePath: string) => Promise<boolean>;
   readClipboardImage: () => Promise<string | null>;
   addContentStudioClipboardImage: (taskId: string) => Promise<ContentStudioTask>;
+  hotspotRadarCreateAccount: (input: Omit<HotspotRadarAccount, "createdAt" | "updatedAt">) => Promise<HotspotRadarAccount>;
+  hotspotRadarGetAccountById: (accountId: string) => Promise<HotspotRadarAccount | null>;
+  hotspotRadarDeleteAccount: (accountId: string) => Promise<void>;
+  hotspotRadarListWatchers: (accountId: string) => Promise<HotspotRadarWatcher[]>;
+  hotspotRadarGetWatcherById: (accountId: string, watcherId: string) => Promise<HotspotRadarWatcher | null>;
+  hotspotRadarDeleteWatcher: (accountId: string, watcherId: string) => Promise<void>;
+  hotspotRadarGetConfig: () => Promise<HotspotRadarGlobalConfig>;
+  hotspotRadarSaveConfig: (config: HotspotRadarGlobalConfig) => Promise<HotspotRadarGlobalConfig>;
+  hotspotRadarTestLlm: () => Promise<{ ready: boolean; message: string }>;
+  hotspotRadarListAccounts: () => Promise<HotspotRadarAccount[]>;
+  hotspotRadarUpsertWatcher: (input: Omit<HotspotRadarWatcher, "createdAt" | "updatedAt">) => Promise<HotspotRadarWatcher>;
+  hotspotRadarRunManualTask: (accountId: string, watcherId: string) => Promise<{ taskId: string; rawFileCount: number; standardizedCount: number; dedupedCount: number; candidateCount: number }>;
+  hotspotRadarRunScheduledTasks: () => Promise<Array<{ accountId: string; watcherId: string; taskId: string }>>;
+  hotspotRadarCleanup: (days?: number) => Promise<{ deletedRawDirs: number; deletedTaskDirs: number; deletedCandidateFiles: number }>;
+  hotspotRadarListTasks: (accountId: string) => Promise<HotspotRadarTaskSummary[]>;
+  hotspotRadarListCandidates: (accountId: string) => Promise<HotspotRadarCandidateSummary[]>;
+  hotspotRadarListSaved: (accountId: string) => Promise<HotspotRadarSavedSummary[]>;
+  hotspotRadarRebuildIndexes: (accountId: string) => Promise<{ taskCount: number; candidateCount: number; savedCount: number }>;
   onTaskProgress: (callback: (progress: TaskProgress) => void) => () => void;
   onWebTaskProgress: (callback: (progress: WebTaskProgress) => void) => () => void;
   onContentStudioTopicProgress: (callback: (progress: ContentStudioTopicProgress) => void) => () => void;

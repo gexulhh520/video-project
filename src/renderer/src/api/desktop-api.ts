@@ -42,7 +42,13 @@ import type {
   WebTaskProgress,
   WebTaskSummary,
   WebToPostConfigStatus,
-  WebToPostSettings
+  WebToPostSettings,
+  HotspotRadarAccount,
+  HotspotRadarWatcher,
+  HotspotRadarGlobalConfig,
+  HotspotRadarTaskSummary,
+  HotspotRadarCandidateSummary,
+  HotspotRadarSavedSummary
 } from "../../../main/types/app.types";
 
 function toPlainObject<T>(value: T): T {
@@ -152,6 +158,33 @@ export const desktopApi = {
     window.desktopApi.exportContentStudioWord(taskId),
   exportContentStudioImages: (taskId: string): Promise<string | null> =>
     window.desktopApi.exportContentStudioImages(taskId),
+  hotspotRadarCreateAccount: (input: Omit<HotspotRadarAccount, "createdAt" | "updatedAt">): Promise<HotspotRadarAccount> =>
+    window.desktopApi.hotspotRadarCreateAccount(toPlainObject(input)),
+  hotspotRadarGetAccountById: (accountId: string): Promise<HotspotRadarAccount | null> => window.desktopApi.hotspotRadarGetAccountById(accountId),
+  hotspotRadarDeleteAccount: (accountId: string): Promise<void> => window.desktopApi.hotspotRadarDeleteAccount(accountId),
+  hotspotRadarListWatchers: (accountId: string): Promise<HotspotRadarWatcher[]> => window.desktopApi.hotspotRadarListWatchers(accountId),
+  hotspotRadarGetWatcherById: (accountId: string, watcherId: string): Promise<HotspotRadarWatcher | null> =>
+    window.desktopApi.hotspotRadarGetWatcherById(accountId, watcherId),
+  hotspotRadarDeleteWatcher: (accountId: string, watcherId: string): Promise<void> =>
+    window.desktopApi.hotspotRadarDeleteWatcher(accountId, watcherId),
+  hotspotRadarGetConfig: (): Promise<HotspotRadarGlobalConfig> => window.desktopApi.hotspotRadarGetConfig(),
+  hotspotRadarSaveConfig: (config: HotspotRadarGlobalConfig): Promise<HotspotRadarGlobalConfig> =>
+    window.desktopApi.hotspotRadarSaveConfig(toPlainObject(config)),
+  hotspotRadarTestLlm: (): Promise<{ ready: boolean; message: string }> => window.desktopApi.hotspotRadarTestLlm(),
+  hotspotRadarListAccounts: (): Promise<HotspotRadarAccount[]> => window.desktopApi.hotspotRadarListAccounts(),
+  hotspotRadarUpsertWatcher: (input: Omit<HotspotRadarWatcher, "createdAt" | "updatedAt">): Promise<HotspotRadarWatcher> =>
+    window.desktopApi.hotspotRadarUpsertWatcher(toPlainObject(input)),
+  hotspotRadarRunManualTask: (accountId: string, watcherId: string): Promise<{ taskId: string; rawFileCount: number; standardizedCount: number; dedupedCount: number; candidateCount: number }> =>
+    window.desktopApi.hotspotRadarRunManualTask(accountId, watcherId),
+  hotspotRadarRunScheduledTasks: (): Promise<Array<{ accountId: string; watcherId: string; taskId: string }>> =>
+    window.desktopApi.hotspotRadarRunScheduledTasks(),
+  hotspotRadarCleanup: (days?: number): Promise<{ deletedRawDirs: number; deletedTaskDirs: number; deletedCandidateFiles: number }> =>
+    window.desktopApi.hotspotRadarCleanup(days),
+  hotspotRadarListTasks: (accountId: string): Promise<HotspotRadarTaskSummary[]> => window.desktopApi.hotspotRadarListTasks(accountId),
+  hotspotRadarListCandidates: (accountId: string): Promise<HotspotRadarCandidateSummary[]> => window.desktopApi.hotspotRadarListCandidates(accountId),
+  hotspotRadarListSaved: (accountId: string): Promise<HotspotRadarSavedSummary[]> => window.desktopApi.hotspotRadarListSaved(accountId),
+  hotspotRadarRebuildIndexes: (accountId: string): Promise<{ taskCount: number; candidateCount: number; savedCount: number }> =>
+    window.desktopApi.hotspotRadarRebuildIndexes(accountId),
   getWebToPostSettings: (): Promise<WebToPostSettings> => window.desktopApi.getWebToPostSettings(),
   saveWebToPostSettings: (settings: WebToPostSettings): Promise<WebToPostSettings> =>
     window.desktopApi.saveWebToPostSettings(toPlainObject(settings)),

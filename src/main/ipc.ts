@@ -56,6 +56,7 @@ import { ContentStudioSettingsService } from "./services/content-studio/content-
 import { ContentStudioService } from "./services/content-studio/content-studio.service";
 import { ContentStudioLayoutService } from "./services/content-studio/content-studio-layout.service";
 import { ContentStudioExportService } from "./services/content-studio/content-studio-export.service";
+import { HotspotRadarService, HotspotRadarAccount, HotspotRadarWatcher, HotspotRadarGlobalConfig, HotspotRadarTaskSummary, HotspotRadarCandidateSummary, HotspotRadarSavedSummary } from "./services/hotspot-radar.service";
 
 export const TASK_PROGRESS_CHANNEL = "task:progress";
 export const WEB_TASK_PROGRESS_CHANNEL = "web-task:progress";
@@ -75,7 +76,8 @@ export function registerIpcHandlers(
   contentStudioSettingsService: ContentStudioSettingsService,
   contentStudioService: ContentStudioService,
   contentStudioLayoutService: ContentStudioLayoutService,
-  contentStudioExportService: ContentStudioExportService
+  contentStudioExportService: ContentStudioExportService,
+  hotspotRadarService: HotspotRadarService
 ): void {
   const licenseService = new LicenseService();
   const getActiveWebTaskService = async (): Promise<WebTaskService | OpenCliWebTaskService> => {
@@ -604,6 +606,55 @@ export function registerIpcHandlers(
     async (_event, taskId: string): Promise<ContentStudioTask> =>
       contentStudioLayoutService.addClipboardImage(taskId)
   );
+  ipcMain.handle("hotspot-radar:config:get", async (): Promise<HotspotRadarGlobalConfig> => hotspotRadarService.getGlobalConfig());
+  ipcMain.handle("hotspot-radar:config:save", async (_event, config: HotspotRadarGlobalConfig): Promise<HotspotRadarGlobalConfig> =>
+    hotspotRadarService.saveGlobalConfig(config)
+  );
+  ipcMain.handle("hotspot-radar:llm:test", async (): Promise<{ ready: boolean; message: string }> => hotspotRadarService.testLlmConfig());
+  ipcMain.handle("hotspot-radar:account:create", async (_event, input: Omit<HotspotRadarAccount, "createdAt" | "updatedAt">): Promise<HotspotRadarAccount> =>
+    hotspotRadarService.createAccount(input)
+  );
+  ipcMain.handle("hotspot-radar:account:get", async (_event, accountId: string): Promise<HotspotRadarAccount | null> =>
+    hotspotRadarService.getAccountById(accountId)
+  );
+  ipcMain.handle("hotspot-radar:account:delete", async (_event, accountId: string): Promise<void> =>
+    hotspotRadarService.deleteAccount(accountId)
+  );
+  ipcMain.handle("hotspot-radar:watcher:list", async (_event, accountId: string): Promise<HotspotRadarWatcher[]> =>
+    hotspotRadarService.listWatchers(accountId)
+  );
+  ipcMain.handle("hotspot-radar:watcher:get", async (_event, accountId: string, watcherId: string): Promise<HotspotRadarWatcher | null> =>
+    hotspotRadarService.getWatcherById(accountId, watcherId)
+  );
+  ipcMain.handle("hotspot-radar:watcher:delete", async (_event, accountId: string, watcherId: string): Promise<void> =>
+    hotspotRadarService.deleteWatcher(accountId, watcherId)
+  );
+  ipcMain.handle("hotspot-radar:account:list", async (): Promise<HotspotRadarAccount[]> => hotspotRadarService.listAccounts());
+  ipcMain.handle("hotspot-radar:watcher:upsert", async (_event, input: Omit<HotspotRadarWatcher, "createdAt" | "updatedAt">): Promise<HotspotRadarWatcher> =>
+    hotspotRadarService.upsertWatcher(input)
+  );
+  ipcMain.handle("hotspot-radar:task:list", async (_event, accountId: string): Promise<HotspotRadarTaskSummary[]> =>
+    hotspotRadarService.listTaskSummaries(accountId)
+  );
+  ipcMain.handle("hotspot-radar:candidate:list", async (_event, accountId: string): Promise<HotspotRadarCandidateSummary[]> =>
+    hotspotRadarService.listCandidateSummaries(accountId)
+  );
+  ipcMain.handle("hotspot-radar:saved:list", async (_event, accountId: string): Promise<HotspotRadarSavedSummary[]> =>
+    hotspotRadarService.listSavedSummaries(accountId)
+  );
+  ipcMain.handle("hotspot-radar:index:rebuild", async (_event, accountId: string): Promise<{ taskCount: number; candidateCount: number; savedCount: number }> =>
+    hotspotRadarService.rebuildIndexes(accountId)
+  );
+  ipcMain.handle("hotspot-radar:task:run-scheduled", async (): Promise<Array<{ accountId: string; watcherId: string; taskId: string }>> =>
+    hotspotRadarService.runScheduledTasks()
+  );
+  ipcMain.handle("hotspot-radar:cleanup", async (_event, days?: number): Promise<{ deletedRawDirs: number; deletedTaskDirs: number; deletedCandidateFiles: number }> =>
+    hotspotRadarService.cleanupOldData(days)
+  );
+  ipcMain.handle("hotspot-radar:task:run-manual", async (_event, accountId: string, watcherId: string): Promise<{ taskId: string; rawFileCount: number; standardizedCount: number; dedupedCount: number; candidateCount: number }> =>
+    hotspotRadarService.runManualTask(accountId, watcherId)
+  );
+
 }
 
 function sanitizeFileName(value: string): string {

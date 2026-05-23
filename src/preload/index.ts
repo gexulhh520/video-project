@@ -41,7 +41,13 @@ import type {
   WebTaskProgress,
   WebTaskSummary,
   WebToPostConfigStatus,
-  WebToPostSettings
+  WebToPostSettings,
+  HotspotRadarAccount,
+  HotspotRadarWatcher,
+  HotspotRadarGlobalConfig,
+  HotspotRadarTaskSummary,
+  HotspotRadarCandidateSummary,
+  HotspotRadarSavedSummary
 } from "../main/types/app.types";
 import { TASK_PROGRESS_CHANNEL, WEB_TASK_PROGRESS_CHANNEL } from "../main/ipc";
 import { CONTENT_STUDIO_MATERIAL_PROGRESS_CHANNEL, CONTENT_STUDIO_TOPIC_PROGRESS_CHANNEL } from "../main/ipc";
@@ -147,6 +153,39 @@ const desktopApi: DesktopApi = {
     ipcRenderer.invoke("content-studio-layout:add-local-image", taskId, sourceImagePath),
   addContentStudioClipboardImage: async (taskId: string): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio:add-clipboard-image", taskId),
+  hotspotRadarCreateAccount: async (input: Omit<HotspotRadarAccount, "createdAt" | "updatedAt">): Promise<HotspotRadarAccount> =>
+    ipcRenderer.invoke("hotspot-radar:account:create", input),
+  hotspotRadarGetAccountById: async (accountId: string): Promise<HotspotRadarAccount | null> =>
+    ipcRenderer.invoke("hotspot-radar:account:get", accountId),
+  hotspotRadarDeleteAccount: async (accountId: string): Promise<void> =>
+    ipcRenderer.invoke("hotspot-radar:account:delete", accountId),
+  hotspotRadarListWatchers: async (accountId: string): Promise<HotspotRadarWatcher[]> =>
+    ipcRenderer.invoke("hotspot-radar:watcher:list", accountId),
+  hotspotRadarGetWatcherById: async (accountId: string, watcherId: string): Promise<HotspotRadarWatcher | null> =>
+    ipcRenderer.invoke("hotspot-radar:watcher:get", accountId, watcherId),
+  hotspotRadarDeleteWatcher: async (accountId: string, watcherId: string): Promise<void> =>
+    ipcRenderer.invoke("hotspot-radar:watcher:delete", accountId, watcherId),
+  hotspotRadarGetConfig: async (): Promise<HotspotRadarGlobalConfig> => ipcRenderer.invoke("hotspot-radar:config:get"),
+  hotspotRadarSaveConfig: async (config: HotspotRadarGlobalConfig): Promise<HotspotRadarGlobalConfig> =>
+    ipcRenderer.invoke("hotspot-radar:config:save", config),
+  hotspotRadarTestLlm: async (): Promise<{ ready: boolean; message: string }> => ipcRenderer.invoke("hotspot-radar:llm:test"),
+  hotspotRadarListAccounts: async (): Promise<HotspotRadarAccount[]> => ipcRenderer.invoke("hotspot-radar:account:list"),
+  hotspotRadarUpsertWatcher: async (input: Omit<HotspotRadarWatcher, "createdAt" | "updatedAt">): Promise<HotspotRadarWatcher> =>
+    ipcRenderer.invoke("hotspot-radar:watcher:upsert", input),
+  hotspotRadarRunManualTask: async (accountId: string, watcherId: string): Promise<{ taskId: string; rawFileCount: number; standardizedCount: number; dedupedCount: number; candidateCount: number }> =>
+    ipcRenderer.invoke("hotspot-radar:task:run-manual", accountId, watcherId),
+  hotspotRadarRunScheduledTasks: async (): Promise<Array<{ accountId: string; watcherId: string; taskId: string }>> =>
+    ipcRenderer.invoke("hotspot-radar:task:run-scheduled"),
+  hotspotRadarCleanup: async (days?: number): Promise<{ deletedRawDirs: number; deletedTaskDirs: number; deletedCandidateFiles: number }> =>
+    ipcRenderer.invoke("hotspot-radar:cleanup", days),
+  hotspotRadarListTasks: async (accountId: string): Promise<HotspotRadarTaskSummary[]> =>
+    ipcRenderer.invoke("hotspot-radar:task:list", accountId),
+  hotspotRadarListCandidates: async (accountId: string): Promise<HotspotRadarCandidateSummary[]> =>
+    ipcRenderer.invoke("hotspot-radar:candidate:list", accountId),
+  hotspotRadarListSaved: async (accountId: string): Promise<HotspotRadarSavedSummary[]> =>
+    ipcRenderer.invoke("hotspot-radar:saved:list", accountId),
+  hotspotRadarRebuildIndexes: async (accountId: string): Promise<{ taskCount: number; candidateCount: number; savedCount: number }> =>
+    ipcRenderer.invoke("hotspot-radar:index:rebuild", accountId),
   bindContentStudioImage: async (taskId: string, paragraphId: string, assetId: string): Promise<ContentStudioTask> =>
     ipcRenderer.invoke("content-studio-layout:bind-image", taskId, paragraphId, assetId),
   unbindContentStudioImage: async (taskId: string, paragraphId: string): Promise<ContentStudioTask> =>

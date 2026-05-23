@@ -26,6 +26,10 @@ function openDetail(id: string): void {
 
 <template>
   <div class="page">
+    <div class="page-actions">
+      <button @click="router.push('/tools/hotspot-radar')">返回热点雷达</button>
+      <button @click="router.push('/tools/content-studio')">返回内容创作工作台</button>
+    </div>
     <h2>热点雷达 / 推荐热点</h2>
     <select v-model="accountId" @change="load">
       <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.accountName }}</option>
@@ -37,6 +41,7 @@ function openDetail(id: string): void {
 </template>
 
 <style scoped>
-.page{padding:16px;color:#e6edf3}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border:1px solid #30363d;padding:6px}
+.page{height:100%;overflow:auto;padding:16px;color:#e6edf3}.tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border:1px solid #30363d;padding:6px}
 select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;padding:6px;margin-bottom:8px}
+.page-actions{margin-bottom:8px}
 </style>

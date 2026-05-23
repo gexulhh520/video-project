@@ -38,11 +38,14 @@ import RunLogModal from "../components/content-studio/RunLogModal.vue";
 
 const router = useRouter();
 
-const tabs: Array<{ key: ContentStudioTabKey; label: string }> = [
+type StudioNavTabKey = ContentStudioTabKey | "hotspot-radar";
+
+const tabs: Array<{ key: StudioNavTabKey; label: string }> = [
   { key: "topic", label: "话题成文" },
   { key: "material", label: "素材二创" },
   { key: "hot", label: "热点成文" },
-  { key: "layout", label: "图文排版" }
+  { key: "layout", label: "图文排版" },
+  { key: "hotspot-radar", label: "热点雷达" }
 ];
 
 const activeTab = ref<ContentStudioTabKey>("topic");
@@ -308,7 +311,11 @@ async function deleteTaskFromHistory(taskId: string): Promise<void> {
   }
 }
 
-async function setActiveTab(tab: ContentStudioTabKey): Promise<void> {
+async function setActiveTab(tab: StudioNavTabKey): Promise<void> {
+  if (tab === "hotspot-radar") {
+    await router.push("/tools/hotspot-radar");
+    return;
+  }
   activeTab.value = tab;
   if (tab === "layout") {
     await loadLayoutArticleCandidates();

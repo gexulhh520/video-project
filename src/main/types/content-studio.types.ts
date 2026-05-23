@@ -92,6 +92,7 @@ export type TopicResearchPlanItem = {
   preferredSourceType: "official" | "media" | "community" | "case" | "industry" | "other";
   required: boolean;
   rawText?: string;
+  riskNotes?: string[];
 };
 
 export type TopicSelectedTopic = {

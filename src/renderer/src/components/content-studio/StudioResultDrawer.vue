@@ -144,7 +144,6 @@ watch(
             <p><strong>{{ item.materialId }}</strong> - {{ item.query }}</p>
             <p>用途：{{ item.purpose }}</p>
             <p>来源偏好：{{ item.preferredSourceType }} | 必需：{{ item.required ? "是" : "否" }}</p>
-            <p>风险提示：{{ item.riskNotes?.join("；") || "无" }}</p>
           </article>
         </section>
 

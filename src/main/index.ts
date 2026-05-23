@@ -29,6 +29,7 @@ import { ContentStudioLayoutService } from "./services/content-studio/content-st
 import { ContentStudioExportService } from "./services/content-studio/content-studio-export.service";
 import { ContentStudioImageService } from "./services/content-studio/content-studio-image.service";
 import { ContentStudioResourceService } from "./services/content-studio/content-studio-resource.service";
+import { HotspotRadarService } from "./services/hotspot-radar.service";
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ function createWindow(): void {
   const openCliRuntimeService = new OpenCliRuntimeService(openCliCommandRunner, settingsService);
   const openCliBrowserService = new OpenCliBrowserService(openCliCommandRunner);
   const openCliWebLlmService = new OpenCliWebLlmService(openCliCommandRunner);
+  const hotspotRadarService = new HotspotRadarService(settingsService, openCliCommandRunner, openCliWebLlmService);
   const openCliImageDownloader = new OpenCliImageDownloader();
   const llmService = new LlmService(settingsService, openCliRuntimeService, openCliWebLlmService);
   const postService = new PostService(ffmpegService, transcriptService, llmService, settingsService);
@@ -115,7 +117,8 @@ function createWindow(): void {
     contentStudioSettingsService,
     contentStudioService,
     contentStudioLayoutService,
-    contentStudioExportService
+    contentStudioExportService,
+    hotspotRadarService
   );
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {

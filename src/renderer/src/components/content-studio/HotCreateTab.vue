@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import type { HotspotRadarAccount, HotspotRadarCandidateSummary, HotspotRadarSavedSummary, HotspotRadarTaskSummary, HotspotRadarWatcher } from "../../../../main/types/app.types";
 import { desktopApi } from "../../api/desktop-api";
 
@@ -15,6 +15,16 @@ const emit = defineEmits<{
 
 const accounts = ref<HotspotRadarAccount[]>([]);
 const selectedAccountId = ref("");
+const accountName = ref("");
+const accountPlatform = ref("公众号");
+const contentStyle = ref("");
+const mainTopicsText = ref("");
+const targetAudienceText = ref("");
+const tone = ref("");
+const avoidTopicsText = ref("");
+const preferredContentTypesText = ref("");
+const accountEnabled = ref(true);
+
 const watcherId = ref("watcher_hot_content");
 const watcherName = ref("热点成文监听器");
 const keywordsText = ref("OpenAI,AI Agent,自媒体");
@@ -32,10 +42,58 @@ onMounted(async () => {
   await refreshAccounts();
 });
 
+watch(selectedAccountId, async (id) => {
+  if (!id) {
+    clearAccountForm();
+    return;
+  }
+  await loadSelectedAccount(id);
+  await refreshIndexes();
+});
+
+function parseCommaText(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function clearAccountForm(): void {
+  accountName.value = "";
+  accountPlatform.value = "公众号";
+  contentStyle.value = "";
+  mainTopicsText.value = "";
+  targetAudienceText.value = "";
+  tone.value = "";
+  avoidTopicsText.value = "";
+  preferredContentTypesText.value = "";
+  accountEnabled.value = true;
+}
+
+function fillAccountForm(account: HotspotRadarAccount): void {
+  accountName.value = account.accountName || "";
+  accountPlatform.value = account.platform || "公众号";
+  contentStyle.value = account.contentStyle || "";
+  mainTopicsText.value = account.mainTopics.join(",");
+  targetAudienceText.value = account.targetAudience.join(",");
+  tone.value = account.tone || "";
+  avoidTopicsText.value = account.avoidTopics.join(",");
+  preferredContentTypesText.value = account.preferredContentTypes.join(",");
+  accountEnabled.value = account.enabled;
+}
+
+async function loadSelectedAccount(accountId: string): Promise<void> {
+  const account = await desktopApi.hotspotRadarGetAccountById(accountId);
+  if (!account) {
+    clearAccountForm();
+    return;
+  }
+  fillAccountForm(account);
+}
+
 async function refreshAccounts(): Promise<void> {
   accounts.value = await desktopApi.hotspotRadarListAccounts();
   if (!selectedAccountId.value && accounts.value.length) {
     selectedAccountId.value = accounts.value[0].id;
+  } else if (selectedAccountId.value) {
+    await loadSelectedAccount(selectedAccountId.value);
   }
   await refreshIndexes();
 }
@@ -71,6 +129,29 @@ async function createDemoAccount(): Promise<void> {
   await refreshAccounts();
 }
 
+async function saveAccountProfile(): Promise<void> {
+  if (!accountName.value.trim()) {
+    notice.value = "请先填写账号名称";
+    return;
+  }
+  const id = selectedAccountId.value || `account_${Date.now().toString().slice(-6)}`;
+  await desktopApi.hotspotRadarCreateAccount({
+    id,
+    accountName: accountName.value.trim(),
+    platform: accountPlatform.value.trim() || "公众号",
+    contentStyle: contentStyle.value.trim(),
+    mainTopics: parseCommaText(mainTopicsText.value),
+    targetAudience: parseCommaText(targetAudienceText.value),
+    tone: tone.value.trim(),
+    avoidTopics: parseCommaText(avoidTopicsText.value),
+    preferredContentTypes: parseCommaText(preferredContentTypesText.value),
+    enabled: accountEnabled.value
+  });
+  selectedAccountId.value = id;
+  notice.value = "账号画像已保存";
+  await refreshAccounts();
+}
+
 async function saveWatcher(): Promise<void> {
   if (!selectedAccountId.value) return;
   const watcher: Omit<HotspotRadarWatcher, "createdAt" | "updatedAt"> = {
@@ -87,7 +168,7 @@ async function saveWatcher(): Promise<void> {
         return [];
       }
     })(),
-    keywords: keywordsText.value.split(",").map((v) => v.trim()).filter(Boolean),
+    keywords: parseCommaText(keywordsText.value),
     runIntervalMinutes: 60,
     dedupeLookbackDays: 15,
     maxCandidatesPerRun: 200,
@@ -125,12 +206,49 @@ async function collectAndScreen(): Promise<void> {
       <label class="field">
         <span>账号画像</span>
         <div class="row">
-          <select v-model="selectedAccountId" @change="refreshIndexes">
+          <select v-model="selectedAccountId">
             <option value="" disabled>请选择账号</option>
             <option v-for="acc in accounts" :key="acc.id" :value="acc.id">{{ acc.accountName }}</option>
           </select>
           <button class="ghost-btn" @click="createDemoAccount">创建示例账号</button>
         </div>
+      </label>
+      <label class="field">
+        <span>账号名称 / 平台</span>
+        <div class="row">
+          <input v-model="accountName" type="text" placeholder="账号名称" />
+          <input v-model="accountPlatform" type="text" placeholder="平台" />
+        </div>
+      </label>
+      <label class="field">
+        <span>风格 / 语气</span>
+        <div class="row">
+          <input v-model="contentStyle" type="text" placeholder="内容风格" />
+          <input v-model="tone" type="text" placeholder="语气" />
+        </div>
+      </label>
+      <label class="field">
+        <span>主话题（逗号）</span>
+        <input v-model="mainTopicsText" type="text" />
+      </label>
+      <label class="field">
+        <span>受众（逗号）</span>
+        <input v-model="targetAudienceText" type="text" />
+      </label>
+      <label class="field">
+        <span>避开话题（逗号）</span>
+        <input v-model="avoidTopicsText" type="text" />
+      </label>
+      <label class="field field-full">
+        <span>偏好内容类型（逗号）</span>
+        <input v-model="preferredContentTypesText" type="text" />
+      </label>
+      <label class="field">
+        <span>账号启用</span>
+        <select v-model="accountEnabled">
+          <option :value="true">启用</option>
+          <option :value="false">禁用</option>
+        </select>
       </label>
       <label class="field">
         <span>监听器ID/名称</span>
@@ -150,6 +268,7 @@ async function collectAndScreen(): Promise<void> {
     </div>
 
     <div class="actions">
+      <button class="ghost-btn" @click="saveAccountProfile">保存账号画像</button>
       <button class="ghost-btn" @click="saveWatcher" :disabled="!selectedAccountId">保存监听器</button>
       <button class="primary-btn" :disabled="!selectedAccountId" @click="collectAndScreen">采集+筛选</button>
     </div>

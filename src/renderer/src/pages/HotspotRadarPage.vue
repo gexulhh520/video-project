@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { RouterLink, useRouter } from "vue-router";
-import type { HotspotRadarAccount, HotspotRadarGlobalConfig, HotspotRadarWatcher, OpenCliProvider, HotspotRadarTaskSummary, HotspotRadarCandidateSummary, HotspotRadarSavedSummary } from "../../../main/types/app.types";
+import type {
+  HotspotRadarAccount,
+  HotspotRadarGlobalConfig,
+  HotspotRadarWatcher,
+  OpenCliProvider,
+  HotspotRadarTaskSummary,
+  HotspotRadarCandidateSummary,
+  HotspotRadarSavedSummary,
+  OpenCliRuntimeHealthStatus
+} from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 
 const accounts = ref<HotspotRadarAccount[]>([]);
@@ -17,6 +26,8 @@ const tasks = ref<HotspotRadarTaskSummary[]>([]);
 const candidates = ref<HotspotRadarCandidateSummary[]>([]);
 const saved = ref<HotspotRadarSavedSummary[]>([]);
 const notice = ref("");
+const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
+const openCliRepairing = ref(false);
 
 const config = ref<HotspotRadarGlobalConfig>({
   opencliProfile: "default",
@@ -29,6 +40,7 @@ const providerOptions: OpenCliProvider[] = ["chatgpt", "gemini", "claude", "grok
 onMounted(async () => {
   await refreshAccounts();
   config.value = await desktopApi.hotspotRadarGetConfig();
+  await refreshOpenCliHealth();
 });
 
 async function refreshAccounts(): Promise<void> {
@@ -64,6 +76,36 @@ async function createDemoAccount(): Promise<void> {
 async function saveConfig(): Promise<void> {
   config.value = await desktopApi.hotspotRadarSaveConfig(config.value);
   notice.value = "全局配置已保存";
+}
+
+function buildOpenCliHealthText(): string {
+  if (!openCliHealth.value) return "待检测";
+  if (openCliHealth.value.healthy) {
+    return `正常（Profile: ${openCliHealth.value.selectedProfile || "未选择"}）`;
+  }
+  return "待检测 / 异常";
+}
+
+async function refreshOpenCliHealth(): Promise<void> {
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    notice.value = `OpenCLI 检测完成：${buildOpenCliHealthText()}`;
+  } catch (error) {
+    openCliHealth.value = null;
+    notice.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+  }
+}
+
+async function repairOpenCli(): Promise<void> {
+  openCliRepairing.value = true;
+  try {
+    openCliHealth.value = await desktopApi.repairOpenCliRuntime();
+    notice.value = `OpenCLI 修复完成：${buildOpenCliHealthText()}`;
+  } catch (error) {
+    notice.value = error instanceof Error ? error.message : "OpenCLI 修复失败";
+  } finally {
+    openCliRepairing.value = false;
+  }
 }
 
 async function testLlm(): Promise<void> {
@@ -182,9 +224,12 @@ async function cleanup(): Promise<void> {
       </label>
       <label>LLM Profile <input v-model="config.llm.profile" /></label>
       <label>LLM Model <input v-model="config.llm.model" /></label>
+      <div class="opencli-status">OpenCLI 运行状态：{{ buildOpenCliHealthText() }}</div>
       <div>
         <button @click="saveConfig">保存配置</button>
         <button @click="testLlm">测试LLM</button>
+        <button :disabled="openCliRepairing" @click="refreshOpenCliHealth">重新检测</button>
+        <button :disabled="openCliRepairing" @click="repairOpenCli">{{ openCliRepairing ? "修复中..." : "一键修复" }}</button>
       </div>
     </section>
 
@@ -246,6 +291,7 @@ input, select, textarea { background: #0d1117; border: 1px solid #30363d; color:
 button { margin-right: 8px; }
 .page-actions{margin-bottom:8px;}
 .notice { color: #7ee787; }
+.opencli-status { color: #a5d6ff; font-size: 13px; }
 .nav-links{display:flex;gap:12px;margin:8px 0 12px;}
 .nav-links a{color:#58a6ff;}
 pre { background:#0d1117; border:1px solid #30363d; padding:8px; overflow:auto; }

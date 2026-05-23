@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { RouterLink, useRouter } from "vue-router";
+import { RouterLink } from "vue-router";
 import type { HotspotRadarAccount, HotspotRadarGlobalConfig, HotspotRadarWatcher, OpenCliProvider, HotspotRadarTaskSummary, HotspotRadarCandidateSummary, HotspotRadarSavedSummary } from "../../../main/types/app.types";
 import { desktopApi } from "../api/desktop-api";
 
 const accounts = ref<HotspotRadarAccount[]>([]);
-const router = useRouter();
 const selectedAccountId = ref("");
 const watcherId = ref("watcher_default");
 const watchers = ref<HotspotRadarWatcher[]>([]);
@@ -151,9 +150,6 @@ async function cleanup(): Promise<void> {
 
 <template>
   <div class="hotspot-page">
-    <div class="page-actions">
-      <button @click="router.push('/tools/content-studio')">返回内容创作工作台</button>
-    </div>
     <h2>热点雷达（开发版）</h2>
     <p class="notice" v-if="notice">{{ notice }}</p>
     <div class="nav-links">
@@ -240,11 +236,10 @@ async function cleanup(): Promise<void> {
 </template>
 
 <style scoped>
-.hotspot-page { height: 100%; overflow: auto; padding: 16px; color: #e6edf3; }
+.hotspot-page { padding: 16px; color: #e6edf3; }
 .card { border: 1px solid #30363d; padding: 12px; border-radius: 8px; margin: 12px 0; display: grid; gap: 8px; }
 input, select, textarea { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 6px; }
 button { margin-right: 8px; }
-.page-actions{margin-bottom:8px;}
 .notice { color: #7ee787; }
 .nav-links{display:flex;gap:12px;margin:8px 0 12px;}
 .nav-links a{color:#58a6ff;}

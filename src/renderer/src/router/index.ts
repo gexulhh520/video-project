@@ -38,30 +38,5 @@ export const router = createRouter({
       name: "content-studio",
       component: ContentStudioPage
     },
-    {
-      path: "/tools/hotspot-radar",
-      name: "hotspot-radar",
-      component: HotspotRadarPage
-    },
-    {
-      path: "/tools/hotspot-radar/tasks",
-      name: "hotspot-radar-tasks",
-      component: HotspotRadarTasksPage
-    },
-    {
-      path: "/tools/hotspot-radar/candidates",
-      name: "hotspot-radar-candidates",
-      component: HotspotRadarCandidatesPage
-    },
-    {
-      path: "/tools/hotspot-radar/saved",
-      name: "hotspot-radar-saved",
-      component: HotspotRadarSavedPage
-    },
-    {
-      path: "/tools/hotspot-radar/saved/:savedId",
-      name: "hotspot-radar-saved-detail",
-      component: HotspotRadarSavedDetailPage
-    }
   ]
 });

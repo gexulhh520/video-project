@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { onMounted, ref } from "vue";
-import type { HotspotRadarAccount, HotspotRadarCandidateSummary, HotspotRadarSavedSummary, HotspotRadarTaskSummary, HotspotRadarWatcher } from "../../../../main/types/app.types";
+import type { HotspotRadarAccount, HotspotRadarCandidateSummary, HotspotRadarGlobalConfig, HotspotRadarSavedSummary, HotspotRadarTaskSummary, HotspotRadarWatcher, OpenCliRuntimeHealthStatus } from "../../../../main/types/app.types";
 import { desktopApi } from "../../api/desktop-api";
 
 const props = defineProps<{
@@ -28,9 +28,56 @@ const candidates = ref<HotspotRadarCandidateSummary[]>([]);
 const saved = ref<HotspotRadarSavedSummary[]>([]);
 const notice = ref("");
 
+const globalConfig = ref<HotspotRadarGlobalConfig | null>(null);
+const openCliHealth = ref<OpenCliRuntimeHealthStatus | null>(null);
+const openCliChecking = ref(false);
+const openCliRepairing = ref(false);
+const runtimeNotice = ref("");
+
 onMounted(async () => {
-  await refreshAccounts();
+  await Promise.all([refreshAccounts(), loadGlobalConfig()]);
+  await handleCheckOpenCliHealth();
 });
+
+
+
+async function loadGlobalConfig(): Promise<void> {
+  globalConfig.value = await desktopApi.hotspotRadarGetConfig();
+}
+
+async function saveGlobalConfig(): Promise<void> {
+  if (!globalConfig.value) return;
+  globalConfig.value = await desktopApi.hotspotRadarSaveConfig(globalConfig.value);
+  notice.value = "热点雷达全局配置已保存";
+}
+
+async function handleCheckOpenCliHealth(): Promise<void> {
+  openCliChecking.value = true;
+  runtimeNotice.value = "";
+  try {
+    openCliHealth.value = await desktopApi.checkOpenCliHealth();
+    runtimeNotice.value = openCliHealth.value.message;
+  } catch (error) {
+    openCliHealth.value = null;
+    runtimeNotice.value = error instanceof Error ? error.message : "OpenCLI 检测失败";
+  } finally {
+    openCliChecking.value = false;
+  }
+}
+
+async function handleRepairOpenCliRuntime(): Promise<void> {
+  openCliRepairing.value = true;
+  runtimeNotice.value = "";
+  try {
+    openCliHealth.value = await desktopApi.repairOpenCliRuntime();
+    runtimeNotice.value = openCliHealth.value.message;
+  } catch (error) {
+    openCliHealth.value = null;
+    runtimeNotice.value = error instanceof Error ? error.message : "OpenCLI 修复失败";
+  } finally {
+    openCliRepairing.value = false;
+  }
+}
 
 async function refreshAccounts(): Promise<void> {
   accounts.value = await desktopApi.hotspotRadarListAccounts();
@@ -121,6 +168,34 @@ async function collectAndScreen(): Promise<void> {
     <p v-if="!props.tabReady" class="warning">当前配置未完成：{{ props.missingItems.join("、") || "请先配置模型" }}</p>
     <p v-if="notice" class="notice">{{ notice }}</p>
 
+    <section v-if="globalConfig" class="runtime-card">
+      <h4>热点雷达全局配置</h4>
+      <strong class="runtime-status">{{ openCliHealth?.healthy ? "正常" : "待检测 / 异常" }}</strong>
+      <span class="hint">Profile：{{ openCliHealth?.selectedProfile || globalConfig.opencliProfile || "未检测到" }}</span>
+      <div class="runtime-actions">
+        <button class="ghost-btn" :disabled="openCliChecking || openCliRepairing" @click="handleCheckOpenCliHealth">{{ openCliChecking ? "检测中..." : "开始检测" }}</button>
+        <button class="ghost-btn" :disabled="openCliChecking || openCliRepairing" @click="handleRepairOpenCliRuntime">{{ openCliRepairing ? "修复中..." : "一键修复" }}</button>
+      </div>
+      <div class="form-grid compact">
+        <label class="field">
+          <span>OpenCLI Profile</span>
+          <input v-model="globalConfig.opencliProfile" type="text" />
+        </label>
+        <label class="field">
+          <span>去重回看天数</span>
+          <input v-model.number="globalConfig.dedupeLookbackDays" type="number" min="1" />
+        </label>
+        <label class="field">
+          <span>LLM 模型（可选）</span>
+          <input v-model="globalConfig.llm.model" type="text" placeholder="例如 gpt-5" />
+        </label>
+      </div>
+      <div class="runtime-actions">
+        <button class="primary-btn" @click="saveGlobalConfig">保存全局配置</button>
+      </div>
+      <p v-if="runtimeNotice" class="hint">{{ runtimeNotice }}</p>
+    </section>
+
     <div class="form-grid">
       <label class="field">
         <span>账号画像</span>
@@ -188,6 +263,11 @@ async function collectAndScreen(): Promise<void> {
 .ghost-btn, .primary-btn { min-height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(140,173,247,0.14); cursor: pointer; font-weight: 600; }
 .ghost-btn { background: rgba(255,255,255,0.03); color: #eaf3ff; }
 .primary-btn { background: linear-gradient(135deg, #79f0d5, #47b9ff); color: #08111f; }
+.runtime-card { display: grid; gap: 10px; padding: 14px; border-radius: 14px; border: 1px solid rgba(149, 181, 255, 0.14); background: rgba(255,255,255,0.02); }
+.runtime-status { color: #7ee787; }
+.hint { color: #9db4d8; font-size: 12px; }
+.runtime-actions { display: flex; gap: 10px; }
+.compact { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
 .mini-card { border: 1px solid rgba(149,181,255,0.16); border-radius: 10px; padding: 10px; }
 .mini-card h4 { margin: 0 0 8px 0; }

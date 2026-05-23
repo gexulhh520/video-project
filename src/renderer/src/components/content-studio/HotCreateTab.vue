@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import type { HotspotRadarAccount, HotspotRadarCandidateSummary, HotspotRadarSavedSummary, HotspotRadarTaskSummary, HotspotRadarWatcher } from "../../../../main/types/app.types";
 import { desktopApi } from "../../api/desktop-api";
 
@@ -37,6 +38,7 @@ const tasks = ref<HotspotRadarTaskSummary[]>([]);
 const candidates = ref<HotspotRadarCandidateSummary[]>([]);
 const saved = ref<HotspotRadarSavedSummary[]>([]);
 const notice = ref("");
+const router = useRouter();
 
 onMounted(async () => {
   await refreshAccounts();
@@ -184,6 +186,29 @@ async function collectAndScreen(): Promise<void> {
   notice.value = `本次完成：raw=${result.rawFileCount} / candidate=${result.candidateCount}`;
   await refreshIndexes();
 }
+
+async function runScheduled(): Promise<void> {
+  const result = await desktopApi.hotspotRadarRunScheduledTasks();
+  notice.value = `调度完成：触发任务 ${result.length} 个`;
+  await refreshIndexes();
+}
+
+async function rebuildIndexes(): Promise<void> {
+  if (!selectedAccountId.value) return;
+  const result = await desktopApi.hotspotRadarRebuildIndexes(selectedAccountId.value);
+  notice.value = `索引已重建：task=${result.taskCount} / candidate=${result.candidateCount} / saved=${result.savedCount}`;
+  await refreshIndexes();
+}
+
+async function cleanup(): Promise<void> {
+  const result = await desktopApi.hotspotRadarCleanup(15);
+  notice.value = `清理完成：raw目录=${result.deletedRawDirs} / task目录=${result.deletedTaskDirs} / candidate文件=${result.deletedCandidateFiles}`;
+  await refreshIndexes();
+}
+
+function openRadarPage(path: "tasks" | "candidates" | "saved"): void {
+  void router.push(`/tools/hotspot-radar/${path}`);
+}
 </script>
 
 <template>
@@ -271,6 +296,15 @@ async function collectAndScreen(): Promise<void> {
       <button class="ghost-btn" @click="saveAccountProfile">保存账号画像</button>
       <button class="ghost-btn" @click="saveWatcher" :disabled="!selectedAccountId">保存监听器</button>
       <button class="primary-btn" :disabled="!selectedAccountId" @click="collectAndScreen">采集+筛选</button>
+      <button class="ghost-btn" @click="runScheduled">运行调度</button>
+      <button class="ghost-btn" :disabled="!selectedAccountId" @click="rebuildIndexes">重建索引</button>
+      <button class="ghost-btn" @click="cleanup">清理历史</button>
+    </div>
+
+    <div class="actions" v-if="selectedAccountId">
+      <button class="ghost-btn" @click="openRadarPage('tasks')">查看任务明细页</button>
+      <button class="ghost-btn" @click="openRadarPage('candidates')">查看候选热点页</button>
+      <button class="ghost-btn" @click="openRadarPage('saved')">查看推荐热点页</button>
     </div>
 
     <div class="grid-3" v-if="selectedAccountId">
